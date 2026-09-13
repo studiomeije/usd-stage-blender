@@ -124,8 +124,11 @@ class ReleaseArchiveTests(unittest.TestCase):
         second_archive = second_output / "usd-stage-for-blender-1.0.0.zip"
         first_checksum = first_archive.with_suffix(".zip.sha256")
         self.assertEqual(first_archive.read_bytes(), second_archive.read_bytes())
-        self.assertEqual(first_archive.stat().st_mode & 0o777, 0o644)
-        self.assertEqual(first_checksum.stat().st_mode & 0o777, 0o644)
+        if os.name != "nt":
+            # Windows reports every writable file as 0o666; permission bits
+            # only mean something on POSIX.
+            self.assertEqual(first_archive.stat().st_mode & 0o777, 0o644)
+            self.assertEqual(first_checksum.stat().st_mode & 0o777, 0o644)
 
         digest = hashlib.sha256(first_archive.read_bytes()).hexdigest()
         self.assertEqual(
