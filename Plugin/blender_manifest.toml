@@ -1,0 +1,16 @@
+# Blender Extension Manifest
+# See https://developer.blender.org/docs/handbook/extensions/ for more information
+
+schema_version = "1.0.0"
+id = "usd_stage"
+name = "USD Stage for Blender"
+version = "1.0.0"
+tagline = "USD export for RealityKit and Reality Composer Pro"
+maintainer = "Tom Krikorian <tom@studiomeije.com>"
+website = "https://github.com/studiomeije/usd-stage-blender"
+type = "add-on"
+blender_version_min = "5.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
+
+[permissions]
+files = "Export USD and stage referenced assets"
