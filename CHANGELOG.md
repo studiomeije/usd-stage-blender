@@ -5,7 +5,7 @@ Notable changes to USD Stage for Blender, newest first. Dates are release dates.
 Entries describe what changed for you — what now works, what stops the export,
 and what you have to do differently. Internal refactors are not listed.
 
-## 1.0.0 — unreleased
+## 1.0.0 — 2026-09-14
 
 The first release of USD Stage for Blender. It exports Blender scenes to
 `.usda`, `.usdc` or `.usdz` for RealityKit and Reality Composer Pro. Requires
