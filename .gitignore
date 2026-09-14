@@ -1,0 +1,62 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Blender backups
+*.blend1
+
+# Export diagnostics
+*.diagnostics.json
+
+# macOS Finder metadata
+.DS_Store
+
+# Build artifacts
+dist/
+
+# Background bake/export jobs
+.usdstage_jobs/
+
+# Export publication transaction dirs (staging + per-output locks). Created
+# next to the output whenever an export publishes, including into a tracked
+# tree such as References/.
+.usdstage_publish/
+.usdstage_temp/
+.usdstage_generations/
+
+# Test output
+tests/tmp/
+.pytest_cache/
+
+# Local test environment. Not ignored before, so `git clean -fdx` deleted it
+# along with the untracked build litter and the suite could not run until it
+# was rebuilt. Rebuild with the Contributor quick start in README.md.
+.venv/
+
+# Reality Composer Pro builds an .import cache beside any asset it imports.
+# It is the editor's own regenerated content, never ours to commit.
+*.import/
+
+# RCP also writes a directory record *beside* each .import, which `*.import/`
+# does not cover. Importing the 24 evaluation scenes therefore produced 24
+# untracked files that a `git add -A` swept straight into a commit. They are
+# regenerated on every import; only the project skeleton belongs in git.
+__tm_directory.tm_dir
+
+# Evaluation-scene exports; regenerate with scripts/export_test_scenes.sh.
+# The .blend sources in References/Blender are tracked; their output is not.
+# This ignored `t*/` alone until 2026-08-09, so the pre-t01 exports stayed
+# tracked long after their scenes were deleted - thirteen directories under
+# four naming schemes, none of them regenerable. Ignore the whole folder: an
+# export is output, whatever it ends up being called.
+References/RealityComposerProProject/Export/
+
+# Reality Composer Pro 3 project: the package holds .import packages only.
+# Everything under its Export/ is RCP's own imported copy of an asset, which it
+# rewrites on every import; the assets themselves live in
+# References/RealityComposerProProject/Export/.
+References/RealityComposerProProject/RealityComposerProProject.realitycomposerpro/Export/
+References/RealityComposerProProject/RealityComposerProProject.realitycomposerpro/core.lib/
+
+.vscode/

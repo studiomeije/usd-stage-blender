@@ -1,0 +1,6 @@
+interface:
+  display_name: "USD Stage for Blender CLI"
+  short_description: "Export Blender scenes to USD/USDZ, bake textures, validate materials, and manage settings via the command line."
+
+policy:
+  allow_implicit_invocation: true

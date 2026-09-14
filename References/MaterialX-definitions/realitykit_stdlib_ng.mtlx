@@ -1,0 +1,228 @@
+<?xml version="1.0"?>
+<!--
+Copyright © 2024 Apple Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+<materialx version="1.38">
+
+    <!--
+      Node: <round>
+      Round incoming float/color/vector values.
+    -->
+    <nodegraph name="NG_round_float" nodedef="ND_round_float">
+        <floor name="floor" type="float">
+            <input name="in" type="float" interfacename="in"/>
+        </floor>
+        <ceil name="ceil" type="float">
+            <input name="in" type="float" interfacename="in"/>
+        </ceil>
+        <ifgreatereq name="ifgreatereq" type="float">
+            <input name="value1" type="float" interfacename="in"/>
+            <input name="value2" type="float" value="0.5"/>
+            <input name="in1" type="float" nodename="ceil"/>
+            <input name="in2" type="float" nodename="floor"/>
+        </ifgreatereq>
+        <output name="out" type="float" nodename="ifgreatereq"/>
+    </nodegraph>
+    <nodegraph name="NG_round_color3" nodedef="ND_round_color3">
+        <swizzle name="swizzle_in_r" type="float">
+            <input name="in" type="color3" interfacename="in"/>
+            <input name="channels" type="string" value="r"/>
+        </swizzle>
+        <swizzle name="swizzle_in_g" type="float">
+            <input name="in" type="color3" interfacename="in"/>
+            <input name="channels" type="string" value="g"/>
+        </swizzle>
+        <swizzle name="swizzle_in_b" type="float">
+            <input name="in" type="color3" interfacename="in"/>
+            <input name="channels" type="string" value="b"/>
+        </swizzle>
+        <round name="round_r" type="float">
+            <input name="in" type="float" nodename="swizzle_in_r"/>
+        </round>
+        <round name="round_g" type="float">
+            <input name="in" type="float" nodename="swizzle_in_g"/>
+        </round>
+        <round name="round_b" type="float">
+            <input name="in" type="float" nodename="swizzle_in_b"/>
+        </round>
+        <combine3 name="combine" type="color3">
+            <input name="in1" type="float" nodename="round_r" />
+            <input name="in2" type="float" nodename="round_g" />
+            <input name="in3" type="float" nodename="round_b" />
+        </combine3>
+        <output name="out" type="color3" nodename="combine"/>
+    </nodegraph>
+    <nodegraph name="NG_round_color4" nodedef="ND_round_color4">
+        <swizzle name="swizzle_in_r" type="float">
+            <input name="in" type="color4" interfacename="in"/>
+            <input name="channels" type="string" value="r"/>
+        </swizzle>
+        <swizzle name="swizzle_in_g" type="float">
+            <input name="in" type="color4" interfacename="in"/>
+            <input name="channels" type="string" value="g"/>
+        </swizzle>
+        <swizzle name="swizzle_in_b" type="float">
+            <input name="in" type="color4" interfacename="in"/>
+            <input name="channels" type="string" value="b"/>
+        </swizzle>
+        <swizzle name="swizzle_in_a" type="float">
+            <input name="in" type="color4" interfacename="in"/>
+            <input name="channels" type="string" value="a"/>
+        </swizzle>
+        <round name="round_r" type="float">
+            <input name="in" type="float" nodename="swizzle_in_r"/>
+        </round>
+        <round name="round_g" type="float">
+            <input name="in" type="float" nodename="swizzle_in_g"/>
+        </round>
+        <round name="round_b" type="float">
+            <input name="in" type="float" nodename="swizzle_in_b"/>
+        </round>
+        <round name="round_a" type="float">
+            <input name="in" type="float" nodename="swizzle_in_a"/>
+        </round>
+        <combine4 name="combine" type="color4">
+            <input name="in1" type="float" nodename="round_r" />
+            <input name="in2" type="float" nodename="round_g" />
+            <input name="in3" type="float" nodename="round_b" />
+            <input name="in4" type="float" nodename="round_a" />
+        </combine4>
+        <output name="out" type="color4" nodename="combine"/>
+    </nodegraph>
+    <nodegraph name="NG_round_vector2" nodedef="ND_round_vector2">
+        <swizzle name="swizzle_in_x" type="float">
+            <input name="in" type="vector2" interfacename="in"/>
+            <input name="channels" type="string" value="x"/>
+        </swizzle>
+        <swizzle name="swizzle_in_y" type="float">
+            <input name="in" type="vector2" interfacename="in"/>
+            <input name="channels" type="string" value="y"/>
+        </swizzle>
+        <round name="round_x" type="float">
+            <input name="in" type="float" nodename="swizzle_in_x"/>
+        </round>
+        <round name="round_y" type="float">
+            <input name="in" type="float" nodename="swizzle_in_y"/>
+        </round>
+        <combine2 name="combine" type="vector2">
+            <input name="in1" type="float" nodename="round_x" />
+            <input name="in2" type="float" nodename="round_y" />
+        </combine2>
+        <output name="out" type="vector2" nodename="combine"/>
+    </nodegraph>
+    <nodegraph name="NG_round_vector3" nodedef="ND_round_vector3">
+        <swizzle name="swizzle_in_x" type="float">
+            <input name="in" type="vector3" interfacename="in"/>
+            <input name="channels" type="string" value="x"/>
+        </swizzle>
+        <swizzle name="swizzle_in_y" type="float">
+            <input name="in" type="vector3" interfacename="in"/>
+            <input name="channels" type="string" value="y"/>
+        </swizzle>
+        <swizzle name="swizzle_in_z" type="float">
+            <input name="in" type="vector3" interfacename="in"/>
+            <input name="channels" type="string" value="z"/>
+        </swizzle>
+        <round name="round_x" type="float">
+            <input name="in" type="float" nodename="swizzle_in_x"/>
+        </round>
+        <round name="round_y" type="float">
+            <input name="in" type="float" nodename="swizzle_in_y"/>
+        </round>
+        <round name="round_z" type="float">
+            <input name="in" type="float" nodename="swizzle_in_z"/>
+        </round>
+        <combine3 name="combine" type="vector3">
+            <input name="in1" type="float" nodename="round_x" />
+            <input name="in2" type="float" nodename="round_y" />
+            <input name="in3" type="float" nodename="round_z" />
+        </combine3>
+        <output name="out" type="vector3" nodename="combine"/>
+    </nodegraph>
+    <nodegraph name="NG_round_vector4" nodedef="ND_round_vector4">
+        <swizzle name="swizzle_in_x" type="float">
+            <input name="in" type="vector4" interfacename="in"/>
+            <input name="channels" type="string" value="x"/>
+        </swizzle>
+        <swizzle name="swizzle_in_y" type="float">
+            <input name="in" type="vector4" interfacename="in"/>
+            <input name="channels" type="string" value="y"/>
+        </swizzle>
+        <swizzle name="swizzle_in_z" type="float">
+            <input name="in" type="vector4" interfacename="in"/>
+            <input name="channels" type="string" value="z"/>
+        </swizzle>
+        <swizzle name="swizzle_in_w" type="float">
+            <input name="in" type="vector4" interfacename="in"/>
+            <input name="channels" type="string" value="w"/>
+        </swizzle>
+        <round name="round_x" type="float">
+            <input name="in" type="float" nodename="swizzle_in_x"/>
+        </round>
+        <round name="round_y" type="float">
+            <input name="in" type="float" nodename="swizzle_in_y"/>
+        </round>
+        <round name="round_z" type="float">
+            <input name="in" type="float" nodename="swizzle_in_z"/>
+        </round>
+        <round name="round_w" type="float">
+            <input name="in" type="float" nodename="swizzle_in_w"/>
+        </round>
+        <combine4 name="combine" type="vector4">
+            <input name="in1" type="float" nodename="round_x" />
+            <input name="in2" type="float" nodename="round_y" />
+            <input name="in3" type="float" nodename="round_z" />
+            <input name="in4" type="float" nodename="round_w" />
+        </combine4>
+        <output name="out" type="vector4" nodename="combine"/>
+    </nodegraph>
+
+    <!--
+      Node: normal map decoder
+      applies a 2x-1 to an existing normal.
+    -->
+    <nodegraph name="NG_normal_map_decode" nodedef="ND_normal_map_decode">
+        <multiply name="multiply" type="vector3">
+            <input name="in1" type="vector3" interfacename="in" />
+            <input name="in2" type="float" value="2.0" />
+        </multiply>
+        <subtract name="subtract" type="vector3">
+            <input name="in1" type="vector3" nodename="multiply" />
+            <input name="in2" type="float" value="1.0" />
+        </subtract>
+
+        <output name="out" type="vector3" nodename="subtract"/>
+    </nodegraph>
+
+    <!--
+      Node: <normalmap>
+      Transform a normal vector from object or tangent space into "world" space.
+    -->
+    <nodegraph name="NG_normalmap_vector2" nodedef="ND_normalmap_vector2">
+        <magnitude name="scale_length" type="float">
+            <input name="in" type="vector2" interfacename="scale"/>
+        </magnitude>
+        <normalmap name="normalmap" type="vector3">
+            <input name="in" type="vector3" interfacename="in"/>
+            <input name="space" type="string" interfacename="space"/>
+            <input name="scale" type="float" nodename="scale_length"/>
+            <input name="normal" type="vector3" interfacename="normal"/>
+            <input name="tangent" type="vector3" interfacename="tangent"/>
+        </normalmap>
+        <output name="out" type="vector3" nodename="normalmap" />
+    </nodegraph>
+
+</materialx>

@@ -1,0 +1,65 @@
+<?xml version="1.0"?>
+<!--
+Copyright © 2024 Apple Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+<materialx version="1.38">
+
+    <!-- <constant> -->
+    <implementation name="IM_constant_half_genmsl" nodedef="ND_constant_half" target="genmsl" sourcecode="{{value}}" />
+    <implementation name="IM_constant_half2_genmsl" nodedef="ND_constant_half2" target="genmsl" sourcecode="{{value}}" />
+    <implementation name="IM_constant_half3_genmsl" nodedef="ND_constant_half3" target="genmsl" sourcecode="{{value}}" />
+    <implementation name="IM_constant_half4_genmsl" nodedef="ND_constant_half4" target="genmsl" sourcecode="{{value}}" />
+    <implementation name="IM_constant_integer2_genmsl" nodedef="ND_constant_integer2" target="genmsl" sourcecode="{{value}}" />
+    <implementation name="IM_constant_integer3_genmsl" nodedef="ND_constant_integer3" target="genmsl" sourcecode="{{value}}" />
+    <implementation name="IM_constant_integer4_genmsl" nodedef="ND_constant_integer4" target="genmsl" sourcecode="{{value}}" />
+
+    <!-- <convert> -->
+    <implementation name="IM_convert_half_float_genmsl" nodedef="ND_convert_half_float" target="genmsl" />
+    <implementation name="IM_convert_half_color3_genmsl" nodedef="ND_convert_half_color3" target="genmsl" />
+    <implementation name="IM_convert_half_color4_genmsl" nodedef="ND_convert_half_color4" target="genmsl" />
+    <implementation name="IM_convert_half_integer_genmsl" nodedef="ND_convert_half_integer" target="genmsl" />
+    <implementation name="IM_convert_half_vector2_genmsl" nodedef="ND_convert_half_vector2" target="genmsl" />
+    <implementation name="IM_convert_half_vector3_genmsl" nodedef="ND_convert_half_vector3" target="genmsl" />
+    <implementation name="IM_convert_half_vector4_genmsl" nodedef="ND_convert_half_vector4" target="genmsl" />
+    <implementation name="IM_convert_boolean_half_genmsl" nodedef="ND_convert_boolean_half" target="genmsl" />
+    <implementation name="IM_convert_integer_half_genmsl" nodedef="ND_convert_integer_half" target="genmsl" />
+    <implementation name="IM_convert_float_half_genmsl" nodedef="ND_convert_float_half" target="genmsl" />
+    <implementation name="IM_convert_float_integer_genmsl" nodedef="ND_convert_float_integer" target="genmsl" />
+    <implementation name="IM_convert_half2_vector2_genmsl" nodedef="ND_convert_half2_vector2" target="genmsl" />
+    <implementation name="IM_convert_vector2_half2_genmsl" nodedef="ND_convert_vector2_half2" target="genmsl" />
+    <implementation name="IM_convert_half3_color3_genmsl" nodedef="ND_convert_half3_color3" target="genmsl" />
+    <implementation name="IM_convert_half3_vector3_genmsl" nodedef="ND_convert_half3_vector3" target="genmsl" />
+    <implementation name="IM_convert_vector3_half3_genmsl" nodedef="ND_convert_vector3_half3" target="genmsl" />
+    <implementation name="IM_convert_half4_vector4_genmsl" nodedef="ND_convert_half4_vector4" target="genmsl" />
+    <implementation name="IM_convert_vector4_half4_genmsl" nodedef="ND_convert_vector4_half4" target="genmsl" />
+
+    <!-- swizzle -->
+    <implementation name="IM_swizzle_half_color3_genmsl" nodedef="ND_swizzle_half_color3" target="genmsl" />
+    <implementation name="IM_swizzle_half_color4_genmsl" nodedef="ND_swizzle_half_color4" target="genmsl" />
+    <implementation name="IM_swizzle_half_half2_genmsl" nodedef="ND_swizzle_half_half2" target="genmsl" />
+    <implementation name="IM_swizzle_half_half3_genmsl" nodedef="ND_swizzle_half_half3" target="genmsl" />
+    <implementation name="IM_swizzle_half_half4_genmsl" nodedef="ND_swizzle_half_half4" target="genmsl" />
+    <implementation name="IM_swizzle_color3_half_genmsl" nodedef="ND_swizzle_color3_half" target="genmsl" />
+    <implementation name="IM_swizzle_color4_half_genmsl" nodedef="ND_swizzle_color4_half" target="genmsl" />
+    <implementation name="IM_swizzle_vector2_half_genmsl" nodedef="ND_swizzle_vector2_half" target="genmsl" />
+    <implementation name="IM_swizzle_vector3_half_genmsl" nodedef="ND_swizzle_vector3_half" target="genmsl" />
+    <implementation name="IM_swizzle_vector4_half_genmsl" nodedef="ND_swizzle_vector4_half" target="genmsl" />
+
+    <!-- <dot> -->
+    <implementation name="IM_dot_half_genmsl" nodedef="ND_dot_half" target="genmsl" sourcecode="{{in}}" />
+
+
+</materialx>

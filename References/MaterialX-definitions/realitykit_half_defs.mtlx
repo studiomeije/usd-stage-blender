@@ -1,0 +1,1426 @@
+<?xml version="1.0"?>
+<!--
+Copyright © 2024 Apple Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+<materialx version="1.38">
+
+    <typedef name="half" />
+    <typedef name="half2" />
+    <typedef name="half3" />
+    <typedef name="half4" />
+
+    <typedef name="integer2" />
+    <typedef name="integer3" />
+    <typedef name="integer4" />
+
+    <!--
+      Node: <constant>
+      A constant value. When exposed as a public parameter, this is a way to create a
+      value that can be accessed in multiple places in the opgraph.
+    -->
+    <nodedef name="ND_constant_half" node="constant" nodegroup="procedural">
+        <input name="value" type="half" value="0.0" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+    <nodedef name="ND_constant_half2" node="constant" nodegroup="procedural">
+        <input name="value" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" default="0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_constant_half3" node="constant" nodegroup="procedural">
+        <input name="value" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" default="0.0, 0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_constant_half4" node="constant" nodegroup="procedural">
+        <input name="value" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" default="0.0, 0.0, 0.0, 0.0" />
+    </nodedef>
+
+    <nodedef name="ND_constant_integer2" node="constant" nodegroup="procedural">
+        <input name="value" type="integer2" value="0, 0" />
+        <output name="out" type="integer2" default="0, 0" />
+    </nodedef>
+    <nodedef name="ND_constant_integer3" node="constant" nodegroup="procedural">
+        <input name="value" type="integer3" value="0, 0, 0" />
+        <output name="out" type="integer3" default="0, 0, 0" />
+    </nodedef>
+    <nodedef name="ND_constant_integer4" node="constant" nodegroup="procedural">
+        <input name="value" type="integer4" value="0, 0, 0, 0" />
+        <output name="out" type="integer4" default="0, 0, 0, 0" />
+    </nodedef>
+
+    <!--
+      Node: <convert>
+      Convert a stream from one type to another; only certain unambiguous conversion
+      types are supported.
+    -->
+    <nodedef name="ND_convert_half_float" node="convert" nodegroup="channel">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="float" default="0.0" />
+    </nodedef>
+    <nodedef name="ND_convert_half_color3" node="convert" nodegroup="channel">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="color3" default="0.0, 0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_convert_half_color4" node="convert" nodegroup="channel">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="color4" default="0.0, 0.0, 0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_convert_half_vector2" node="convert" nodegroup="channel">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="vector2" default="0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_convert_half_vector3" node="convert" nodegroup="channel">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="vector3" default="0.0, 0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_convert_half_vector4" node="convert" nodegroup="channel">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="vector4" default="0.0, 0.0, 0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_convert_half_integer" node="convert" nodegroup="channel">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="integer" default="0" />
+    </nodedef>
+
+    <nodedef name="ND_convert_boolean_half" node="convert" nodegroup="channel">
+        <input name="in" type="boolean" value="false" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+    <nodedef name="ND_convert_integer_half" node="convert" nodegroup="channel">
+        <input name="in" type="integer" value="0" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+
+    <nodedef name="ND_convert_float_half" node="convert" nodegroup="channel">
+        <input name="in" type="float" value="0.0" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+    <nodedef name="ND_convert_float_integer" node="convert" nodegroup="channel">
+        <input name="in" type="float" value="0.0" />
+        <output name="out" type="integer" default="0" />
+    </nodedef>
+
+    <nodedef name="ND_convert_half2_vector2" node="convert" nodegroup="channel">
+        <input name="in" type="half2" value="0.0,0.0" />
+        <output name="out" type="vector2" default="0.0,0.0" />
+    </nodedef>
+    <nodedef name="ND_convert_vector2_half2" node="convert" nodegroup="channel">
+        <input name="in" type="vector2" value="0.0,0.0" />
+        <output name="out" type="half2" default="0.0,0.0" />
+    </nodedef>
+
+    <nodedef name="ND_convert_half3_color3" node="convert" nodegroup="channel">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="color3" default="0.0, 0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_convert_half3_vector3" node="convert" nodegroup="channel">
+        <input name="in" type="half3" value="0.0,0.0,0.0" />
+        <output name="out" type="vector3" default="0.0,0.0,0.0" />
+    </nodedef>
+    <nodedef name="ND_convert_vector3_half3" node="convert" nodegroup="channel">
+        <input name="in" type="vector3" value="0.0,0.0,0.0" />
+        <output name="out" type="half3" default="0.0,0.0,0.0" />
+    </nodedef>
+
+    <nodedef name="ND_convert_half4_vector4" node="convert" nodegroup="channel">
+        <input name="in" type="half4" value="0.0,0.0,0.0,0.0" />
+        <output name="out" type="vector4" default="0.0,0.0,0.0,0.0" />
+    </nodedef>
+    <nodedef name="ND_convert_vector4_half4" node="convert" nodegroup="channel">
+        <input name="in" type="vector4" value="0.0,0.0,0.0,0.0" />
+        <output name="out" type="half4" default="0.0,0.0,0.0,0.0" />
+    </nodedef>
+
+    <!--
+      Node: <clamp>
+      Clamp incoming value to a specified range of values.
+    -->
+    <nodedef name="ND_clamp_half" node="clamp" nodegroup="math">
+        <input name="in" type="half" value="0.0" />
+        <input name="low" type="half" value="0.0" />
+        <input name="high" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_clamp_half2" node="clamp" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <input name="low" type="half2" value="0.0, 0.0" />
+        <input name="high" type="half2" value="1.0, 1.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_clamp_half3" node="clamp" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="low" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="high" type="half3" value="1.0, 1.0, 1.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_clamp_half4" node="clamp" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="low" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="high" type="half4" value="1.0, 1.0, 1.0, 1.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_clamp_half2FA" node="clamp" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <input name="low" type="float" value="0.0" />
+        <input name="high" type="float" value="1.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_clamp_half3FA" node="clamp" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="low" type="float" value="0.0" />
+        <input name="high" type="float" value="1.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_clamp_half4FA" node="clamp" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="low" type="float" value="0.0" />
+        <input name="high" type="float" value="1.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+
+    <!--
+      Node: <ramplr>
+      A left-to-right bilinear value ramp.
+    -->
+    <nodedef name="ND_ramplr_half" node="ramplr" nodegroup="procedural2d">
+        <input name="valuel" type="half" value="0.0" />
+        <input name="valuer" type="half" value="0.0" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+    <nodedef name="ND_ramplr_half2" node="ramplr" nodegroup="procedural2d">
+        <input name="valuel" type="half2" value="0.0, 0.0" />
+        <input name="valuer" type="half2" value="0.0, 0.0" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" />
+        <output name="out" type="half2" default="0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_ramplr_half3" node="ramplr" nodegroup="procedural2d">
+        <input name="valuel" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="valuer" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" />
+        <output name="out" type="half3" default="0.0, 0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_ramplr_half4" node="ramplr" nodegroup="procedural2d">
+        <input name="valuel" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="valuer" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" />
+        <output name="out" type="half4" default="0.0, 0.0, 0.0, 0.0" />
+    </nodedef>
+
+    <!--
+      Node: <ramptb>
+      A top-to-bottom bilinear value ramp.
+    -->
+    <nodedef name="ND_ramptb_half" node="ramptb" nodegroup="procedural2d">
+        <input name="valuet" type="half" value="0.0" />
+        <input name="valueb" type="half" value="0.0" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+    <nodedef name="ND_ramptb_half2" node="ramptb" nodegroup="procedural2d">
+        <input name="valuet" type="half2" value="0.0, 0.0" />
+        <input name="valueb" type="half2" value="0.0, 0.0" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" />
+        <output name="out" type="half2" default="0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_ramptb_half3" node="ramptb" nodegroup="procedural2d">
+        <input name="valuet" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="valueb" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" />
+        <output name="out" type="half3" default="0.0, 0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_ramptb_half4" node="ramptb" nodegroup="procedural2d">
+        <input name="valuet" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="valueb" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" />
+        <output name="out" type="half4" default="0.0, 0.0, 0.0, 0.0" />
+    </nodedef>
+
+    <!--
+      Node: <splitlr>
+      A left-right split matte, split at a specified u value.
+    -->
+    <nodedef name="ND_splitlr_half" node="splitlr" nodegroup="procedural2d">
+        <input name="valuel" type="half" value="0.0" uiname="Left" />
+        <input name="valuer" type="half" value="0.0" uiname="Right" />
+        <input name="center" type="float" value="0.5" uiname="Center" uimin="0.0" uimax="1.0" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+
+    <!--
+      Node: <splittb>
+      A top-bottom split matte, split at a specified v value.
+    -->
+    <nodedef name="ND_splittb_half" node="splittb" nodegroup="procedural2d">
+        <input name="valuet" type="half" value="0.0" uiname="Top" />
+        <input name="valueb" type="half" value="0.0" uiname="Bottom" />
+        <input name="center" type="float" value="0.5" uiname="Center" uimin="0.0" uimax="1.0" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+    <nodedef name="ND_splittb_half2" node="splittb" nodegroup="procedural2d">
+        <input name="valuet" type="half2" value="0.0, 0.0" uiname="Top" />
+        <input name="valueb" type="half2" value="0.0, 0.0" uiname="Bottom" />
+        <input name="center" type="float" value="0.5" uiname="Center" uimin="0.0" uimax="1.0" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" />
+        <output name="out" type="half2" default="0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_splittb_half3" node="splittb" nodegroup="procedural2d">
+        <input name="valuet" type="half3" value="0.0, 0.0, 0.0" uiname="Top" />
+        <input name="valueb" type="half3" value="0.0, 0.0, 0.0" uiname="Bottom" />
+        <input name="center" type="float" value="0.5" uiname="Center" uimin="0.0" uimax="1.0" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" />
+        <output name="out" type="half3" default="0.0, 0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_splittb_half4" node="splittb" nodegroup="procedural2d">
+        <input name="valuet" type="half4" value="0.0, 0.0, 0.0, 0.0" uiname="Top" />
+        <input name="valueb" type="half4" value="0.0, 0.0, 0.0, 0.0" uiname="Bottom" />
+        <input name="center" type="float" value="0.5" uiname="Center" uimin="0.0" uimax="1.0" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" />
+        <output name="out" type="half4" default="0.0, 0.0, 0.0, 0.0" />
+    </nodedef>
+
+    <!--
+      Node: <add>
+      Add "in2" value/stream to the incoming half/color/vector/matrix.
+    -->
+    <nodedef name="ND_add_half" node="add" nodegroup="math">
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Node: <subtract>
+      Subtract "in2" value/stream from the incoming half/float/color/vector/matrix.
+    -->
+    <nodedef name="ND_subtract_half" node="subtract" nodegroup="math">
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Node: <multiply>
+      Multiply the incoming half/float/color/vector by the "in2" value/stream, or multiply
+        two matrices.
+    -->
+    <nodedef name="ND_multiply_half" node="multiply" nodegroup="math">
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Node: <divide>
+      Divide an incoming half/float/color/vector by the "in2" value/stream; dividing a channel
+        value by 0 results in floating-point "NaN".  Or, multiply one matrix by the
+        inverse of a second matrix.
+    -->
+    <nodedef name="ND_divide_half" node="divide" nodegroup="math">
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_divide_half2" node="divide" nodegroup="math">
+        <input name="in1" type="half2" value="0.0, 0.0" />
+        <input name="in2" type="half2" value="1.0, 1.0" />
+        <output name="out" type="half2" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_divide_half3" node="divide" nodegroup="math">
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="half3" value="1.0, 1.0, 1.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_divide_half4" node="divide" nodegroup="math">
+        <input name="in1" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="in2" type="half4" value="1.0, 1.0, 1.0, 1.0" />
+        <output name="out" type="half4" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Node: <modulo>
+      The remaining fraction after dividing one half/float/color/vector by another and
+        subtracting the integer portion. The modula "in2" value cannot be 0.
+    -->
+    <nodedef name="ND_modulo_half" node="modulo" nodegroup="math">
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Node: <absval>
+      The per-channel absolute value of the incoming half/float/color/vector.
+    -->
+    <nodedef name="ND_absval_half" node="absval" nodegroup="math">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_absval_half2" node="absval" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_absval_half3" node="absval" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_absval_half4" node="absval" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+    <!--
+      Node: <floor>
+      Find the nearest integer less than or equal to the parameter.
+    -->
+    <nodedef name="ND_floor_half" node="floor" nodegroup="math">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_floor_half2" node="floor" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_floor_half3" node="floor" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_floor_half4" node="floor" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+
+    <!--
+      Node: <ceil>
+      Find the nearest integer greater than or equal to the parameter.
+    -->
+    <nodedef name="ND_ceil_half" node="ceil" nodegroup="math">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_ceil_half2" node="ceil" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_ceil_half3" node="ceil" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_ceil_half4" node="ceil" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+
+    <!--
+      Node: <round>
+      Round incoming half/float/color/vector values.
+    -->
+    <nodedef name="ND_round_half" node="round" nodegroup="math">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_round_half2" node="round" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_round_half3" node="round" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_round_half4" node="round" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Node: <power>
+      Raise incoming half/float/color/vector values to the "in2" power.
+    -->
+    <nodedef name="ND_power_half" node="power" nodegroup="math">
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_power_half2" node="power" nodegroup="math">
+        <input name="in1" type="half2" value="0.0, 0.0" />
+        <input name="in2" type="half2" value="1.0, 1.0" />
+        <output name="out" type="half2" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_power_half3" node="power" nodegroup="math">
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="half3" value="1.0, 1.0, 1.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_power_half4" node="power" nodegroup="math">
+        <input name="in1" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="in2" type="half4" value="1.0, 1.0, 1.0, 1.0" />
+        <output name="out" type="half4" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Node: <safepower> Supplemental Node
+      Raise incoming half/float/color/vector values to the "in2" power.
+    -->
+    <nodedef name="ND_safepower_half" node="safepower" nodegroup="math">
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Nodes: <sin>, <cos>, <tan>, <asin>, <acos>, <atan2>
+      Standard trigonometric functions; angles are given in radians.
+    -->
+    <nodedef name="ND_sin_half" node="sin" nodegroup="math">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_cos_half" node="cos" nodegroup="math">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_tan_half" node="tan" nodegroup="math">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_asin_half" node="asin" nodegroup="math">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_acos_half" node="acos" nodegroup="math">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <!-- note the input port names here don't match the stdlib atan2 names -->
+    <nodedef name="ND_atan2_half" node="atan2" nodegroup="math">
+        <input name="iny" type="half" value="0.0" />
+        <input name="inx" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="iny" />
+    </nodedef>
+
+    <nodedef name="ND_sin_half2" node="sin" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_cos_half2" node="cos" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_tan_half2" node="tan" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_asin_half2" node="asin" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_acos_half2" node="acos" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <!-- note the input port names here don't match the stdlib atan2 names -->
+    <nodedef name="ND_atan2_half2" node="atan2" nodegroup="math">
+        <input name="iny" type="half2" value="1.0, 1.0" />
+        <input name="inx" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="iny" />
+    </nodedef>
+
+    <nodedef name="ND_sin_half3" node="sin" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_cos_half3" node="cos" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_tan_half3" node="tan" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_asin_half3" node="asin" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_acos_half3" node="acos" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <!-- note the input port names here don't match the stdlib atan2 names -->
+    <nodedef name="ND_atan2_half3" node="atan2" nodegroup="math">
+        <input name="iny" type="half3" value="1.0, 1.0, 1.0" />
+        <input name="inx" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="iny" />
+    </nodedef>
+
+    <nodedef name="ND_sin_half4" node="sin" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_cos_half4" node="cos" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_tan_half4" node="tan" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_asin_half4" node="asin" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_acos_half4" node="acos" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+    <!-- note the input port names here don't match the stdlib atan2 names -->
+    <nodedef name="ND_atan2_half4" node="atan2" nodegroup="math">
+        <input name="iny" type="half4" value="1.0, 1.0, 1.0, 1.0" />
+        <input name="inx" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="iny" />
+    </nodedef>
+
+    <!--
+      Nodes: <sqrt>, <ln>, <exp>
+      Standard math functions.
+    -->
+    <nodedef name="ND_sqrt_half" node="sqrt" nodegroup="math">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_ln_half" node="ln" nodegroup="math">
+        <input name="in" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_exp_half" node="exp" nodegroup="math">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_sqrt_half2" node="sqrt" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_ln_half2" node="ln" nodegroup="math">
+        <input name="in" type="half2" value="1.0, 1.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_exp_half2" node="exp" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_sqrt_half3" node="sqrt" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_ln_half3" node="ln" nodegroup="math">
+        <input name="in" type="half3" value="1.0, 1.0, 1.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_exp_half3" node="exp" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_sqrt_half4" node="sqrt" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_ln_half4" node="ln" nodegroup="math">
+        <input name="in" type="half4" value="1.0, 1.0, 1.0, 1.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_exp_half4" node="exp" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+
+    <!--
+      Node: <sign>
+      Sign of eachinput channel: -1, 0 or +1
+    -->
+    <nodedef name="ND_sign_half" node="sign" nodegroup="math">
+        <input name="in" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_sign_half2" node="sign" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_sign_half3" node="sign" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_sign_half4" node="sign" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+
+    <!--
+      Node: <min>
+      Select the minimum among incoming values.
+    -->
+    <nodedef name="ND_min_half" node="min" nodegroup="math">
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_min_half2" node="min" nodegroup="math">
+        <input name="in1" type="half2" value="0.0, 0.0" />
+        <input name="in2" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_min_half3" node="min" nodegroup="math">
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_min_half4" node="min" nodegroup="math">
+        <input name="in1" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="in2" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_min_half2FA" node="min" nodegroup="math">
+        <input name="in1" type="half2" value="0.0, 0.0" />
+        <input name="in2" type="float" value="0.0" />
+        <output name="out" type="half2" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_min_half3FA" node="min" nodegroup="math">
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="float" value="0.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_min_half4FA" node="min" nodegroup="math">
+        <input name="in1" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="in2" type="float" value="0.0" />
+        <output name="out" type="half4" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Node: <max>
+      Select the maximum among incoming values.
+    -->
+    <nodedef name="ND_max_half" node="max" nodegroup="math">
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_max_half2" node="max" nodegroup="math">
+        <input name="in1" type="half2" value="0.0, 0.0" />
+        <input name="in2" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_max_half3" node="max" nodegroup="math">
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_max_half4" node="max" nodegroup="math">
+        <input name="in1" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="in2" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_max_half2FA" node="max" nodegroup="math">
+        <input name="in1" type="half2" value="0.0, 0.0" />
+        <input name="in2" type="float" value="0.0" />
+        <output name="out" type="half2" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_max_half3FA" node="max" nodegroup="math">
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="float" value="0.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_max_half4FA" node="max" nodegroup="math">
+        <input name="in1" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="in2" type="float" value="0.0" />
+        <output name="out" type="half4" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Node: <normalize>
+      Outputs the normalized vector from the incoming vector stream.
+    -->
+    <nodedef name="ND_normalize_half2" node="normalize" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_normalize_half3" node="normalize" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_normalize_half4" node="normalize" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+
+    <!--
+      Node: <magnitude>
+      Outputs the float magnitude (vector length) of the incoming vector stream.
+    -->
+    <nodedef name="ND_magnitude_half2" node="magnitude" nodegroup="math">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <output name="out" type="float" default="0.0" />
+    </nodedef>
+    <nodedef name="ND_magnitude_half3" node="magnitude" nodegroup="math">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="float" default="0.0" />
+    </nodedef>
+    <nodedef name="ND_magnitude_half4" node="magnitude" nodegroup="math">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="float" default="0.0" />
+    </nodedef>
+
+    <!--
+      Node: <dotproduct>
+      Perform a dot product of two 2-4 channel vectors
+    -->
+    <nodedef name="ND_dotproduct_half2" node="dotproduct" nodegroup="math">
+        <input name="in1" type="half2" value="0.0, 0.0" />
+        <input name="in2" type="half2" value="0.0, 0.0" />
+        <output name="out" type="float" default="0.0" />
+    </nodedef>
+    <nodedef name="ND_dotproduct_half3" node="dotproduct" nodegroup="math">
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="float" default="0.0" />
+    </nodedef>
+    <nodedef name="ND_dotproduct_half4" node="dotproduct" nodegroup="math">
+        <input name="in1" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="in2" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="float" default="0.0" />
+    </nodedef>
+
+    <!--
+      Node: <crossproduct>
+      Perform a cross product of two vectors
+    -->
+    <nodedef name="ND_crossproduct_half3" node="crossproduct" nodegroup="math">
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Node: <remap>
+      Remap a value from one range of half/float/color/vector values to another.
+    -->
+    <nodedef name="ND_remap_half" node="remap" nodegroup="adjustment">
+        <input name="in" type="half" value="0.0" />
+        <input name="inlow" type="half" value="0.0" />
+        <input name="inhigh" type="half" value="1.0" />
+        <input name="outlow" type="half" value="0.0" />
+        <input name="outhigh" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_remap_half2" node="remap" nodegroup="adjustment">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <input name="inlow" type="half2" value="0.0, 0.0" />
+        <input name="inhigh" type="half2" value="1.0, 1.0" />
+        <input name="outlow" type="half2" value="0.0, 0.0" />
+        <input name="outhigh" type="half2" value="1.0, 1.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_remap_half3" node="remap" nodegroup="adjustment">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="inlow" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="inhigh" type="half3" value="1.0, 1.0, 1.0" />
+        <input name="outlow" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="outhigh" type="half3" value="1.0, 1.0, 1.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_remap_half4" node="remap" nodegroup="adjustment">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="inlow" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="inhigh" type="half4" value="1.0, 1.0, 1.0, 1.0" />
+        <input name="outlow" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="outhigh" type="half4" value="1.0, 1.0, 1.0, 1.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_remap_half2FA" node="remap" nodegroup="adjustment">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <input name="inlow" type="float" value="0.0" />
+        <input name="inhigh" type="float" value="1.0" />
+        <input name="outlow" type="float" value="0.0" />
+        <input name="outhigh" type="float" value="1.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_remap_half3FA" node="remap" nodegroup="adjustment">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="inlow" type="float" value="0.0" />
+        <input name="inhigh" type="float" value="1.0" />
+        <input name="outlow" type="float" value="0.0" />
+        <input name="outhigh" type="float" value="1.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_remap_half4FA" node="remap" nodegroup="adjustment">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="inlow" type="float" value="0.0" />
+        <input name="inhigh" type="float" value="1.0" />
+        <input name="outlow" type="float" value="0.0" />
+        <input name="outhigh" type="float" value="1.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+
+    <!--
+      Node: <smoothstep>
+      Outputs a smooth (hermite-interpolated) remapping of input values from low-high
+        to output 0-1.
+    -->
+    <nodedef name="ND_smoothstep_half" node="smoothstep" nodegroup="adjustment">
+        <input name="in" type="half" value="0.0" />
+        <input name="low" type="half" value="0.0" />
+        <input name="high" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_smoothstep_half2" node="smoothstep" nodegroup="adjustment">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <input name="low" type="half2" value="0.0, 0.0" />
+        <input name="high" type="half2" value="1.0, 1.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_smoothstep_half3" node="smoothstep" nodegroup="adjustment">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="low" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="high" type="half3" value="1.0, 1.0, 1.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_smoothstep_half4" node="smoothstep" nodegroup="adjustment">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="low" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="high" type="half4" value="1.0, 1.0, 1.0, 1.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_smoothstep_half2FA" node="smoothstep" nodegroup="adjustment">
+        <input name="in" type="half2" value="0.0, 0.0" />
+        <input name="low" type="float" value="0.0" />
+        <input name="high" type="float" value="1.0" />
+        <output name="out" type="half2" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_smoothstep_half3FA" node="smoothstep" nodegroup="adjustment">
+        <input name="in" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="low" type="float" value="0.0" />
+        <input name="high" type="float" value="1.0" />
+        <output name="out" type="half3" defaultinput="in" />
+    </nodedef>
+    <nodedef name="ND_smoothstep_half4FA" node="smoothstep" nodegroup="adjustment">
+        <input name="in" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="low" type="float" value="0.0" />
+        <input name="high" type="float" value="1.0" />
+        <output name="out" type="half4" defaultinput="in" />
+    </nodedef>
+
+    <!--
+      Node: <plus>
+      Add two 1-4 channel inputs, with optional mixing between the bg input and the result.
+    -->
+    <nodedef name="ND_plus_half" node="plus" nodegroup="compositing">
+        <input name="fg" type="half" value="0.0" />
+        <input name="bg" type="half" value="0.0" />
+        <input name="mix" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="bg" />
+    </nodedef>
+
+    <!--
+      Node: <minus>
+      Subtract two 1-4 channel inputs, with optional mixing between the bg input and the result.
+    -->
+    <nodedef name="ND_minus_half" node="minus" nodegroup="compositing">
+        <input name="fg" type="half" value="0.0" />
+        <input name="bg" type="half" value="0.0" />
+        <input name="mix" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="bg" />
+    </nodedef>
+
+    <!--
+      Node: <difference>
+      Absolute-value difference of two 1-4 channel inputs, with optional mixing between
+        the bg input and the result.
+    -->
+    <nodedef name="ND_difference_half" node="difference" nodegroup="compositing">
+        <input name="fg" type="half" value="0.0" />
+        <input name="bg" type="half" value="0.0" />
+        <input name="mix" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="bg" />
+    </nodedef>
+
+    <!--
+      Node: <burn>
+      Take two 1-4 channel inputs and apply the same operator to all channels: 1-(1-B)/F
+    -->
+    <nodedef name="ND_burn_half" node="burn" nodegroup="compositing">
+        <input name="fg" type="half" value="0.0" />
+        <input name="bg" type="half" value="0.0" />
+        <input name="mix" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="bg" />
+    </nodedef>
+
+    <!--
+      Node: <dodge>
+      Take two 1-4 channel inputs and apply the same operator to all channels: B/(1-F)
+    -->
+    <nodedef name="ND_dodge_half" node="dodge" nodegroup="compositing">
+        <input name="fg" type="half" value="0.0" />
+        <input name="bg" type="half" value="0.0" />
+        <input name="mix" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="bg" />
+    </nodedef>
+
+    <!--
+      Node: <screen>
+      Take two 1-4 channel inputs and apply the same operator to all channels: 1-(1-F)*(1-B)
+    -->
+    <nodedef name="ND_screen_half" node="screen" nodegroup="compositing">
+        <input name="fg" type="half" value="0.0" />
+        <input name="bg" type="half" value="0.0" />
+        <input name="mix" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="bg" />
+    </nodedef>
+
+    <!--
+      Node: <overlay>
+      Take two 1-4 channel inputs and apply the same operator to all channels:
+        2FB if F<0.5;
+        1-(1-F)(1-B) if F>=0.5
+    -->
+    <nodedef name="ND_overlay_half" node="overlay" nodegroup="compositing">
+        <input name="fg" type="half" value="0.0" />
+        <input name="bg" type="half" value="0.0" />
+        <input name="mix" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="bg" />
+    </nodedef>
+
+    <!--
+      Node: <inside>
+      Take one 1-4 channel input "in" plus a separate half "mask" input and apply the same
+        operator to all channels: in * mask
+    -->
+    <nodedef name="ND_inside_half" node="inside" nodegroup="compositing">
+        <input name="in" type="half" value="0.0" />
+        <input name="mask" type="half" value="1.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+
+    <!--
+      Node: <outside>
+      Take one 1-4 channel input "in" plus a separate half "mask" input and apply the same
+        operator to all channels: in * (1-mask)
+    -->
+    <nodedef name="ND_outside_half" node="outside" nodegroup="compositing">
+        <input name="in" type="half" value="0.0" />
+        <input name="mask" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+
+    <!--
+      Node: <mix>
+      Mix two inputs according to an input mix amount.
+    -->
+    <nodedef name="ND_mix_half" node="mix" nodegroup="compositing">
+        <input name="fg" type="half" value="0.0" />
+        <input name="bg" type="half" value="0.0" />
+        <input name="mix" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="bg" />
+    </nodedef>
+    <nodedef name="ND_mix_half2" node="mix" nodegroup="compositing">
+        <input name="fg" type="half2" value="0.0, 0.0" />
+        <input name="bg" type="half2" value="0.0, 0.0" />
+        <input name="mix" type="float" value="0.0" />
+        <output name="out" type="half2" defaultinput="bg" />
+    </nodedef>
+    <nodedef name="ND_mix_half3" node="mix" nodegroup="compositing">
+        <input name="fg" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="bg" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="mix" type="float" value="0.0" />
+        <output name="out" type="half3" defaultinput="bg" />
+    </nodedef>
+    <nodedef name="ND_mix_half4" node="mix" nodegroup="compositing">
+        <input name="fg" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="bg" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="mix" type="float" value="0.0" />
+        <output name="out" type="half4" defaultinput="bg" />
+    </nodedef>
+
+    <!--
+      Node: <ifgreater>
+      Output the value of in1 if value1>value2, or the value of in2 if value1<=value2.
+    -->
+    <nodedef name="ND_ifgreater_half" node="ifgreater" nodegroup="conditional">
+        <input name="value1" type="half" value="1.0" />
+        <input name="value2" type="half" value="0.0" />
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifgreater_half2" node="ifgreater" nodegroup="conditional">
+        <input name="value1" type="float" value="1.0" />
+        <input name="value2" type="float" value="0.0" />
+        <input name="in1" type="half2" value="0.0, 0.0" />
+        <input name="in2" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifgreater_half3" node="ifgreater" nodegroup="conditional">
+        <input name="value1" type="float" value="1.0" />
+        <input name="value2" type="float" value="0.0" />
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifgreater_half4" node="ifgreater" nodegroup="conditional">
+        <input name="value1" type="float" value="1.0" />
+        <input name="value2" type="float" value="0.0" />
+        <input name="in1" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="in2" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifgreater_halfI" node="ifgreater" nodegroup="conditional">
+        <input name="value1" type="integer" value="1" />
+        <input name="value2" type="integer" value="0" />
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifgreater_half2I" node="ifgreater" nodegroup="conditional">
+        <input name="value1" type="integer" value="1" />
+        <input name="value2" type="integer" value="0" />
+        <input name="in1" type="half2" value="0.0, 0.0" />
+        <input name="in2" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifgreater_half3I" node="ifgreater" nodegroup="conditional">
+        <input name="value1" type="integer" value="1" />
+        <input name="value2" type="integer" value="0" />
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifgreater_half4I" node="ifgreater" nodegroup="conditional">
+        <input name="value1" type="integer" value="1" />
+        <input name="value2" type="integer" value="0" />
+        <input name="in1" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="in2" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Node: <ifgreatereq>
+      Output the value of in1 if value1>=value2, or the value of in2 if value1<value2.
+    -->
+    <nodedef name="ND_ifgreatereq_half" node="ifgreatereq" nodegroup="conditional">
+        <input name="value1" type="half" value="1.0" />
+        <input name="value2" type="half" value="0.0" />
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifgreatereq_half2" node="ifgreatereq" nodegroup="conditional">
+        <input name="value1" type="float" value="1.0" />
+        <input name="value2" type="float" value="0.0" />
+        <input name="in1" type="half2" value="0.0, 0.0" />
+        <input name="in2" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifgreatereq_half3" node="ifgreatereq" nodegroup="conditional">
+        <input name="value1" type="float" value="1.0" />
+        <input name="value2" type="float" value="0.0" />
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifgreatereq_half4" node="ifgreatereq" nodegroup="conditional">
+        <input name="value1" type="float" value="1.0" />
+        <input name="value2" type="float" value="0.0" />
+        <input name="in1" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="in2" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifgreatereq_halfI" node="ifgreatereq" nodegroup="conditional">
+        <input name="value1" type="integer" value="1" />
+        <input name="value2" type="integer" value="0" />
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifgreatereq_half2I" node="ifgreatereq" nodegroup="conditional">
+        <input name="value1" type="integer" value="1" />
+        <input name="value2" type="integer" value="0" />
+        <input name="in1" type="half2" value="0.0, 0.0" />
+        <input name="in2" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifgreatereq_half3I" node="ifgreatereq" nodegroup="conditional">
+        <input name="value1" type="integer" value="1" />
+        <input name="value2" type="integer" value="0" />
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifgreatereq_half4I" node="ifgreatereq" nodegroup="conditional">
+        <input name="value1" type="integer" value="1" />
+        <input name="value2" type="integer" value="0" />
+        <input name="in1" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="in2" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Node: <ifequal>
+      Output the value of in1 if value1==value2, or the value of in2 if value1!=value2.
+    -->
+    <nodedef name="ND_ifequal_half" node="ifequal" nodegroup="conditional">
+        <input name="value1" type="half" value="0.0" />
+        <input name="value2" type="half" value="0.0" />
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifequal_half2" node="ifequal" nodegroup="conditional">
+        <input name="value1" type="float" value="0.0" />
+        <input name="value2" type="float" value="0.0" />
+        <input name="in1" type="half2" value="0.0, 0.0" />
+        <input name="in2" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifequal_half3" node="ifequal" nodegroup="conditional">
+        <input name="value1" type="float" value="0.0" />
+        <input name="value2" type="float" value="0.0" />
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifequal_half4" node="ifequal" nodegroup="conditional">
+        <input name="value1" type="float" value="0.0" />
+        <input name="value2" type="float" value="0.0" />
+        <input name="in1" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="in2" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifequal_halfI" node="ifequal" nodegroup="conditional">
+        <input name="value1" type="integer" value="0" />
+        <input name="value2" type="integer" value="0" />
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifequal_half2I" node="ifequal" nodegroup="conditional">
+        <input name="value1" type="integer" value="0" />
+        <input name="value2" type="integer" value="0" />
+        <input name="in1" type="half2" value="0.0, 0.0" />
+        <input name="in2" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifequal_half3I" node="ifequal" nodegroup="conditional">
+        <input name="value1" type="integer" value="0" />
+        <input name="value2" type="integer" value="0" />
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifequal_half4I" node="ifequal" nodegroup="conditional">
+        <input name="value1" type="integer" value="0" />
+        <input name="value2" type="integer" value="0" />
+        <input name="in1" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="in2" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifequal_halfB" node="ifequal" nodegroup="conditional">
+        <input name="value1" type="boolean" value="false" />
+        <input name="value2" type="boolean" value="false" />
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="0.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifequal_half2B" node="ifequal" nodegroup="conditional">
+        <input name="value1" type="boolean" value="false" />
+        <input name="value2" type="boolean" value="false" />
+        <input name="in1" type="half2" value="0.0, 0.0" />
+        <input name="in2" type="half2" value="0.0, 0.0" />
+        <output name="out" type="half2" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifequal_half3B" node="ifequal" nodegroup="conditional">
+        <input name="value1" type="boolean" value="false" />
+        <input name="value2" type="boolean" value="false" />
+        <input name="in1" type="half3" value="0.0, 0.0, 0.0" />
+        <input name="in2" type="half3" value="0.0, 0.0, 0.0" />
+        <output name="out" type="half3" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_ifequal_half4B" node="ifequal" nodegroup="conditional">
+        <input name="value1" type="boolean" value="false" />
+        <input name="value2" type="boolean" value="false" />
+        <input name="in1" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="in2" type="half4" value="0.0, 0.0, 0.0, 0.0" />
+        <output name="out" type="half4" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Node: <switch>
+      Pass on the value of one of five input streams, according to the value of a selector parameter.
+    -->
+    <nodedef name="ND_switch_half" node="switch" nodegroup="conditional">
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="0.0" />
+        <input name="in3" type="half" value="0.0" />
+        <input name="in4" type="half" value="0.0" />
+        <input name="in5" type="half" value="0.0" />
+        <input name="in6" type="half" value="0.0" />
+        <input name="in7" type="half" value="0.0" />
+        <input name="in8" type="half" value="0.0" />
+        <input name="in9" type="half" value="0.0" />
+        <input name="in10" type="half" value="0.0" />
+        <input name="which" type="float" value="0.0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+    <nodedef name="ND_switch_halfI" node="switch" nodegroup="conditional">
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="0.0" />
+        <input name="in3" type="half" value="0.0" />
+        <input name="in4" type="half" value="0.0" />
+        <input name="in5" type="half" value="0.0" />
+        <input name="in6" type="half" value="0.0" />
+        <input name="in7" type="half" value="0.0" />
+        <input name="in8" type="half" value="0.0" />
+        <input name="in9" type="half" value="0.0" />
+        <input name="in10" type="half" value="0.0" />
+        <input name="which" type="integer" value="0" />
+        <output name="out" type="half" defaultinput="in1" />
+    </nodedef>
+
+    <!--
+      Node: <swizzle>
+      Perform an arbitrary permutation of the channels of the input stream, returning a new
+        stream of the specified type. Individual channels may be replicated or omitted, and the output
+        stream may have a different number of channels than the input.
+    -->
+    <!-- from type: half -->
+    <nodedef name="ND_swizzle_half_color3" node="swizzle" nodegroup="channel">
+        <input name="in" type="half" value="0.0" />
+        <input name="channels" type="string" value="rrr" uniform="true" />
+        <output name="out" type="color3" default="0.0, 0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_swizzle_half_color4" node="swizzle" nodegroup="channel">
+        <input name="in" type="half" value="0.0" />
+        <input name="channels" type="string" value="rrrr" uniform="true" />
+        <output name="out" type="color4" default="0.0, 0.0, 0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_swizzle_half_half2" node="swizzle" nodegroup="channel">
+        <input name="in" type="half" value="0.0" />
+        <input name="channels" type="string" value="xx" uniform="true" />
+        <output name="out" type="half2" default="0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_swizzle_half_half3" node="swizzle" nodegroup="channel">
+        <input name="in" type="half" value="0.0" />
+        <input name="channels" type="string" value="xxx" uniform="true" />
+        <output name="out" type="half3" default="0.0, 0.0, 0.0" />
+    </nodedef>
+    <nodedef name="ND_swizzle_half_half4" node="swizzle" nodegroup="channel">
+        <input name="in" type="half" value="0.0" />
+        <input name="channels" type="string" value="xxxx" uniform="true" />
+        <output name="out" type="half4" default="0.0, 0.0, 0.0, 0.0" />
+    </nodedef>
+
+    <!-- from type: color3 -->
+    <nodedef name="ND_swizzle_color3_half" node="swizzle" nodegroup="channel">
+        <input name="in" type="color3" value="0.0, 0.0, 0.0" />
+        <input name="channels" type="string" value="r" uniform="true" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+
+    <!-- from type: color4 -->
+    <nodedef name="ND_swizzle_color4_half" node="swizzle" nodegroup="channel">
+        <input name="in" type="color4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="channels" type="string" value="r" uniform="true" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+
+    <!-- from type: half2 -->
+    <nodedef name="ND_swizzle_vector2_half" node="swizzle" nodegroup="channel">
+        <input name="in" type="vector2" value="0.0, 0.0" />
+        <input name="channels" type="string" value="x" uniform="true" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+
+    <!-- from type: vector3 -->
+    <nodedef name="ND_swizzle_vector3_half" node="swizzle" nodegroup="channel">
+        <input name="in" type="vector3" value="0.0, 0.0, 0.0" />
+        <input name="channels" type="string" value="x" uniform="true" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+
+    <!-- from type: vector4 -->
+    <nodedef name="ND_swizzle_vector4_half" node="swizzle" nodegroup="channel">
+        <input name="in" type="vector4" value="0.0, 0.0, 0.0, 0.0" />
+        <input name="channels" type="string" value="x" uniform="true" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+
+    <!--
+      Node: <combine3>
+      Combine the channels from two streams into the same number of channels of a single
+        output stream of a specified compatible type.
+    -->
+    <nodedef name="ND_combine3_half3" node="combine3" nodegroup="channel">
+        <input name="in1" type="half" value="0.0" />
+        <input name="in2" type="half" value="0.0" />
+        <input name="in3" type="half" value="0.0" />
+        <output name="out" type="half3" default="0.0, 0.0, 0.0" />
+    </nodedef>
+
+    <!--
+      Node: <dot>
+      No-op; passes its input to the output unchanged.
+    -->
+    <nodedef name="ND_dot_half" node="dot" nodegroup="organization">
+        <input name="in" type="half" value="0.0" />
+        <input name="note" type="string" value="" uniform="true" />
+        <output name="out" type="half" defaultinput="in" />
+    </nodedef>
+
+    <!--
+      Node: <image>
+      Samples data from a single image, or from a layer within a multi-layer image.
+    -->
+    <nodedef name="ND_image_half" node="image" nodegroup="texture2d">
+        <input name="file" type="filename" value="" uiname="Filename" uniform="true" />
+        <input name="layer" type="string" value="" uiname="Layer" uniform="true" />
+        <input name="default" type="half" value="0.0" uiname="Default Color" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" uiname="Texture Coordinates" />
+        <input name="uaddressmode" type="string" value="periodic" enum="constant,clamp,periodic,mirror" uiname="Address Mode U" uniform="true" />
+        <input name="vaddressmode" type="string" value="periodic" enum="constant,clamp,periodic,mirror" uiname="Address Mode V" uniform="true" />
+        <input name="filtertype" type="string" value="linear" enum="closest,linear,cubic" uiname="Filter Type" uniform="true" />
+        <input name="framerange" type="string" value="" uiname="Frame Range" uniform="true" />
+        <input name="frameoffset" type="integer" value="0" uiname="Frame Offset" uniform="true" />
+        <input name="frameendaction" type="string" value="constant" enum="constant,clamp,periodic,mirror" uiname="Frame End Action" uniform="true" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+
+    <!--
+      Node: <tiledimage> Supplemental Node
+      Samples data from a single image, with provisions for tiling and offsetting the image
+        across uv space.
+    -->
+    <nodedef name="ND_tiledimage_half" node="tiledimage" nodegroup="texture2d">
+        <input name="file" type="filename" value="" uniform="true" />
+        <input name="default" type="half" value="0.0" />
+        <input name="texcoord" type="vector2" defaultgeomprop="UV0" />
+        <input name="uvtiling" type="vector2" value="1.0, 1.0" />
+        <input name="uvoffset" type="vector2" value="0.0, 0.0" />
+        <input name="realworldimagesize" type="vector2" value="1.0, 1.0" unittype="distance" />
+        <input name="realworldtilesize" type="vector2" value="1.0, 1.0" unittype="distance" />
+        <input name="filtertype" type="string" value="linear" enum="closest,linear,cubic" uniform="true" />
+        <input name="framerange" type="string" value="" uniform="true" />
+        <input name="frameoffset" type="integer" value="0" uniform="true" />
+        <input name="frameendaction" type="string" value="constant" enum="constant,clamp,periodic,mirror" uniform="true" />
+        <output name="out" type="half" default="0.0" />
+    </nodedef>
+
+</materialx>

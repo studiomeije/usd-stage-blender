@@ -1,0 +1,395 @@
+name: CI
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+  PYTEST_VERSION: "9.1.1"
+  USD_CORE_VERSION: "26.8"
+  # Matches the numpy bundled with Blender 5.2 LTS. Plugin.export.bake_textures
+  # uses numpy for pixel-buffer work; without it those tests cannot run.
+  NUMPY_VERSION: "2.3.4"
+  # test_workflow_trust_policy.py parses the workflow YAML; without PyYAML the
+  # whole tests/unit collection errors out rather than skipping one file.
+  PYYAML_VERSION: "6.0.3"
+  # test_bake_export_mix_shader.py reads baked texels back. Absent pillow its
+  # pixel checks importorskip themselves, so the bake lane went unverified in
+  # every environment - nobody had it installed.
+  PILLOW_VERSION: "12.3.0"
+  BLENDER_VERSION: "5.2.0"
+  BLENDER_ARCHIVE_NAME: blender-5.2.0-linux-x64.tar.xz
+  BLENDER_DOWNLOAD_URL: https://download.blender.org/release/Blender5.2/blender-5.2.0-linux-x64.tar.xz
+  BLENDER_DOWNLOAD_SHA256: 96f6c181a30f4950607839dc84d42a354b250d8a0231b098b59b7bc69c351c48
+
+jobs:
+  unit-tests:
+    name: Unit tests (Python 3.13)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Blender scenes and USD assets are LFS-backed; without this the
+          # checkout yields pointer files and the add-on ships a broken
+          # nodegroups.blend while every .blend test fixture fails to open.
+          lfs: true
+          # Full history so the whitespace gate below can diff against the
+          # base revision (PR base, push predecessor, or origin/dev).
+          fetch-depth: 0
+
+      - name: Check whitespace introduced by this revision
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_REF: ${{ github.base_ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          # A bare `git diff --check` compares the working tree to the index,
+          # which is always clean on a fresh checkout, so it can never fail.
+          # Diff the revision under test against its real base instead.
+          if [[ "$EVENT_NAME" == "pull_request" && -n "$PR_BASE_REF" ]]; then
+            git fetch --no-tags --force origin \
+              "+refs/heads/${PR_BASE_REF}:refs/remotes/origin/${PR_BASE_REF}"
+            base="$(git merge-base "refs/remotes/origin/${PR_BASE_REF}" HEAD)"
+          elif [[ "$EVENT_NAME" == "push" \
+                  && -n "$PUSH_BEFORE" \
+                  && "$PUSH_BEFORE" != 0000000000000000000000000000000000000000 ]] \
+                  && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+            base="$PUSH_BEFORE"
+          else
+            # workflow_dispatch, a workflow_call from a tag build, or a push
+            # to a brand-new ref: fall back to the dev integration branch.
+            # Revisions already reachable from dev diff empty here; they were
+            # gated by their own pull_request/push runs on the way in.
+            git fetch --no-tags --force origin \
+              '+refs/heads/dev:refs/remotes/origin/dev'
+            base="$(git merge-base refs/remotes/origin/dev HEAD)"
+          fi
+
+          echo "Checking whitespace errors introduced since $base"
+          git diff --check "$base" HEAD
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install test dependencies
+        run: >-
+          python -m pip install
+          pytest==${PYTEST_VERSION}
+          usd-core==${USD_CORE_VERSION}
+          numpy==${NUMPY_VERSION}
+          PyYAML==${PYYAML_VERSION}
+          pillow==${PILLOW_VERSION}
+
+      - name: Compile Python sources
+        run: python -m compileall -q Plugin scripts tests
+
+      - name: Check repository and generated metadata
+        run: |
+          bash tests/test_check_apple27_toolchain.sh
+          # This runner has no Reality Composer Pro, so the generator cannot
+          # measure the runtime overlay. It carries the overlay recorded in the
+          # checked-in manifest forward instead and rebuilds the vendored part;
+          # a clean diff proves the vendored part still matches. It does NOT
+          # prove the overlay matches the library RealityKit binds, which has
+          # already disagreed with the vendored copy (the atan2 iny/inx rename).
+          # That is checked on a Mac by tests/unit/test_manifest_runtime_overlay.py
+          # and tests/unit/test_manifest_matches_editor_libraries.py, which skip
+          # here.
+          python scripts/build_materialx_manifest.py
+          git diff --exit-code -- Plugin/manifest/rk_nodes_manifest.json
+
+          python - <<'PY'
+          import re
+          import tomllib
+          from pathlib import Path
+
+          from Plugin.core.version import get_version
+
+          manifest = tomllib.loads(Path("Plugin/blender_manifest.toml").read_text())
+          assert manifest["schema_version"] == "1.0.0"
+          assert manifest["id"] == "usd_stage"
+          assert manifest["blender_version_min"] == "5.2.0"
+          assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", manifest["version"])
+          assert get_version() == manifest["version"]
+          PY
+
+      - name: Run unit tests
+        run: |
+          mkdir -p test-results
+          python -m pytest -q tests/unit scripts/tests \
+            --junitxml=test-results/unit.xml
+
+      - name: Upload unit-test report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unit-test-results
+          path: test-results/unit.xml
+          if-no-files-found: error
+          retention-days: 14
+
+  # The add-on's texture staging has Windows-only behaviour (the MAX_PATH
+  # budget for content-addressed names) that a Mac cannot exercise, and a user
+  # has already hit a Windows-only staging failure. This job runs the same
+  # unit suite on Windows so those paths execute on the platform they exist
+  # for. It needs no Blender.
+  unit-tests-windows:
+    name: Unit tests (Windows, Python 3.13)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install test dependencies
+        shell: bash
+        run: >-
+          python -m pip install
+          pytest==${PYTEST_VERSION}
+          usd-core==${USD_CORE_VERSION}
+          numpy==${NUMPY_VERSION}
+          PyYAML==${PYYAML_VERSION}
+          pillow==${PILLOW_VERSION}
+
+      - name: Compile Python sources
+        shell: bash
+        run: python -m compileall -q Plugin scripts tests
+
+      - name: Run unit tests
+        shell: bash
+        run: |
+          mkdir -p test-results
+          python -m pytest -q tests/unit scripts/tests \
+            --junitxml=test-results/unit-windows.xml
+
+      - name: Upload unit-test report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unit-test-results-windows
+          path: test-results/unit-windows.xml
+          if-no-files-found: error
+          retention-days: 14
+
+  archive-smoke:
+    name: Build archive
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Blender scenes and USD assets are LFS-backed; without this the
+          # checkout yields pointer files and the add-on ships a broken
+          # nodegroups.blend while every .blend test fixture fails to open.
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Build deterministic archive twice
+        run: python3 scripts/release_archive.py --check
+
+      - name: Inspect archive
+        run: |
+          archive="$(find dist -maxdepth 1 -type f -name 'usd-stage-for-blender-*.zip' -print -quit)"
+          test -n "$archive"
+          unzip -t "$archive"
+          (cd dist && sha256sum --check "$(basename "$archive").sha256")
+
+          ARCHIVE="$archive" python - <<'PY'
+          import os
+          from pathlib import PurePosixPath
+          from zipfile import ZipFile
+
+          archive = os.environ["ARCHIVE"]
+          with ZipFile(archive) as zip_file:
+              names = set(zip_file.namelist())
+
+          required = {
+              "usd_stage/__init__.py",
+              "usd_stage/__main__.py",
+              "usd_stage/blender_manifest.toml",
+              "usd_stage/LICENSE",
+              "usd_stage/THIRD_PARTY_LICENSES/Apache-2.0.txt",
+              "usd_stage/THIRD_PARTY_NOTICES.txt",
+          }
+          missing = sorted(required - names)
+          if missing:
+              raise SystemExit(f"Archive is missing required files: {missing}")
+
+          forbidden = [
+              name for name in names
+              if "__pycache__" in PurePosixPath(name).parts
+              or name.endswith((".pyc", ".pyo"))
+              or PurePosixPath(name).name == ".DS_Store"
+          ]
+          if forbidden:
+              raise SystemExit(f"Archive contains forbidden files: {forbidden}")
+          PY
+
+      - name: Upload installable archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: usd-stage-for-blender-${{ github.sha }}
+          path: |
+            dist/usd-stage-for-blender-*.zip
+            dist/usd-stage-for-blender-*.zip.sha256
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  blender-5-2-integration:
+    name: Blender 5.2 integration and installed archive
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Blender scenes and USD assets are LFS-backed; without this the
+          # checkout yields pointer files and the add-on ships a broken
+          # nodegroups.blend while every .blend test fixture fails to open.
+          lfs: true
+
+      - name: Configure isolated Blender paths
+        run: |
+          echo "BLENDER_ARCHIVE_PATH=$RUNNER_TOOL_CACHE/blender-downloads/blender-5.2.0-linux-x64.tar.xz" >> "$GITHUB_ENV"
+          echo "BLENDER_ROOT=$RUNNER_TEMP/blender-5.2.0-linux-x64" >> "$GITHUB_ENV"
+          echo "USDSTAGE_BLENDER=$RUNNER_TEMP/blender-5.2.0-linux-x64/blender" >> "$GITHUB_ENV"
+          echo "BLENDER_USER_RESOURCES=$RUNNER_TEMP/blender-test-resources" >> "$GITHUB_ENV"
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install test and Blender runtime dependencies
+        run: |
+          python -m pip install \
+            pytest==${PYTEST_VERSION} \
+            usd-core==${USD_CORE_VERSION} \
+            numpy==${NUMPY_VERSION} \
+            PyYAML==${PYYAML_VERSION} \
+            pillow==${PILLOW_VERSION}
+          sudo apt-get update
+          sudo apt-get install -y \
+            libegl1 \
+            libgl1 \
+            libsm6 \
+            libx11-6 \
+            libxext6 \
+            libxfixes3 \
+            libxi6 \
+            libxkbcommon0 \
+            libxrender1 \
+            libxxf86vm1 \
+            rsync \
+            xvfb \
+            zip
+
+      - name: Restore Blender download
+        id: blender-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.tool_cache }}/blender-downloads/blender-5.2.0-linux-x64.tar.xz
+          key: blender-${{ env.BLENDER_VERSION }}-linux-x64-${{ env.BLENDER_DOWNLOAD_SHA256 }}
+
+      - name: Download pinned Blender
+        if: steps.blender-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$(dirname "$BLENDER_ARCHIVE_PATH")"
+          curl --fail --location --retry 5 --retry-all-errors \
+            "$BLENDER_DOWNLOAD_URL" \
+            --output "$BLENDER_ARCHIVE_PATH"
+
+      - name: Verify and extract Blender
+        run: |
+          echo "$BLENDER_DOWNLOAD_SHA256  $BLENDER_ARCHIVE_PATH" | sha256sum --check --strict
+          tar -xf "$BLENDER_ARCHIVE_PATH" -C "$RUNNER_TEMP"
+          test -x "$USDSTAGE_BLENDER"
+          "$USDSTAGE_BLENDER" --version | tee blender-version.txt
+          grep -Eq '^Blender 5\.2\.0([[:space:]]|$)' blender-version.txt
+
+      - name: Verify shipped node-group parity
+        run: |
+          set -o pipefail
+          xvfb-run -a "$USDSTAGE_BLENDER" \
+            --background \
+            --factory-startup \
+            --python-exit-code 1 \
+            --python scripts/check_nodegroup_parity.py \
+            | tee nodegroup-parity.log
+          grep -q '"ok": true' nodegroup-parity.log
+
+      - name: Run Blender integration tests
+        run: |
+          mkdir -p test-results
+          python -m pytest -q \
+            tests/integration \
+            --junitxml=test-results/blender-integration.xml
+
+      - name: Build and validate Blender extension
+        run: |
+          python3 scripts/release_archive.py --check
+          archive="$(find dist -maxdepth 1 -type f -name 'usd-stage-for-blender-*.zip' -print -quit)"
+          test -n "$archive"
+          echo "BLENDER_EXTENSION_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          xvfb-run -a "$USDSTAGE_BLENDER" \
+            --command extension validate "$archive" --valid-tags=
+
+      - name: Install and execute the packaged extension
+        run: |
+          set -o pipefail
+          # This lane is ubuntu-24.04: usdchecker and realitytool do not exist
+          # here, so the exported USD/USDZ artifacts are NOT validated by this
+          # job. It has to say so - anything skipped without being declared
+          # fails the run, rather than reporting the same success as a lane
+          # that checked every artifact. Removing this flag is how you find
+          # out whether a lane with the Apple toolchain is actually wired up.
+          xvfb-run -a python3 scripts/smoke_extension_archive.py \
+            --archive "$BLENDER_EXTENSION_ARCHIVE" \
+            --blender "$USDSTAGE_BLENDER" \
+            --allow-missing usdchecker,realitytool \
+            | tee installed-extension-smoke.log
+          grep -q '^USDSTAGE_ARCHIVE_SMOKE=' installed-extension-smoke.log
+
+      - name: Upload Blender-test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: blender-5.2-test-results
+          path: |
+            test-results/blender-integration.xml
+            blender-version.txt
+            nodegroup-parity.log
+            installed-extension-smoke.log
+          if-no-files-found: warn
+          retention-days: 14

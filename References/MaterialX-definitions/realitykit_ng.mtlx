@@ -1,0 +1,1016 @@
+<?xml version="1.0"?>
+<!--
+Copyright © 2024 Apple Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+<materialx version="1.38">
+
+    <!--
+      Node: <realitykit_pbr_surfaceshader>
+    -->
+    <nodegraph name="IM_realitykit_pbr_surfaceshader" nodedef="ND_realitykit_pbr_surfaceshader">
+        <multiply name="multiply_specular_0_08" type="float">
+            <input name="in1" type="float" interfacename="specular"/>
+            <input name="in2" type="float" value="0.08"/>
+        </multiply>
+        <convert name="multiply_specular_0_08_color3" type="color3">
+            <input name="in" type="float" nodename="multiply_specular_0_08"/>
+        </convert>
+        <mix name="specularColor" type="color3">
+            <input name="fg" type="color3" nodename="multiply_specular_0_08_color3"/>
+            <input name="bg" type="color3" interfacename="baseColor"/>
+            <input name="mix" type="float" interfacename="metallic"/>
+        </mix>
+        <swizzle name="specular_color3" type="color3">
+            <input name="in" type="float" interfacename="specular"/>
+        </swizzle>
+        <constant name="ior" type="float">
+            <input name="value" type="float" value="1.5"/>
+        </constant>
+        <clamp name="specular_clamp" type="float">
+            <input name="in" type="float" interfacename="specular"/>
+        </clamp>
+        <clamp name="metallic_clamp" type="float">
+            <input name="in" type="float" interfacename="metallic"/>
+        </clamp>
+
+        <!-- Compute the surface normal -->
+        <multiply name="scale_normal" type="vector3">
+            <input name="in1" type="vector3" interfacename="normal" />
+            <input name="in2" type="float" value="0.5" />
+        </multiply>
+        <add name="bias_normal" type="vector3">
+            <input name="in1" type="vector3" nodename="scale_normal" />
+            <input name="in2" type="float" value="0.5" />
+        </add>
+        <normalmap name="surface_normal" type="vector3">
+            <input name="in" type="vector3" nodename="bias_normal" />
+        </normalmap>
+
+        <multiply name="scale_clearcoatNormal" type="vector3">
+            <input name="in1" type="vector3" interfacename="clearcoatNormal" />
+            <input name="in2" type="float" value="0.5" />
+        </multiply>
+        <add name="bias_clearcoatNormal" type="vector3">
+            <input name="in1" type="vector3" nodename="scale_clearcoatNormal" />
+            <input name="in2" type="float" value="0.5" />
+        </add>
+        <normalmap name="surface_clearcoatNormal" type="vector3">
+            <input name="in" type="vector3" nodename="bias_clearcoatNormal" />
+        </normalmap>
+
+        <!-- Diffuse Layer -->
+        <subtract name="inverse_metalness" type="float">
+            <input name="in1" type="float" value="1" />
+            <input name="in2" type="float" nodename="metallic_clamp" />
+        </subtract>
+        <oren_nayar_diffuse_bsdf name="diffuse_bsdf" type="BSDF">
+            <input name="weight" type="float" nodename="inverse_metalness" />
+            <input name="color" type="color3" interfacename="baseColor" />
+            <input name="roughness" type="float" value="0" />
+            <input name="normal" type="vector3" nodename="surface_normal" />
+        </oren_nayar_diffuse_bsdf>
+
+
+        <roughness_anisotropy name="specular_roughness" type="vector2">
+            <input name="roughness" type="float" interfacename="roughness" />
+            <input name="anisotropy" type="float" value="0" />
+        </roughness_anisotropy>
+
+        <!-- Metalness Workflow -->
+        <subtract name="one_minus_ior" type="float">
+            <input name="in1" type="float" value="1" />
+            <input name="in2" type="float" nodename="ior" />
+        </subtract>
+        <add name="one_plus_ior" type="float">
+            <input name="in1" type="float" value="1" />
+            <input name="in2" type="float" nodename="ior" />
+        </add>
+        <divide name="R" type="float">
+            <input name="in1" type="float" nodename="one_minus_ior" />
+            <input name="in2" type="float" nodename="one_plus_ior" />
+        </divide>
+        <multiply name="R_sq" type="float">
+            <input name="in1" type="float" nodename="R" />
+            <input name="in2" type="float" nodename="R" />
+        </multiply>
+        <multiply name="specular_color_metallic_R_sq" type="color3">
+            <input name="in1" type="color3" value="1, 1, 1" />
+            <input name="in2" type="float" nodename="R_sq" />
+        </multiply>
+        <generalized_schlick_bsdf name="specular_bsdf2" type="BSDF">
+            <input name="weight" type="float" nodename="specular_clamp" />
+            <input name="color0" type="color3" nodename="specular_color_metallic_R_sq" />
+            <input name="color90" type="color3" value="1.0, 1.0, 1.0" />
+            <input name="roughness" type="vector2" nodename="specular_roughness" />
+            <input name="normal" type="vector3" nodename="surface_normal" />
+        </generalized_schlick_bsdf>
+        <layer name="metalness_specular_bsdf" type="BSDF">
+            <input name="top" type="BSDF" nodename="specular_bsdf2" />
+            <input name="base" type="BSDF" nodename="diffuse_bsdf" />
+        </layer>
+        <artistic_ior name="artistic_ior" type="multioutput">
+            <input name="reflectivity" type="color3" interfacename="baseColor" />
+            <input name="edge_color" type="color3" interfacename="baseColor" />
+        </artistic_ior>
+        <conductor_bsdf name="metalness_metal_bsdf" type="BSDF">
+            <input name="weight" type="float" value="1" />
+            <input name="ior" type="color3" nodename="artistic_ior" output="ior" />
+            <input name="extinction" type="color3" nodename="artistic_ior" output="extinction" />
+            <input name="roughness" type="vector2" nodename="specular_roughness" />
+            <input name="normal" type="vector3" nodename="surface_normal" />
+        </conductor_bsdf>
+        <mix name="metalness_workflow_bsdf" type="BSDF">
+            <input name="fg" type="BSDF" nodename="metalness_metal_bsdf" />
+            <input name="bg" type="BSDF" nodename="metalness_specular_bsdf" />
+            <input name="mix" type="float" nodename="metallic_clamp" />
+        </mix>
+
+        <!-- Clearcoat Layer -->
+        <roughness_anisotropy name="coat_roughness" type="vector2">
+            <input name="roughness" type="float" interfacename="clearcoatRoughness" />
+            <input name="anisotropy" type="float" value="0" />
+        </roughness_anisotropy>
+        <convert name="coat_F0" type="color3">
+            <input name="in" type="float" nodename="R_sq" />
+        </convert>
+        <generalized_schlick_bsdf name="coat_dielectric_bsdf" type="BSDF">
+            <input name="weight" type="float" interfacename="clearcoat" />
+            <input name="color0" type="color3" nodename="coat_F0" />
+            <input name="color90" type="color3" value="1, 1, 1" />
+            <input name="roughness" type="vector2" nodename="coat_roughness" />
+            <input name="normal" type="vector3" nodename="surface_clearcoatNormal" />
+        </generalized_schlick_bsdf>
+        <layer name="coat_bsdf" type="BSDF">
+            <input name="top" type="BSDF" nodename="coat_dielectric_bsdf" />
+            <input name="base" type="BSDF" nodename="metalness_workflow_bsdf" />
+        </layer>
+
+        <!-- Emission Layer -->
+        <uniform_edf name="emission_edf" type="EDF">
+            <input name="color" type="color3" interfacename="emissiveColor" />
+        </uniform_edf>
+
+        <!-- Surface Shader Constructor -->
+        <ifgreatereq name="cutout_opacity" type="float">
+            <input name="value1" type="float" interfacename="opacity" />
+            <input name="value2" type="float" interfacename="opacityThreshold" />
+            <input name="in1" type="float" interfacename="opacity" />
+            <input name="in2" type="float" value="0" />
+        </ifgreatereq>
+        <surface name="surface_constructor" type="surfaceshader">
+            <input name="bsdf" type="BSDF" nodename="coat_bsdf" />
+            <input name="edf" type="EDF" nodename="emission_edf" />
+            <input name="opacity" type="float" nodename="cutout_opacity" />
+        </surface>
+
+        <!-- Output -->
+        <output name="out" type="surfaceshader" nodename="surface_constructor" />
+    </nodegraph>
+
+    <!--
+      Node : <realitykit_unlit>
+    -->
+    <nodegraph name="IM_realitykit_unlit_surfaceshader" nodedef="ND_realitykit_unlit_surfaceshader">
+
+        <!-- Diffuse Layer - necessary to avoid mxInit() bug in UsdMtlx -->
+        <oren_nayar_diffuse_bsdf name="diffuse_bsdf" type="BSDF">
+            <input name="color" type="color3" value="0.0, 0.0, 0.0" />
+        </oren_nayar_diffuse_bsdf>
+
+        <uniform_edf name="emission_edf" type="EDF">
+            <input name="color" type="color3" interfacename="color" />
+        </uniform_edf>
+
+        <ifgreatereq name="cutout_opacity" type="float">
+            <input name="value1" type="float" interfacename="opacity" />
+            <input name="value2" type="float" interfacename="opacityThreshold" />
+            <input name="in1" type="float" interfacename="opacity" />
+            <input name="in2" type="float" value="0" />
+        </ifgreatereq>
+
+        <surface name="surface_constructor" type="surfaceshader">
+            <input name="bsdf" type="BSDF" nodename="diffuse_bsdf" />
+            <input name="edf" type="EDF" nodename="emission_edf" />
+            <input name="opacity" type="float" nodename="cutout_opacity" />
+        </surface>
+
+        <!-- Output -->
+        <output name="out" type="surfaceshader" nodename="surface_constructor" />
+    </nodegraph>
+
+    <!--
+      Node: <realitykit_occlusion>
+    -->
+    <nodegraph name="IM_realitykit_occlusion_surfaceshader" nodedef="ND_realitykit_occlusion_surfaceshader">
+
+        <!-- Diffuse Layer - necessary to avoid mxInit() bug in UsdMtlx -->
+        <oren_nayar_diffuse_bsdf name="diffuse_bsdf" type="BSDF">
+            <input name="color" type="color3" value="0.0, 0.0, 0.0" />
+        </oren_nayar_diffuse_bsdf>
+
+        <uniform_edf name="emission_edf" type="EDF">
+            <input name="color" type="color3" value="1.0,1.0,1.0" />
+        </uniform_edf>
+
+        <surface name="shader_constructor" type="surfaceshader">
+            <input name="bsdf" type="BSDF" nodename="diffuse_bsdf" />
+            <input name="edf" type="EDF" nodename="emission_edf" />
+        </surface>
+
+        <output name="out" type="surfaceshader" nodename="shader_constructor" />
+    </nodegraph>
+
+    <!--
+      Node: <realitykit_shadowreceiver>
+    -->
+    <nodegraph name="IM_realitykit_shadowreceiver_surfaceshader" nodedef="ND_realitykit_shadowreceiver_surfaceshader">
+
+        <!-- Diffuse Layer - necessary to avoid mxInit() bug in UsdMtlx -->
+        <oren_nayar_diffuse_bsdf name="diffuse_bsdf" type="BSDF">
+            <input name="color" type="color3" value="0.0, 0.0, 0.0" />
+        </oren_nayar_diffuse_bsdf>
+
+        <uniform_edf name="emission_edf" type="EDF">
+            <input name="color" type="color3" value="0.5,0.5,0.5" />
+        </uniform_edf>
+
+        <!-- Surface Shader Constructor -->
+        <surface name="surface_constructor" type="surfaceshader">
+            <input name="bsdf" type="BSDF" nodename="diffuse_bsdf" />
+            <input name="edf" type="EDF" nodename="emission_edf" />
+        </surface>
+
+        <!-- Output -->
+        <output name="out" type="surfaceshader" nodename="surface_constructor" />
+    </nodegraph>
+
+    <!--
+      Node: <fractional>
+      Returns the fractional part of all floating point inputs.
+     -->
+    <nodegraph name="IM_realitykit_fractional_float" nodedef="ND_realitykit_fractional_float">
+        <modulo name="modulo" type="float">
+            <input name="in1" type="float" interfacename="in"/>
+            <input name="in2" type="float" value="1.0"/>
+        </modulo>
+        <output name="out" type="float" nodename="modulo"/>
+    </nodegraph>
+    <nodegraph name="IM_realitykit_fractional_color3" nodedef="ND_realitykit_fractional_color3">
+        <modulo name="modulo" type="color3">
+            <input name="in1" type="color3" interfacename="in"/>
+            <input name="in2" type="color3" value="1.0, 1.0, 1.0"/>
+        </modulo>
+        <output name="out" type="color3" nodename="modulo"/>
+    </nodegraph>
+    <nodegraph name="IM_realitykit_fractional_color4" nodedef="ND_realitykit_fractional_color4">
+        <modulo name="modulo" type="color4">
+            <input name="in1" type="color4" interfacename="in"/>
+            <input name="in2" type="color4" value="1.0, 1.0, 1.0, 1.0"/>
+        </modulo>
+        <output name="out" type="color4" nodename="modulo"/>
+    </nodegraph>
+    <nodegraph name="IM_realitykit_fractional_vector2" nodedef="ND_realitykit_fractional_vector2">
+        <modulo name="modulo" type="vector2">
+            <input name="in1" type="vector2" interfacename="in"/>
+            <input name="in2" type="vector2" value="1.0, 1.0"/>
+        </modulo>
+        <output name="out" type="vector2" nodename="modulo"/>
+    </nodegraph>
+    <nodegraph name="NG_realitykit_fractional_vector3" nodedef="ND_realitykit_fractional_vector3">
+        <modulo name="modulo" type="vector3">
+            <input name="in1" type="vector3" interfacename="in"/>
+            <input name="in2" type="vector3" value="1.0, 1.0, 1.0"/>
+        </modulo>
+        <output name="out" type="vector3" nodename="modulo"/>
+    </nodegraph>
+    <nodegraph name="IM_realitykit_fractional_vector4" nodedef="ND_realitykit_fractional_vector4">
+        <modulo name="modulo" type="vector4">
+            <input name="in1" type="vector4" interfacename="in"/>
+            <input name="in2" type="vector4" value="1.0, 1.0, 1.0, 1.0"/>
+        </modulo>
+        <output name="out" type="vector4" nodename="modulo"/>
+    </nodegraph>
+
+    <!--
+      Node: <oneminus>
+      Returns scalar or vector where each component of the input is subtracted from 1.
+    -->
+    <nodegraph name="IM_realitykit_oneminus_float" nodedef="ND_realitykit_oneminus_float">
+        <subtract name="subtract" type="float">
+            <input name="in1" type="float" value="1.0"/>
+            <input name="in2" type="float" interfacename="in"/>
+        </subtract>
+        <output name="out" type="float" nodename="subtract"/>
+    </nodegraph>
+    <nodegraph name="IM_realitykit_oneminus_color3" nodedef="ND_realitykit_oneminus_color3">
+        <subtract name="subtract" type="color3">
+            <input name="in1" type="color3" value="1.0, 1.0, 1.0"/>
+            <input name="in2" type="color3" interfacename="in"/>
+        </subtract>
+        <output name="out" type="color3" nodename="subtract"/>
+    </nodegraph>
+    <nodegraph name="IM_realitykit_oneminus_color4" nodedef="ND_realitykit_oneminus_color4">
+        <subtract name="subtract" type="color4">
+            <input name="in1" type="color4" value="1.0, 1.0, 1.0, 1.0"/>
+            <input name="in2" type="color4" interfacename="in"/>
+        </subtract>
+        <output name="out" type="color4" nodename="subtract"/>
+    </nodegraph>
+    <nodegraph name="IM_realitykit_oneminus_vector2" nodedef="ND_realitykit_oneminus_vector2">
+        <subtract name="subtract" type="vector2">
+            <input name="in1" type="vector2" value="1.0, 1.0"/>
+            <input name="in2" type="vector2" interfacename="in"/>
+        </subtract>
+        <output name="out" type="vector2" nodename="subtract"/>
+    </nodegraph>
+    <nodegraph name="IM_realitykit_oneminus_vector3" nodedef="ND_realitykit_oneminus_vector3">
+        <subtract name="subtract" type="vector3">
+            <input name="in1" type="vector3" value="1.0, 1.0, 1.0"/>
+            <input name="in2" type="vector3" interfacename="in"/>
+        </subtract>
+        <output name="out" type="vector3" nodename="subtract"/>
+    </nodegraph>
+    <nodegraph name="IM_realitykit_oneminus_vector4" nodedef="ND_realitykit_oneminus_vector4">
+        <subtract name="subtract" type="vector4">
+            <input name="in1" type="vector4" value="1.0, 1.0, 1.0, 1.0"/>
+            <input name="in2" type="vector4" interfacename="in"/>
+        </subtract>
+        <output name="out" type="vector4" nodename="subtract"/>
+    </nodegraph>
+
+    <!--
+      Node: <step>
+      Returns 0 if in is below edge, and 1 above
+    -->
+    <nodegraph name="IM_realitykit_step_float" nodedef="ND_realitykit_step_float">
+        <ifgreater name="ifgreater" type="float">
+            <input name="value1" type="float" interfacename="in"/>
+            <input name="value2" type="float" interfacename="edge"/>
+            <input name="in1" type="float" value="1.0"/>
+            <input name="in2" type="float" value="0.0"/>
+        </ifgreater>
+        <output name="out" type="float" nodename="ifgreater"/>
+    </nodegraph>
+    <nodegraph name="IM_realitykit_step_color3" nodedef="ND_realitykit_step_color3">
+        <swizzle name="swizzle_in_r" type="float">
+            <input name="in" type="color3" interfacename="in"/>
+            <input name="channels" type="string" value="r"/>
+        </swizzle>
+        <swizzle name="swizzle_in_g" type="float">
+            <input name="in" type="color3" interfacename="in"/>
+            <input name="channels" type="string" value="g"/>
+        </swizzle>
+        <swizzle name="swizzle_in_b" type="float">
+            <input name="in" type="color3" interfacename="in"/>
+            <input name="channels" type="string" value="b"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_r" type="float">
+            <input name="in" type="color3" interfacename="edge"/>
+            <input name="channels" type="string" value="r"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_g" type="float">
+            <input name="in" type="color3" interfacename="edge"/>
+            <input name="channels" type="string" value="g"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_b" type="float">
+            <input name="in" type="color3" interfacename="edge"/>
+            <input name="channels" type="string" value="b"/>
+        </swizzle>
+        <step name="step_r" type="float">
+            <input name="in" type="float" nodename="swizzle_in_r"/>
+            <input name="edge" type="float" nodename="swizzle_edge_r"/>
+        </step>
+        <step name="step_g" type="float">
+            <input name="in" type="float" nodename="swizzle_in_g"/>
+            <input name="edge" type="float" nodename="swizzle_edge_g"/>
+        </step>
+        <step name="step_b" type="float">
+            <input name="in" type="float" nodename="swizzle_in_b"/>
+            <input name="edge" type="float" nodename="swizzle_edge_b"/>
+        </step>
+        <combine3 name="combine" type="color3">
+            <input name="in1" type="float" nodename="step_r" />
+            <input name="in2" type="float" nodename="step_g" />
+            <input name="in3" type="float" nodename="step_b" />
+        </combine3>
+        <output name="out" type="color3" nodename="combine"/>
+    </nodegraph>
+    <nodegraph name="IM_realitykit_step_color4" nodedef="ND_realitykit_step_color4">
+        <swizzle name="swizzle_in_r" type="float">
+            <input name="in" type="color4" interfacename="in"/>
+            <input name="channels" type="string" value="r"/>
+        </swizzle>
+        <swizzle name="swizzle_in_g" type="float">
+            <input name="in" type="color4" interfacename="in"/>
+            <input name="channels" type="string" value="g"/>
+        </swizzle>
+        <swizzle name="swizzle_in_b" type="float">
+            <input name="in" type="color4" interfacename="in"/>
+            <input name="channels" type="string" value="b"/>
+        </swizzle>
+        <swizzle name="swizzle_in_a" type="float">
+            <input name="in" type="color4" interfacename="in"/>
+            <input name="channels" type="string" value="a"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_r" type="float">
+            <input name="in" type="color4" interfacename="edge"/>
+            <input name="channels" type="string" value="r"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_g" type="float">
+            <input name="in" type="color4" interfacename="edge"/>
+            <input name="channels" type="string" value="g"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_b" type="float">
+            <input name="in" type="color4" interfacename="edge"/>
+            <input name="channels" type="string" value="b"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_a" type="float">
+            <input name="in" type="color4" interfacename="edge"/>
+            <input name="channels" type="string" value="a"/>
+        </swizzle>
+        <step name="step_r" type="float">
+            <input name="in" type="float" nodename="swizzle_in_r"/>
+            <input name="edge" type="float" nodename="swizzle_edge_r"/>
+        </step>
+        <step name="step_g" type="float">
+            <input name="in" type="float" nodename="swizzle_in_g"/>
+            <input name="edge" type="float" nodename="swizzle_edge_g"/>
+        </step>
+        <step name="step_b" type="float">
+            <input name="in" type="float" nodename="swizzle_in_b"/>
+            <input name="edge" type="float" nodename="swizzle_edge_b"/>
+        </step>
+        <step name="step_a" type="float">
+            <input name="in" type="float" nodename="swizzle_in_a"/>
+            <input name="edge" type="float" nodename="swizzle_edge_a"/>
+        </step>
+        <combine4 name="combine" type="color4">
+            <input name="in1" type="float" nodename="step_r" />
+            <input name="in2" type="float" nodename="step_g" />
+            <input name="in3" type="float" nodename="step_b" />
+            <input name="in4" type="float" nodename="step_a" />
+        </combine4>
+        <output name="out" type="color4" nodename="combine"/>
+    </nodegraph>
+    <nodegraph name="IM_realitykit_step_vector2" nodedef="ND_realitykit_step_vector2">
+        <swizzle name="swizzle_in_x" type="float">
+            <input name="in" type="vector2" interfacename="in"/>
+            <input name="channels" type="string" value="x"/>
+        </swizzle>
+        <swizzle name="swizzle_in_y" type="float">
+            <input name="in" type="vector2" interfacename="in"/>
+            <input name="channels" type="string" value="y"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_x" type="float">
+            <input name="in" type="vector2" interfacename="edge"/>
+            <input name="channels" type="string" value="x"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_y" type="float">
+            <input name="in" type="vector2" interfacename="edge"/>
+            <input name="channels" type="string" value="y"/>
+        </swizzle>
+        <step name="step_x" type="float">
+            <input name="in" type="float" nodename="swizzle_in_x"/>
+            <input name="edge" type="float" nodename="swizzle_edge_x"/>
+        </step>
+        <step name="step_y" type="float">
+            <input name="in" type="float" nodename="swizzle_in_y"/>
+            <input name="edge" type="float" nodename="swizzle_edge_y"/>
+        </step>
+        <combine2 name="combine" type="vector2">
+            <input name="in1" type="float" nodename="step_x" />
+            <input name="in2" type="float" nodename="step_y" />
+        </combine2>
+        <output name="out" type="vector2" nodename="combine"/>
+    </nodegraph>
+    <nodegraph name="IM_realitykit_step_vector3" nodedef="ND_realitykit_step_vector3">
+        <swizzle name="swizzle_in_x" type="float">
+            <input name="in" type="vector3" interfacename="in"/>
+            <input name="channels" type="string" value="x"/>
+        </swizzle>
+        <swizzle name="swizzle_in_y" type="float">
+            <input name="in" type="vector3" interfacename="in"/>
+            <input name="channels" type="string" value="y"/>
+        </swizzle>
+        <swizzle name="swizzle_in_z" type="float">
+            <input name="in" type="vector3" interfacename="in"/>
+            <input name="channels" type="string" value="z"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_x" type="float">
+            <input name="in" type="vector3" interfacename="edge"/>
+            <input name="channels" type="string" value="x"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_y" type="float">
+            <input name="in" type="vector3" interfacename="edge"/>
+            <input name="channels" type="string" value="y"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_z" type="float">
+            <input name="in" type="vector3" interfacename="edge"/>
+            <input name="channels" type="string" value="z"/>
+        </swizzle>
+        <step name="step_x" type="float">
+            <input name="in" type="float" nodename="swizzle_in_x"/>
+            <input name="edge" type="float" nodename="swizzle_edge_x"/>
+        </step>
+        <step name="step_y" type="float">
+            <input name="in" type="float" nodename="swizzle_in_y"/>
+            <input name="edge" type="float" nodename="swizzle_edge_y"/>
+        </step>
+        <step name="step_z" type="float">
+            <input name="in" type="float" nodename="swizzle_in_z"/>
+            <input name="edge" type="float" nodename="swizzle_edge_z"/>
+        </step>
+        <combine3 name="combine" type="vector3">
+            <input name="in1" type="float" nodename="step_x" />
+            <input name="in2" type="float" nodename="step_y" />
+            <input name="in3" type="float" nodename="step_z" />
+        </combine3>
+        <output name="out" type="vector3" nodename="combine"/>
+    </nodegraph>
+    <nodegraph name="IM_realitykit_step_vector4" nodedef="ND_realitykit_step_vector4">
+        <swizzle name="swizzle_in_x" type="float">
+            <input name="in" type="vector4" interfacename="in"/>
+            <input name="channels" type="string" value="x"/>
+        </swizzle>
+        <swizzle name="swizzle_in_y" type="float">
+            <input name="in" type="vector4" interfacename="in"/>
+            <input name="channels" type="string" value="y"/>
+        </swizzle>
+        <swizzle name="swizzle_in_z" type="float">
+            <input name="in" type="vector4" interfacename="in"/>
+            <input name="channels" type="string" value="z"/>
+        </swizzle>
+        <swizzle name="swizzle_in_w" type="float">
+            <input name="in" type="vector4" interfacename="in"/>
+            <input name="channels" type="string" value="w"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_x" type="float">
+            <input name="in" type="vector4" interfacename="edge"/>
+            <input name="channels" type="string" value="x"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_y" type="float">
+            <input name="in" type="vector4" interfacename="edge"/>
+            <input name="channels" type="string" value="y"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_z" type="float">
+            <input name="in" type="vector4" interfacename="edge"/>
+            <input name="channels" type="string" value="z"/>
+        </swizzle>
+        <swizzle name="swizzle_edge_w" type="float">
+            <input name="in" type="vector4" interfacename="edge"/>
+            <input name="channels" type="string" value="w"/>
+        </swizzle>
+        <step name="step_x" type="float">
+            <input name="in" type="float" nodename="swizzle_in_x"/>
+            <input name="edge" type="float" nodename="swizzle_edge_x"/>
+        </step>
+        <step name="step_y" type="float">
+            <input name="in" type="float" nodename="swizzle_in_y"/>
+            <input name="edge" type="float" nodename="swizzle_edge_y"/>
+        </step>
+        <step name="step_z" type="float">
+            <input name="in" type="float" nodename="swizzle_in_z"/>
+            <input name="edge" type="float" nodename="swizzle_edge_z"/>
+        </step>
+        <step name="step_w" type="float">
+            <input name="in" type="float" nodename="swizzle_in_w"/>
+            <input name="edge" type="float" nodename="swizzle_edge_w"/>
+        </step>
+        <combine4 name="combine" type="vector4">
+            <input name="in1" type="float" nodename="step_x" />
+            <input name="in2" type="float" nodename="step_y" />
+            <input name="in3" type="float" nodename="step_z" />
+            <input name="in4" type="float" nodename="step_w" />
+        </combine4>
+        <output name="out" type="vector4" nodename="combine"/>
+    </nodegraph>
+
+    <!--
+      Node: <realitykit_reflect>
+      Note: reflection vector = in - 2(dot(in,N)N)
+    -->
+    <nodegraph name="IM_realitykit_reflect_vector3" nodedef="ND_realitykit_reflect_vector3">
+        <dotproduct name="NdotI" type="float">
+            <input name="in1" type="vector3" interfacename="normal" />
+            <input name="in2" type="vector3" interfacename="in" />
+        </dotproduct>
+        <multiply name="NdotI_2" type="float">
+            <input name="in1" type="float" nodename="NdotI" />
+            <input name="in2" type="float" value="2" />
+        </multiply>
+        <multiply name="NdotI_N_2" type="vector3">
+            <input name="in1" type="vector3" interfacename="normal" />
+            <input name="in2" type="float" nodename="NdotI_2" />
+        </multiply>
+        <subtract name="reflection_vector" type="vector3">
+            <input name="in1" type="vector3" interfacename="in" />
+            <input name="in2" type="vector3" nodename="NdotI_N_2" />
+        </subtract>
+        <output name="out" type="vector3" nodename="reflection_vector" />
+    </nodegraph>
+
+    <!--
+      Node: <realitykit_refract>
+      Note:
+      From OSL codebase
+        vector refract (vector I, vector N, float eta)
+        {
+            float IdotN = dot (I, N);
+            float k = 1 - eta*eta * (1 - IdotN*IdotN);
+            return (k < 0) ? vector(0,0,0) : (eta*I - N * (eta*IdotN + sqrt(k)));
+        }
+    -->
+    <nodegraph name="IM_realitykit_refract_vector3" nodedef="ND_realitykit_refract_vector3">
+        <dotproduct name="IdotN" type="float">
+            <input name="in1" type="vector3" interfacename="in"/>
+            <input name="in2" type="vector3" interfacename="normal"/>
+        </dotproduct>
+        <multiply name="IdotNsq" type="float">
+            <input name="in1" type="float" nodename="IdotN"/>
+            <input name="in2" type="float" nodename="IdotN"/>
+        </multiply>
+        <multiply name="etasq" type="float">
+            <input name="in1" type="float" interfacename="eta"/>
+            <input name="in2" type="float" interfacename="eta"/>
+        </multiply>
+        <subtract name="one_IdotNsq" type="float">
+            <input name="in1" type="float" value="1.0"/>
+            <input name="in2" type="float" nodename="IdotNsq"/>
+        </subtract>
+        <multiply name="etasq_one_IdotNsq" type="float">
+            <input name="in1" type="float" nodename="etasq"/>
+            <input name="in2" type="float" nodename="one_IdotNsq"/>
+        </multiply>
+        <subtract name="k" type="float">
+            <input name="in1" type="float" value="1.0"/>
+            <input name="in2" type="float" nodename="etasq_one_IdotNsq"/>
+        </subtract>
+        <multiply name="I_scaled" type="vector3">
+            <input name="in1" type="vector3" interfacename="in"/>
+            <input name="in2" type="float" interfacename="eta"/>
+        </multiply>
+        <sqrt name="sqrt_k" type="float">
+            <input name="in" type="float" nodename="k"/>
+        </sqrt>
+        <multiply name="eta_NdotI" type="float">
+            <input name="in1" type="float" interfacename="eta"/>
+            <input name="in2" type="float" nodename="IdotN"/>
+        </multiply>
+        <add name="eta_NdotI_sqrt_k" type="float">
+            <input name="in1" type="float" nodename="eta_NdotI"/>
+            <input name="in2" type="float" nodename="sqrt_k"/>
+        </add>
+        <multiply name="N_scaled" type="vector3">
+            <input name="in1" type="vector3" interfacename="normal"/>
+            <input name="in2" type="float" nodename="eta_NdotI_sqrt_k"/>
+        </multiply>
+        <subtract name="refract_dir" type="vector3">
+            <input name="in1" type="vector3" nodename="I_scaled"/>
+            <input name="in2" type="vector3" nodename="N_scaled"/>
+        </subtract>
+        <ifgreater name="result" type="vector3">
+            <input name="value1" type="float" value="0.0"/>
+            <input name="value2" type="float" nodename="k"/>
+            <input name="in1" type="vector3" value="0.0, 0.0, 0.0"/>
+            <input name="in2" type="vector3" nodename="refract_dir"/>
+        </ifgreater>
+        <output name="out" type="vector3" nodename="result"/>
+    </nodegraph>
+
+    <!--
+      Node: <RealityKit Image nodes
+        Lots of assumptions/approximations taken here as the parameters don't align at all.
+        * "u_wrap_mode" - ignored - hardcoded to 'clamp'
+        * "v_wrap_mode" - ignored - hardcoded to 'clamp'
+        * "border_color" - ignored
+        * "mag_filter" - ignored - all filtering is 'linear'
+        * "min_filter" - ignored - all filtering is 'linear'
+        * "mip_filter" - ignored - all filtering is 'linear'
+        * "max_anisotropy" - ignored
+        * "max_lod_clamp" - ignored
+        * "min_lod_clamp" - ignored
+        * "bias" - ignored
+        * "dynamic_min_lod_clamp" - ignored
+        * "offset" - ignored
+        * "lod" - ignored
+        * "gradient_dPdx" - ignored
+        * "gradient_dPdy" - ignored
+
+    -->
+
+    <!--
+      Node: <RealityKitTexture2D>, <RealityKitTexture2DLOD>, <RealityKitTexture2DGradient>,
+        <RealityKitTexture2DPixel>, <RealityKitTexture2DPixelLOD>, <RealityKitTexture2DPixelGradient>
+      Notes: realityKit texture nodes use textures with T flipped relative to the MaterialX image nodes
+    -->
+
+    <nodegraph name="IM_RealityKitTexture2D_color3" nodedef="ND_RealityKitTexture2D_color3">
+        <swizzle name="extract_s" type="float">
+            <input name="in" type="vector2" interfacename="texcoord"/>
+            <input name="channels" type="string" value="x"/>
+        </swizzle>
+        <swizzle name="extract_t" type="float">
+            <input name="in" type="vector2" interfacename="texcoord"/>
+            <input name="channels" type="string" value="y"/>
+        </swizzle>
+        <subtract name="invert_t" type="float">
+            <input name="in1" type="float" value="1.0"/>
+            <input name="in2" type="float" nodename="extract_t"/>
+        </subtract>
+        <combine2 name="combine_texcoord" type="vector2">
+            <input name="in1" type="float" nodename="extract_s"/>
+            <input name="in2" type="float" nodename="invert_t"/>
+        </combine2>
+        <ifequal name="computed_texcoord" type="vector2">
+            <input name="value1" type="boolean" interfacename="no_flip_v"/>
+            <input name="value2" type="boolean" value="true"/>
+            <input name="in1" type="vector2" interfacename="texcoord"/>
+            <input name="in2" type="vector2" nodename="combine_texcoord"/>
+        </ifequal>
+        <image name="image" type="color3">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="color3" interfacename="default" />
+            <input name="texcoord" type="vector2" nodename="computed_texcoord" />
+            <input name="uaddressmode" type="string" value="clamp" />
+            <input name="vaddressmode" type="string" value="clamp" />
+            <input name="filtertype" type="string" value="linear" />
+            <output name="out" type="color3" default="0.0, 0.0, 0.0" />
+        </image>
+        <output name="out" type="color3" nodename="image"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTexture2D_color4" nodedef="ND_RealityKitTexture2D_color4">
+        <swizzle name="extract_s" type="float">
+            <input name="in" type="vector2" interfacename="texcoord"/>
+            <input name="channels" type="string" value="x"/>
+        </swizzle>
+        <swizzle name="extract_t" type="float">
+            <input name="in" type="vector2" interfacename="texcoord"/>
+            <input name="channels" type="string" value="y"/>
+        </swizzle>
+        <subtract name="invert_t" type="float">
+            <input name="in1" type="float" value="1.0"/>
+            <input name="in2" type="float" nodename="extract_t"/>
+        </subtract>
+        <combine2 name="combine_texcoord" type="vector2">
+            <input name="in1" type="float" nodename="extract_s"/>
+            <input name="in2" type="float" nodename="invert_t"/>
+        </combine2>
+        <ifequal name="computed_texcoord" type="vector2">
+            <input name="value1" type="boolean" interfacename="no_flip_v"/>
+            <input name="value2" type="boolean" value="true"/>
+            <input name="in1" type="vector2" interfacename="texcoord"/>
+            <input name="in2" type="vector2" nodename="combine_texcoord"/>
+        </ifequal>
+        <image name="image" type="color4">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="color4" interfacename="default" />
+            <input name="texcoord" type="vector2" nodename="computed_texcoord" />
+            <input name="uaddressmode" type="string" value="clamp" />
+            <input name="vaddressmode" type="string" value="clamp" />
+            <input name="filtertype" type="string" value="linear" />
+            <output name="out" type="color4" default="0.0, 0.0, 0.0, 0.0" />
+        </image>
+        <output name="out" type="color4" nodename="image"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTexture2D_vector4" nodedef="ND_RealityKitTexture2D_vector4">
+        <swizzle name="extract_s" type="float">
+            <input name="in" type="vector2" interfacename="texcoord"/>
+            <input name="channels" type="string" value="x"/>
+        </swizzle>
+        <swizzle name="extract_t" type="float">
+            <input name="in" type="vector2" interfacename="texcoord"/>
+            <input name="channels" type="string" value="y"/>
+        </swizzle>
+        <subtract name="invert_t" type="float">
+            <input name="in1" type="float" value="1.0"/>
+            <input name="in2" type="float" nodename="extract_t"/>
+        </subtract>
+        <combine2 name="combine_texcoord" type="vector2">
+            <input name="in1" type="float" nodename="extract_s"/>
+            <input name="in2" type="float" nodename="invert_t"/>
+        </combine2>
+        <ifequal name="computed_texcoord" type="vector2">
+            <input name="value1" type="boolean" interfacename="no_flip_v"/>
+            <input name="value2" type="boolean" value="true"/>
+            <input name="in1" type="vector2" interfacename="texcoord"/>
+            <input name="in2" type="vector2" nodename="combine_texcoord"/>
+        </ifequal>
+        <image name="image" type="vector4">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="vector4" interfacename="default" />
+            <input name="texcoord" type="vector2" nodename="computed_texcoord" />
+            <input name="uaddressmode" type="string" value="clamp" />
+            <input name="vaddressmode" type="string" value="clamp" />
+            <input name="filtertype" type="string" value="linear" />
+            <output name="out" type="vector4" default="0.0, 0.0, 0.0, 0.0" />
+        </image>
+        <output name="out" type="vector4" nodename="image"/>
+    </nodegraph>
+
+    <nodegraph name="IM_RealityKitTexture2DLOD_color3" nodedef="ND_RealityKitTexture2DLOD_color3">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="color3">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="color3" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="color3" default="0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="color3" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTexture2DLOD_color4" nodedef="ND_RealityKitTexture2DLOD_color4">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="color4">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="color4" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="color4" default="0.0, 0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="color4" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTexture2DLOD_vector4" nodedef="ND_RealityKitTexture2DLOD_vector4">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="vector4">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="vector4" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="vector4" default="0.0, 0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="vector4" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+
+    <nodegraph name="IM_RealityKitTexture2DGradient_color3" nodedef="ND_RealityKitTexture2DGradient_color3">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="color3">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="color3" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="color3" default="0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="color3" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTexture2DGradient_color4" nodedef="ND_RealityKitTexture2DGradient_color4">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="color4">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="color4" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="color4" default="0.0, 0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="color4" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTexture2DGradient_vector4" nodedef="ND_RealityKitTexture2DGradient_vector4">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="vector4">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="vector4" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="vector4" default="0.0, 0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="vector4" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+
+    <nodegraph name="IM_RealityKitTexture2DPixel_color3" nodedef="ND_RealityKitTexture2DPixel_color3">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="color3">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="color3" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="color3" default="0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="color3" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTexture2DPixel_color4" nodedef="ND_RealityKitTexture2DPixel_color4">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="color4">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="color4" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="color4" default="0.0, 0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="color4" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTexture2DPixel_vector4" nodedef="ND_RealityKitTexture2DPixel_vector4">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="vector4">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="vector4" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="vector4" default="0.0, 0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="vector4" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+
+    <nodegraph name="IM_RealityKitTexture2DPixelLOD_color3" nodedef="ND_RealityKitTexture2DPixelLOD_color3">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="color3">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="color3" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="color3" default="0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="color3" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTexture2DPixelLOD_color4" nodedef="ND_RealityKitTexture2DPixelLOD_color4">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="color4">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="color4" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="color4" default="0.0, 0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="color4" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTexture2DPixelLOD_vector4" nodedef="ND_RealityKitTexture2DPixelLOD_vector4">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="vector4">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="vector4" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="vector4" default="0.0, 0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="vector4" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+
+    <nodegraph name="IM_RealityKitTexture2DPixelGradient_color3" nodedef="ND_RealityKitTexture2DPixelGradient_color3">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="color3">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="color3" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="color3" default="0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="color3" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTexture2DPixelGradient_color4" nodedef="ND_RealityKitTexture2DPixelGradient_color4">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="color4">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="color4" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="color4" default="0.0, 0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="color4" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTexture2DPixelGradient_vector4" nodedef="ND_RealityKitTexture2DPixelGradient_vector4">
+        <RealityKitTexture2D name="RealityKitTexture2D" type="vector4">
+            <input name="file" type="filename" interfacename="file" />
+            <input name="default" type="vector4" interfacename="default" />
+            <input name="texcoord" type="vector2" interfacename="texcoord" />
+            <output name="out" type="vector4" default="0.0, 0.0, 0.0, 0.0" />
+        </RealityKitTexture2D>
+        <output name="out" type="vector4" nodename="RealityKitTexture2D"/>
+    </nodegraph>
+
+    <!-- place holder implementations that return the default value since these nodes require KTX textures in ShaderGraph -->
+    <nodegraph name="IM_RealityKitTextureRead_vector4" nodedef="ND_RealityKitTextureRead_vector4">
+        <constant name="placeholder" type="vector4">
+            <input name="value" type="vector4" interfacename="default"/>
+        </constant>
+        <output name="out" type="vector4" nodename="placeholder"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTextureRead_color4" nodedef="ND_RealityKitTextureRead_color4">
+        <constant name="placeholder" type="color4">
+            <input name="value" type="color4" interfacename="default"/>
+        </constant>
+        <output name="out" type="color4" nodename="placeholder"/>
+    </nodegraph>
+
+    <nodegraph name="IM_RealityKitTextureCube_color4" nodedef="ND_RealityKitTextureCube_color4">
+        <constant name="placeholder" type="color4">
+            <input name="value" type="color4" interfacename="default"/>
+        </constant>
+        <output name="out" type="color4" nodename="placeholder"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTextureCube_vector4" nodedef="ND_RealityKitTextureCube_vector4">
+        <constant name="placeholder" type="vector4">
+            <input name="value" type="vector4" interfacename="default"/>
+        </constant>
+        <output name="out" type="vector4" nodename="placeholder"/>
+    </nodegraph>
+
+    <nodegraph name="IM_RealityKitTextureCubeLOD_color4" nodedef="ND_RealityKitTextureCubeLOD_color4">
+        <constant name="placeholder" type="color4">
+            <input name="value" type="color4" interfacename="default"/>
+        </constant>
+        <output name="out" type="color4" nodename="placeholder"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTextureCubeLOD_vector4" nodedef="ND_RealityKitTextureCubeLOD_vector4">
+        <constant name="placeholder" type="vector4">
+            <input name="value" type="vector4" interfacename="default"/>
+        </constant>
+        <output name="out" type="vector4" nodename="placeholder"/>
+    </nodegraph>
+
+    <nodegraph name="IM_RealityKitTextureCubeGradient_color4" nodedef="ND_RealityKitTextureCubeGradient_color4">
+        <constant name="placeholder" type="color4">
+            <input name="value" type="color4" interfacename="default"/>
+        </constant>
+        <output name="out" type="color4" nodename="placeholder"/>
+    </nodegraph>
+    <nodegraph name="IM_RealityKitTextureCubeGradient_vector4" nodedef="ND_RealityKitTextureCubeGradient_vector4">
+        <constant name="placeholder" type="vector4">
+            <input name="value" type="vector4" interfacename="default"/>
+        </constant>
+        <output name="out" type="vector4" nodename="placeholder"/>
+    </nodegraph>
+
+</materialx>

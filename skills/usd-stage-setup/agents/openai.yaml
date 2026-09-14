@@ -1,0 +1,6 @@
+interface:
+  display_name: "USD Stage for Blender Setup"
+  short_description: "Configure the USD Stage for Blender CLI — locate Blender, verify the plugin, set up a shell alias."
+
+policy:
+  allow_implicit_invocation: false

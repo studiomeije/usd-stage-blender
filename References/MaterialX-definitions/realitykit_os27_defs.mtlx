@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<!--
+Copyright © 2024 Apple Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+-->
+<!--
+Project provenance: OS 27 contract verified against Reality Composer Pro 3.0
+build 79.3.0.500.4. Only the PBR Surface 2 nodedef USD Stage for Blender
+needs is vendored here. The source Apple document declares MaterialX 1.38.
+-->
+<materialx version="1.38">
+  <nodedef name="ND_realitykit_pbr_surfaceshader_2_0"
+           node="realitykit_pbr_surfaceshader"
+           nodegroup="realitykit"
+           target="realitykit"
+           apple_availability="visionOS 27.0; macOS 27.0; iOS 27.0"
+           version="2.0"
+           isdefaultversion="true">
+    <input name="baseColor" type="color3" value="0.18, 0.18, 0.18" />
+    <input name="emissiveColor" type="color3" value="0, 0, 0" />
+    <input name="normal" type="vector3" value="0, 0, 1" />
+    <input name="roughness" type="float" value="0.5" />
+    <input name="metallic" type="float" value="0" />
+    <input name="ambientOcclusion" type="float" value="1" />
+    <input name="specular" type="float" value="0.5" />
+    <input name="opacity" type="float" value="1" />
+    <input name="opacityThreshold" type="float" value="0" />
+    <input name="clearcoat" type="float" value="0" />
+    <input name="clearcoatRoughness" type="float" value="0.01" />
+    <input name="clearcoatNormal" type="vector3" value="0, 0, 1" />
+    <input name="subsurfaceWeight" type="float" value="0" />
+    <input name="subsurfaceColor" type="color3" value="0.8, 0.8, 0.8" />
+    <input name="subsurfaceRadius" type="float" value="1" />
+    <input name="subsurfaceRadiusScale" type="color3" value="1.0, 0.5, 0.25" />
+    <input name="subsurfaceScatterAnisotropy" type="float" value="0" />
+    <input name="bentNormal" type="vector3" value="0, 0, 1" />
+    <input name="sheenColor" type="color3" value="0, 0, 0" />
+    <input name="bakedIndirectIrradiance" type="color3" value="-1, -1, -1" />
+    <input name="hasPremultipliedAlpha" type="boolean" value="false" uniform="true" />
+    <input name="baseDiffuseRoughness" type="half" value="0.0" />
+    <input name="clearcoatIOR" type="float" value="1.6" />
+    <input name="clearcoatAnisotropyLevel" type="float" value="0.0" />
+    <input name="clearcoatAnisotropyAngle" type="float" value="0.0" />
+    <input name="specularIOR" type="float" value="1.5" />
+    <input name="specularAnisotropyLevel" type="float" value="0.0" />
+    <input name="specularAnisotropyAngle" type="float" value="0.0" />
+    <input name="specularColor" type="color3" value="1, 1, 1" />
+    <input name="specularWeight" type="half" value="1" />
+    <output name="out" type="surfaceshader" />
+  </nodedef>
+</materialx>
