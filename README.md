@@ -39,13 +39,13 @@ Blender's interface.
 
 ## Install
 
-USD Stage for Blender is distributed from the private
-`studiomeije/usd-stage-blender` repository. Ask Tom Krikorian
-(tom@studiomeije.com) for access.
+USD Stage for Blender is available from the public
+[studiomeije/usd-stage-blender](https://github.com/studiomeije/usd-stage-blender)
+repository.
 
 1. Download `usd-stage-for-blender-<version>.zip` and its matching
    `usd-stage-for-blender-<version>.zip.sha256` from the repository's
-   Releases page.
+   [Releases page](https://github.com/studiomeije/usd-stage-blender/releases).
 2. Verify the download from the folder that holds both files:
 
    ```bash

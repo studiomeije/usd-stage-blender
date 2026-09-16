@@ -12,9 +12,9 @@ set up the `usdstage` alias the `usd-stage-cli` skill uses.
 
 - Blender 5.2 or newer.
 - The USD Stage for Blender add-on installed and enabled. The release zip,
-  `usd-stage-for-blender-<version>.zip`, comes from the private
-  `studiomeije/usd-stage-blender` repository (ask tom@studiomeije.com for
-  access) and installs through **Edit ▸ Preferences ▸ Extensions ▸ Add-ons ▸
+  `usd-stage-for-blender-<version>.zip`, comes from the public repository's
+  [Releases page](https://github.com/studiomeije/usd-stage-blender/releases)
+  and installs through **Edit ▸ Preferences ▸ Extensions ▸ Add-ons ▸
   Install from Disk…**. A development install symlinks `<repo>/Plugin` to
   `extensions/user_default/usd_stage`.
 - Python 3 on the path (`python3`, or `py` on Windows).
