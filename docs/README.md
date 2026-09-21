@@ -23,4 +23,4 @@ This page is the index of the USD Stage for Blender documentation. Use it to fin
 
 ## Known issues
 
-Open defects are tracked in the issues of the private `studiomeije/usd-stage-blender` repository. Search there before filing a bug; it may already be recorded. Without access to the repository, send the report and a support bundle to tom@studiomeije.com.
+Open defects are tracked in the public repository's [GitHub issues](https://github.com/studiomeije/usd-stage-blender/issues). Search there before filing a bug; it may already be recorded. When opening an issue, include a report and a support bundle as described in [Reporting a problem](CLI.md#reporting-a-problem).
