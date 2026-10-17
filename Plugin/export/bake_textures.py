@@ -409,8 +409,20 @@ def _bake_materials_for_objects_impl(
                 if getattr(getattr(obj, "data", None), "users", 1) > 1:
                     try:
                         slot.link = 'OBJECT'
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # The assignment below then writes onto the shared mesh
+                        # after all, which is the result the OBJECT link exists
+                        # to prevent. Carrying on is still better than failing
+                        # the bake, but it must not be silent: the symptom is a
+                        # wrong material on a linked duplicate, which looks
+                        # like a translation bug rather than this.
+                        if diagnostics:
+                            diagnostics.add_warning(
+                                "Could not move the material slot of "
+                                f"'{getattr(obj, 'name', '?')}' onto the object "
+                                f"({exc}); its baked material is shared with "
+                                "the other users of the same mesh."
+                            )
                 slot.material = baked_mat
                 result.baked_materials.append(baked_mat)
 

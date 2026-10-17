@@ -34,7 +34,7 @@ def test_ensure_addon_loaded_enables_discovered_module(monkeypatch):
     def addon_enable(*, module: str):
         calls.append(module)
         if module == "bl_ext.user_default.usd_stage":
-            setattr(scene_type, "usd_stage_export_settings", object())
+            scene_type.usd_stage_export_settings = object()
             return {"FINISHED"}
         raise RuntimeError("module not found")
 

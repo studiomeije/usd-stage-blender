@@ -3,6 +3,7 @@
 from typing import Any, Dict, Optional
 
 from . import core as _core
+from . import expr as _expr
 
 
 # ---------------------------------------------------------------------------
@@ -132,8 +133,8 @@ def _driver_tree(expression: str):
 
 
 def _frame_expr(fps: float) -> Dict[str, Any]:
-    seconds = _core._make_node_expr(_core._nodedef_for("time", "float"), {"fps": _core._constant_expr(float(fps))})
-    return _core._float_node("multiply", in1=seconds, in2=_core._constant_expr(float(fps)))
+    seconds = _expr._make_node_expr(_expr._nodedef_for("time", "float"), {"fps": _expr._constant_expr(float(fps))})
+    return _core._float_node("multiply", in1=seconds, in2=_expr._constant_expr(float(fps)))
 
 
 def driver_expression_expr(expression: str, fps: float) -> Dict[str, Any]:
@@ -148,7 +149,7 @@ def driver_expression_expr(expression: str, fps: float) -> Dict[str, Any]:
         if isinstance(node, _ast.Expression):
             return build(node.body)
         if isinstance(node, _ast.Constant):
-            return _core._constant_expr(float(node.value))
+            return _expr._constant_expr(float(node.value))
         if isinstance(node, _ast.Name):
             return _frame_expr(fps)
         if isinstance(node, _ast.UnaryOp):
@@ -156,8 +157,8 @@ def driver_expression_expr(expression: str, fps: float) -> Dict[str, Any]:
             if isinstance(node.op, _ast.UAdd):
                 return inner
             if inner.get("kind") == "constant":
-                return _core._constant_expr(-float(inner["value"]))
-            return _core._float_node("multiply", in1=inner, in2=_core._constant_expr(-1.0))
+                return _expr._constant_expr(-float(inner["value"]))
+            return _core._float_node("multiply", in1=inner, in2=_expr._constant_expr(-1.0))
         if isinstance(node, _ast.BinOp):
             left, right = build(node.left), build(node.right)
             if left.get("kind") == "constant" and right.get("kind") == "constant":
@@ -166,7 +167,7 @@ def driver_expression_expr(expression: str, fps: float) -> Dict[str, Any]:
                 if folded is None:
                     folded = a / b if b != 0.0 else None
                 if folded is not None:
-                    return _core._constant_expr(folded)
+                    return _expr._constant_expr(folded)
             return _core._float_node(_DRIVER_BINARY[type(node.op)], in1=left, in2=right)
         if isinstance(node, _ast.Call):
             name, arity = _DRIVER_FUNCTIONS[node.func.id]

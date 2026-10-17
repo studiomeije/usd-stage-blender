@@ -5,6 +5,20 @@ Notable changes to USD Stage for Blender, newest first. Dates are release dates.
 Entries describe what changed for you — what now works, what stops the export,
 and what you have to do differently. Internal refactors are not listed.
 
+## 1.1.0 — 2026-10-17
+
+- An export where two materials have names that reduce to the same USD prim
+  name now stops with an error naming both materials and the prim they share.
+  Blender's exporter writes a single material prim for them and binds every
+  mesh to it, so one material was dropped and the meshes that used it exported
+  with the other one — and which of the two survived depended on export order.
+  Rename all but one so the names still differ once the characters USD cannot
+  use in a prim name are replaced. A material slot no face uses is unaffected,
+  and so is a mesh that binds several materials through GeomSubsets.
+- A bake that cannot move a shared mesh's material slot onto its object now
+  says so in the diagnostics report. It previously carried on in silence, and
+  the symptom was one instance's bake appearing on its linked duplicates.
+
 ## 1.0.0 — 2026-09-14
 
 The first release of USD Stage for Blender. It exports Blender scenes to

@@ -3,7 +3,10 @@ Material rewrite orchestration for USD stages.
 """
 
 from ..usd_utils import Usd, UsdShade, Sdf, UsdGeom
-from ..usd_hook import consume_captured_material_map
+from ..usd_hook import (
+    consume_captured_material_map,
+    consume_captured_mesh_material_map,
+)
 from ..usd_textures import require_safe_texture_alpha_staging_policy
 from ...material_policies import (
     normalize_extracted_specular_tint,
@@ -38,6 +41,13 @@ def rewrite_materials(stage, settings, context, diagnostics=None) -> None:
     # Exact {material prim path: Blender material name} recorded by the
     # USDHook during export; empty when the export ran without the hook.
     hook_material_map = consume_captured_material_map() or {}
+    # Refuse before any material is resolved: a collapsed material prim makes
+    # the Blender material behind it ambiguous, so every later decision about
+    # it would be a guess.
+    _require_distinct_material_prims(
+        _material_prim_claims(stage, consume_captured_mesh_material_map() or {}),
+        diagnostics,
+    )
 
     failures = []
     rewrite_targets = []
@@ -210,7 +220,7 @@ def rewrite_materials(stage, settings, context, diagnostics=None) -> None:
     backup_layer.TransferContent(edit_layer)
 
     authored_materials = []
-    for blender_name, material_key, material_data, graph in prepared_targets:
+    for blender_name, material_key, _material_data, graph in prepared_targets:
         try:
             new_material = create_materialx_material(
                 stage,
@@ -307,6 +317,72 @@ def _record_material_failure(
     failures.append((str(material_name), str(material_path), reason))
     if diagnostics:
         diagnostics.add_material_failed(str(material_name), reason)
+
+
+def _material_prim_claims(stage, mesh_material_map):
+    """Group bound material prims by the Blender materials that claim them.
+
+    Only meshes whose faces use exactly one material contribute. A mesh with
+    several materials binds its GeomSubsets instead, and attributing those back
+    to slots would need the exporter's prim-name sanitisation, which does not
+    match any function available here.
+    """
+    if not mesh_material_map:
+        return {}
+
+    claims = {}
+    for prim in _material_namespace_prims(stage):
+        if not prim.IsA(UsdGeom.Mesh):
+            continue
+        names = mesh_material_map.get(str(prim.GetPath())) or []
+        if len(names) != 1:
+            continue
+        bound_material = (
+            UsdShade.MaterialBindingAPI(prim)
+            .GetDirectBinding()
+            .GetMaterial()
+        )
+        if not bound_material:
+            continue
+        claimed = claims.setdefault(str(bound_material.GetPrim().GetPath()), [])
+        if names[0] not in claimed:
+            claimed.append(names[0])
+    return claims
+
+
+def _require_distinct_material_prims(claims, diagnostics=None):
+    """Fail when differently named Blender materials share one material prim.
+
+    The exporter reduces a material name to a USD prim name, and two names can
+    reduce to the same one ("My Material" and "My-Material" both become
+    ``My_Material``). It then authors a single prim and binds both meshes to
+    it, so one material is silently dropped and the mesh that owned it renders
+    with the other. Which one survives depends on export order.
+    """
+    collisions = sorted(
+        (path, sorted(names))
+        for path, names in claims.items()
+        if len(names) > 1
+    )
+    if not collisions:
+        return
+
+    lines = [
+        "Blender materials with different names export as the same USD "
+        f"material prim in {len(collisions)} case(s), so all but one would be "
+        "lost:"
+    ]
+    for path, names in collisions:
+        joined = ", ".join(f"'{name}'" for name in names)
+        lines.append(f"- {joined} export as {path}")
+    lines.append(
+        "Rename all but one in each case so the names still differ once the "
+        "characters USD cannot use in a prim name are replaced."
+    )
+    message = "\n".join(lines)
+    if diagnostics:
+        diagnostics.add_error(message)
+    raise RuntimeError(message)
 
 
 def _format_material_rewrite_failures(failures):
@@ -584,7 +660,7 @@ def _variant_bound_material_prims(stage, owners, namespace_prims):
         spec_paths = []
         layer.Traverse(
             Sdf.Path.absoluteRootPath,
-            lambda path: spec_paths.append(path),
+            spec_paths.append,
         )
         layer_id = str(layer.identifier)
         for spec_path in spec_paths:

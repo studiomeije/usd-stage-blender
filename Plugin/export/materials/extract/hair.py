@@ -3,6 +3,7 @@
 from typing import Any, Dict, List, Optional
 
 from . import core as _core
+from . import expr as _expr
 
 
 # ---------------------------------------------------------------------------
@@ -174,11 +175,11 @@ def _extract_hair_material_data(node, data: Dict[str, Any]) -> Dict[str, Any]:
         if getattr(socket, "is_linked", False):
             resolved = _core._resolve_socket_value(socket, cache=cache, expected_type=expected_type)
         else:
-            value = _core._socket_default_value(socket)
+            value = _expr._socket_default_value(socket)
             if value is None:
                 continue
-            resolved = _core._constant_expr(
-                _core._coerce_constant_value(value, 'color' if expected_type == 'color3' else 'float')
+            resolved = _expr._constant_expr(
+                _expr._coerce_constant_value(value, 'color' if expected_type == 'color3' else 'float')
             )
         if resolved is None:
             continue
@@ -201,9 +202,9 @@ def _extract_hair_material_data(node, data: Dict[str, Any]) -> Dict[str, Any]:
         if target in hair_inputs:
             hair_inputs[target] = float(hair_inputs[target]) * HAIR_LOBE_WEIGHT_SCALE
         elif target in input_graphs:
-            input_graphs[target] = _core._make_node_expr(
-                _core._nodedef_for("multiply", "float"),
-                {"in1": input_graphs[target], "in2": _core._constant_expr(HAIR_LOBE_WEIGHT_SCALE)},
+            input_graphs[target] = _expr._make_node_expr(
+                _expr._nodedef_for("multiply", "float"),
+                {"in1": input_graphs[target], "in2": _expr._constant_expr(HAIR_LOBE_WEIGHT_SCALE)},
             )
     # The secondary lobe renders saturate(secondarySpecularColor) *
     # secondarySpecular and the colour defaults to black, so a mapped

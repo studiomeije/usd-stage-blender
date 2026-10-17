@@ -295,7 +295,7 @@ def _cycles_hash_uint2(kx, ky):
     a = b = c = (0xDEADBEEF + (2 << 2) + 13) & 0xFFFFFFFF
     b = (b + ky) & 0xFFFFFFFF
     a = (a + kx) & 0xFFFFFFFF
-    for x, y, k, target in (("b", "c", 14, "c"), ("c", "a", 11, "a"), ("a", "b", 25, "b"),
+    for x, _y, k, target in (("b", "c", 14, "c"), ("c", "a", 11, "a"), ("a", "b", 25, "b"),
                             ("b", "c", 16, "c"), ("c", "a", 4, "a"), ("a", "b", 14, "b"),
                             ("b", "c", 24, "c")):
         values = {"a": a, "b": b, "c": c}

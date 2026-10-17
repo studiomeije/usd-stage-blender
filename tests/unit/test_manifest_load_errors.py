@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from Plugin.export.materials.extract import core
+from Plugin.export.materials.extract import core, expr
 from Plugin.manifest import materialx_nodes
 
 
@@ -23,6 +23,8 @@ def test_a_corrupt_manifest_is_not_swallowed_by_extraction(tmp_path, monkeypatch
     corrupt = tmp_path / "rk_nodes_manifest.json"
     corrupt.write_text("{not json", encoding="utf-8")
     monkeypatch.setattr(materialx_nodes, "_manifest_path", lambda: corrupt)
-    monkeypatch.setattr(core, "_MANIFEST_CACHE", None)
+    # The cache lives with the loader in ``expr``; the call goes through
+    # ``core`` so the name it re-exports is covered too.
+    monkeypatch.setattr(expr, "_MANIFEST_CACHE", None)
     with pytest.raises(materialx_nodes.ManifestError, match="Reinstall"):
         core._get_manifest()
