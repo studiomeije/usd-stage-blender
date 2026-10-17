@@ -11,6 +11,7 @@ from ..graph import (
 )
 
 from . import core as _core
+from . import expr as _expr
 
 
 # ---------------------------------------------------------------------------
@@ -196,10 +197,10 @@ def _socket_operand(socket, expected_type, visited, provenance, cache):
     else:
         expr = _core._driven_socket_expr(socket) if not isinstance(socket, _ConstantSocket) else None
         if expr is None:
-            value = _core._socket_default_value(socket)
+            value = _expr._socket_default_value(socket)
             if isinstance(value, bool):
                 value = float(value)
-            expr = _core._constant_expr(value) if value is not None else None
+            expr = _expr._constant_expr(value) if value is not None else None
     if expr is None:
         return None
     if expected_type == "color3":
@@ -229,8 +230,8 @@ def _preset_sqrt_socket(name, socket):
         value = _socket_operand(socket, "float", visited, provenance, cache)
         if not value or value.get("kind") == "unresolved":
             return value
-        clamped = _core._make_node_expr(_core._nodedef_for("max", "float"), {"in1": value, "in2": _core._constant_expr(0.0)})
-        return _core._make_node_expr(_core._nodedef_for("sqrt", "float"), {"in": clamped})
+        clamped = _expr._make_node_expr(_expr._nodedef_for("max", "float"), {"in1": value, "in2": _expr._constant_expr(0.0)})
+        return _expr._make_node_expr(_expr._nodedef_for("sqrt", "float"), {"in": clamped})
 
     return _DerivedSocket(name, _DerivedNode(f"{getattr(socket, 'name', name)} (square root)", build, [socket]), 0.5)
 
@@ -379,7 +380,7 @@ def _sockets_agree(a, b) -> bool:
         return _same_node(la.from_node, lb.from_node) and getattr(la.from_socket, "name", None) == getattr(lb.from_socket, "name", None)
     if _core._driven_socket_expr(a) is not None or _core._driven_socket_expr(b) is not None:
         return False
-    return not _values_differ_loose(_core._socket_default_value(a), _core._socket_default_value(b))
+    return not _values_differ_loose(_expr._socket_default_value(a), _expr._socket_default_value(b))
 
 
 def _values_differ_loose(a, b) -> bool:
@@ -470,7 +471,7 @@ def _mix_socket(mix, name, a, b, default):
     )
     if factor_constant and constants:
         t = min(max(float(factor_socket.default_value), 0.0), 1.0)
-        va, vb = _core._socket_default_value(a), _core._socket_default_value(b)
+        va, vb = _expr._socket_default_value(a), _expr._socket_default_value(b)
         if isinstance(va, (list, tuple)):
             return _ConstantSocket(name, tuple(x + (y - x) * t for x, y in zip(va, vb)))
         return _ConstantSocket(name, float(va) + (float(vb) - float(va)) * t)
@@ -479,20 +480,20 @@ def _mix_socket(mix, name, a, b, default):
         kind = expected_type if expected_type in ("color3", "vector3", "float") else value_type
         ea = _socket_operand(a, kind, visited, provenance, cache)
         eb = _socket_operand(b, kind, visited, provenance, cache)
-        fac = _socket_operand(factor_socket, "float", visited, provenance, cache) if factor_socket is not None else _core._constant_expr(0.5)
+        fac = _socket_operand(factor_socket, "float", visited, provenance, cache) if factor_socket is not None else _expr._constant_expr(0.5)
         for operand in (ea, eb, fac):
             if not operand:
                 return None
             if operand.get("kind") == "unresolved":
                 return operand
         if _core._constant_value(fac) is not None:
-            fac = _core._constant_expr(min(max(float(_core._constant_value(fac)), 0.0), 1.0))
+            fac = _expr._constant_expr(min(max(float(_core._constant_value(fac)), 0.0), 1.0))
         else:
-            fac = _core._make_node_expr(_core._nodedef_for("clamp", "float"), {"in": fac, "low": _core._constant_expr(0.0), "high": _core._constant_expr(1.0)})
-        return _core._make_node_expr(_core._nodedef_for("mix", kind), {"fg": eb, "bg": ea, "mix": fac})
+            fac = _expr._make_node_expr(_expr._nodedef_for("clamp", "float"), {"in": fac, "low": _expr._constant_expr(0.0), "high": _expr._constant_expr(1.0)})
+        return _expr._make_node_expr(_expr._nodedef_for("mix", kind), {"fg": eb, "bg": ea, "mix": fac})
 
     node = _DerivedNode(f"Mix Shader '{getattr(mix, 'name', 'Mix Shader')}' {name}", build, [a, b, factor_socket])
-    return _DerivedSocket(name, node, _core._socket_default_value(a))
+    return _DerivedSocket(name, node, _expr._socket_default_value(a))
 
 
 def _principled_like(node) -> Dict[str, Any]:
@@ -702,7 +703,7 @@ def _principled_constant(node, name, default):
         return None
     if not isinstance(socket, _ConstantSocket) and _core._driven_socket_expr(socket) is not None:
         return None
-    value = _core._socket_default_value(socket)
+    value = _expr._socket_default_value(socket)
     return default if value is None else value
 
 
@@ -772,12 +773,12 @@ def principled_notices(principled) -> List[str]:
 def _saturate_float(expr: Dict[str, Any]) -> Dict[str, Any]:
     """Cycles' ``saturatef`` on a float expression."""
     if expr.get("kind") == "constant":
-        return _core._constant_expr(min(max(float(expr["value"]), 0.0), 1.0))
+        return _expr._constant_expr(min(max(float(expr["value"]), 0.0), 1.0))
     if expr.get("kind") == "unresolved":
         return expr
-    return _core._make_node_expr(
-        _core._nodedef_for("clamp", "float"),
-        {"in": expr, "low": _core._constant_expr(0.0), "high": _core._constant_expr(1.0)},
+    return _expr._make_node_expr(
+        _expr._nodedef_for("clamp", "float"),
+        {"in": expr, "low": _expr._constant_expr(0.0), "high": _expr._constant_expr(1.0)},
     )
 
 
@@ -790,12 +791,12 @@ def _apply_surface_closure(material, closure, principled, data, input_graphs, un
     if closure.get("transparent") is not None:
         fac = _core._math_socket_expr(mix, 0, visited, None, provenance, cache)
         if fac is None:
-            fac = _core._constant_expr(0.5)
+            fac = _expr._constant_expr(0.5)
         # Cycles saturates the Mix Shader factor (svm_node_mix_closure) and
         # the Principled Alpha (principled_bsdf_emission).
         fac = _saturate_float(fac)
-        weight = fac if closure.get("transparent_first") else _core._fold_float("subtract", _core._constant_expr(1.0), fac)
-        alpha = _core._constant_expr(1.0)
+        weight = fac if closure.get("transparent_first") else _core._fold_float("subtract", _expr._constant_expr(1.0), fac)
+        alpha = _expr._constant_expr(1.0)
         inputs = list(getattr(principled, "inputs", []) or [])
         for index, socket in enumerate(inputs):
             if getattr(socket, "name", "") == 'Alpha':
@@ -822,32 +823,32 @@ def _apply_surface_closure(material, closure, principled, data, input_graphs, un
         if color_socket is not None and getattr(color_socket, "is_linked", False):
             color = _core._resolve_socket_value(color_socket, set(), None, [], cache, expected_type='color3')
         else:
-            value = _core._socket_default_value(color_socket) if color_socket is not None else (1.0, 1.0, 1.0)
-            color = _core._constant_expr(_core._coerce_constant_value(value, 'color'))
-        strength = _core._math_socket_expr(emission, 1, visited, None, provenance, cache) or _core._constant_expr(1.0)
+            value = _expr._socket_default_value(color_socket) if color_socket is not None else (1.0, 1.0, 1.0)
+            color = _expr._constant_expr(_expr._coerce_constant_value(value, 'color'))
+        strength = _core._math_socket_expr(emission, 1, visited, None, provenance, cache) or _expr._constant_expr(1.0)
         if color is None or color.get("kind") == "unresolved":
             unresolved_warnings.append(
                 f"Material '{material.name}': Unable to resolve the added Emission shader's Color."
             )
             return
         if strength.get("kind") == "constant" and color.get("kind") == "constant":
-            added = _core._constant_expr([float(c) * float(strength["value"]) for c in color["value"][:3]])
-        elif _core._expr_is_constant(strength, 1.0):
+            added = _expr._constant_expr([float(c) * float(strength["value"]) for c in color["value"][:3]])
+        elif _expr._expr_is_constant(strength, 1.0):
             added = color
         else:
-            broadcast = _core._make_node_expr(
-                _core._nodedef_for("combine3", "color3"), {"in1": strength, "in2": strength, "in3": strength}
+            broadcast = _expr._make_node_expr(
+                _expr._nodedef_for("combine3", "color3"), {"in1": strength, "in2": strength, "in3": strength}
             )
-            added = _core._make_node_expr(_core._nodedef_for("multiply", "color3"), {"in1": color, "in2": broadcast})
+            added = _expr._make_node_expr(_expr._nodedef_for("multiply", "color3"), {"in1": color, "in2": broadcast})
         base_color = [float(c) for c in (data.get('emission_color') or [0.0, 0.0, 0.0])[:3]]
         base_strength = float(data.get('emission_strength', 1.0))
         base = [c * base_strength for c in base_color]
         if any(abs(c) > 1e-6 for c in base):
             if added.get("kind") == "constant":
-                total = _core._constant_expr([a + b for a, b in zip(added["value"], base)])
+                total = _expr._constant_expr([a + b for a, b in zip(added["value"], base)])
             else:
-                total = _core._make_node_expr(
-                    _core._nodedef_for("add", "color3"), {"in1": added, "in2": _core._constant_expr(base)}
+                total = _expr._make_node_expr(
+                    _expr._nodedef_for("add", "color3"), {"in1": added, "in2": _expr._constant_expr(base)}
                 )
         else:
             total = added

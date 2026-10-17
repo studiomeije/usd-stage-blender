@@ -356,7 +356,7 @@ def export_blender_scene(
     # We'll use the operator directly
 
     # Save current selection
-    original_selection = [obj for obj in context.selected_objects]
+    original_selection = list(context.selected_objects)
     original_active = context.active_object
     animation_state = None
     export_completed = False

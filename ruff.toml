@@ -1,0 +1,44 @@
+# Lint settings for the add-on, the scripts and the tests.
+#
+# Without a committed config, `ruff check` resolved a different rule set for
+# whoever ran it, and CI ran no linter at all, so nothing here was reproducible.
+# This file fixes the rule set; the CI "Lint" step runs it on every revision.
+#
+# The selection is deliberately about defects rather than formatting. Line
+# length is not enforced: the code sits well under 100 columns almost
+# everywhere, but a few hundred lines run past it and reflowing them would
+# bury real changes in whitespace. Add E501 once a formatting pass is wanted.
+
+line-length = 100
+target-version = "py313"
+extend-exclude = [".venv", "dist", "References"]
+
+[lint]
+select = [
+    "F",   # pyflakes: undefined names, unused imports, broken f-strings
+    "E4",  # import placement
+    "E7",  # statement and comparison mistakes
+    "E9",  # syntax and IO errors
+    "W",   # trailing whitespace, newline at end of file
+    "B",   # bugbear: mutable defaults, misused loops, swallowed context
+    "C4",  # comprehension and collection-call correctness
+]
+
+ignore = [
+    # Several zips deliberately stop at the shorter side: a colour expression
+    # arrives as RGBA and is weighted against a three-element RGB-to-gray
+    # vector, so truncation is the conversion, not a bug. Explicit strict=False
+    # on each of those would say less than the comment already above them.
+    "B905",
+]
+
+# RUF100 (stale noqa) is intentionally absent. The tree carries about 170
+# `# noqa: E402` directives written for a stricter checker than ruff, which
+# does not flag the import order they guard. Enabling the rule would demand
+# deleting all of them, which is churn unrelated to any behaviour.
+
+[lint.per-file-ignores]
+# Tests put `sys.path` and `pytest.importorskip` before their imports, and the
+# table-driven ones keep a case on a single line where that reads better than
+# four. Neither belongs in the add-on itself, so the allowance stops here.
+"tests/**" = ["E402", "E701", "E702"]

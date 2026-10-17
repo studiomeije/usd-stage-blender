@@ -40,7 +40,8 @@ Core design constraints:
 | `Plugin/export/staging_namespace.py`, `Plugin/export/sidecar_manifest.py` | Per-attempt texture generations and the ownership manifest that makes re-export safe. |
 | `Plugin/export/diagnostics.py`, `Plugin/export/support_bundle.py` | The diagnostics sidecar and redacted support bundles. |
 | `Plugin/export/materials/rewrite.py` | Material rewrite orchestration (see below). |
-| `Plugin/export/materials/extract/core.py` | Walks Blender node graphs into normalized `material_data`. `drivers.py`, `hair.py`, `closures.py`, `displacement.py` and `readers.py` beside it hold those node families and reach shared helpers through `core`, which re-exports them. |
+| `Plugin/export/materials/extract/core.py` | Walks Blender node graphs into normalized `material_data`. `drivers.py`, `hair.py`, `closures.py`, `displacement.py` and `readers.py` beside it hold those node families. |
+| `Plugin/export/materials/extract/expr.py` | The builders both layers share: constants, node expressions, manifest nodedef lookup, channel reads, socket defaults. It imports nothing from the package, so neither side depends on the other to reach them. |
 | `Plugin/export/materials/graph.py` | `MaterialXGraphBuilder`: `material_data` to a MaterialX graph payload. |
 | `Plugin/export/materials/author.py` | Writes the graph payload as USD Shade prims. |
 | `Plugin/export/materials/textures.py`, `conversions.py`, `helpers.py` | Texture, UV and normal-map nodes; type conversions; shared authoring helpers. |

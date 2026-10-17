@@ -5,6 +5,7 @@ import re
 from typing import Any, Dict, Optional
 
 from . import core as _core
+from . import expr as _expr
 
 
 # ---------------------------------------------------------------------------
@@ -26,7 +27,7 @@ _READER_NODE_TYPES = frozenset({'TEX_COORD', 'NEW_GEOMETRY', 'FRESNEL', 'LAYER_W
 
 def _node_expr_output_type(expr: Dict[str, Any]) -> Optional[str]:
     """The declared type of a node expression's output, from the manifest."""
-    entry = _core._get_manifest().get("nodes", {}).get(expr.get("node_id"))
+    entry = _expr._get_manifest().get("nodes", {}).get(expr.get("node_id"))
     if not entry:
         return None
     wanted = expr.get("output") or "out"
@@ -37,13 +38,13 @@ def _node_expr_output_type(expr: Dict[str, Any]) -> Optional[str]:
 
 
 def _float_node(name: str, **inputs: Any) -> Dict[str, Any]:
-    return _core._make_node_expr(_core._nodedef_for(name, "float"), inputs)
+    return _expr._make_node_expr(_expr._nodedef_for(name, "float"), inputs)
 
 
 def _world_reader_expr(node_name: str, **extra: Any) -> Dict[str, Any]:
-    inputs: Dict[str, Any] = {"space": _core._constant_expr("world")}
-    inputs.update({key: _core._constant_expr(value) for key, value in extra.items()})
-    return _core._make_node_expr(_core._nodedef_for(node_name, "vector3"), inputs)
+    inputs: Dict[str, Any] = {"space": _expr._constant_expr("world")}
+    inputs.update({key: _expr._constant_expr(value) for key, value in extra.items()})
+    return _expr._make_node_expr(_expr._nodedef_for(node_name, "vector3"), inputs)
 
 
 def _view_direction_expr() -> Dict[str, Any]:
@@ -54,30 +55,30 @@ def _view_direction_expr() -> Dict[str, Any]:
     as Blender's Incoming does, and is not unit length. The normalize below
     is what makes it Blender's vector.
     """
-    reader = _core._make_node_expr(
-        _core._nodedef_for("realitykit_surface_view_direction", "vector3"),
+    reader = _expr._make_node_expr(
+        _expr._nodedef_for("realitykit_surface_view_direction", "vector3"),
         {},
         output="viewDirection",
     )
     # Measured by import: the reader is not unit length. Unnormalised, the
     # probe sphere in t25_surface_readers rendered flat white and the two rim
     # spheres kept only a hairline rim; Blender's Incoming is a unit vector.
-    return _core._make_node_expr(_core._nodedef_for("normalize", "vector3"), {"in": reader})
+    return _expr._make_node_expr(_expr._nodedef_for("normalize", "vector3"), {"in": reader})
 
 
 def _front_facing_float_expr() -> Dict[str, Any]:
-    front = _core._make_node_expr(_core._nodedef_for("realitykit_is_front_facing", "boolean"), {})
-    return _core._make_node_expr(_core._nodedef_for("convert", "float", input_type="boolean"), {"in": front})
+    front = _expr._make_node_expr(_expr._nodedef_for("realitykit_is_front_facing", "boolean"), {})
+    return _expr._make_node_expr(_expr._nodedef_for("convert", "float", input_type="boolean"), {"in": front})
 
 
 def _texture_coordinate_expr(output_name: str) -> Optional[Dict[str, Any]]:
     if output_name == 'UV':
-        return _core._make_node_expr(_core._nodedef_for("texcoord", "vector3"), {})
+        return _expr._make_node_expr(_expr._nodedef_for("texcoord", "vector3"), {})
     if output_name in ('Object', 'Generated'):
         # Generated is object-space position without Blender's bounding-box
         # normalization; collect_material_warnings names the approximation.
-        return _core._make_node_expr(
-            _core._nodedef_for("position", "vector3"), {"space": _core._constant_expr("object")}
+        return _expr._make_node_expr(
+            _expr._nodedef_for("position", "vector3"), {"space": _expr._constant_expr("object")}
         )
     return None
 
@@ -163,8 +164,8 @@ def blender_world_vector(expr: Dict[str, Any]) -> Dict[str, Any]:
     and lengths do not change, so Fresnel, Layer Weight and Camera Data read
     the platform's axes directly.
     """
-    parts = [_vector_dot(expr, _core._constant_expr(mask)) for mask in ((1.0, 0.0, 0.0), (0.0, 0.0, -1.0), (0.0, 1.0, 0.0))]
-    return _core._make_node_expr(_core._nodedef_for("combine3", "vector3"), {"in1": parts[0], "in2": parts[1], "in3": parts[2]})
+    parts = [_vector_dot(expr, _expr._constant_expr(mask)) for mask in ((1.0, 0.0, 0.0), (0.0, 0.0, -1.0), (0.0, 1.0, 0.0))]
+    return _expr._make_node_expr(_expr._nodedef_for("combine3", "vector3"), {"in1": parts[0], "in2": parts[1], "in3": parts[2]})
 
 
 def _geometry_reader_expr(output_name: str) -> Optional[Dict[str, Any]]:
@@ -175,7 +176,7 @@ def _geometry_reader_expr(output_name: str) -> Optional[Dict[str, Any]]:
     if output_name == 'Incoming':
         return blender_world_vector(_view_direction_expr())
     if output_name == 'Backfacing':
-        return _float_node("subtract", in1=_core._constant_expr(1.0), in2=_front_facing_float_expr())
+        return _float_node("subtract", in1=_expr._constant_expr(1.0), in2=_front_facing_float_expr())
     return None
 
 
@@ -198,14 +199,14 @@ def _fresnel_dielectric_cos_expr(cosi: Dict[str, Any], eta: Dict[str, Any]) -> D
     ``max(g, 0)`` so the unselected branch never evaluates ``sqrt`` of a
     negative on the GPU.
     """
-    one = _core._constant_expr(1.0)
+    one = _expr._constant_expr(1.0)
     c = _float_node("absval", **{"in": cosi})
     g0 = _float_node(
         "add",
         in1=_float_node("subtract", in1=_float_node("multiply", in1=eta, in2=eta), in2=one),
         in2=_float_node("multiply", in1=c, in2=c),
     )
-    g = _float_node("sqrt", **{"in": _float_node("max", in1=g0, in2=_core._constant_expr(0.0))})
+    g = _float_node("sqrt", **{"in": _float_node("max", in1=g0, in2=_expr._constant_expr(0.0))})
     a = _float_node(
         "divide",
         in1=_float_node("subtract", in1=g, in2=c),
@@ -218,10 +219,10 @@ def _fresnel_dielectric_cos_expr(cosi: Dict[str, Any], eta: Dict[str, Any]) -> D
     )
     value = _float_node(
         "multiply",
-        in1=_float_node("multiply", in1=_core._constant_expr(0.5), in2=_float_node("multiply", in1=a, in2=a)),
+        in1=_float_node("multiply", in1=_expr._constant_expr(0.5), in2=_float_node("multiply", in1=a, in2=a)),
         in2=_float_node("add", in1=one, in2=_float_node("multiply", in1=b, in2=b)),
     )
-    return _float_node("ifgreater", value1=g0, value2=_core._constant_expr(0.0), in1=value, in2=one)
+    return _float_node("ifgreater", value1=g0, value2=_expr._constant_expr(0.0), in1=value, in2=one)
 
 
 def _eta_by_facing_expr(front_eta: Dict[str, Any], back_eta: Dict[str, Any]) -> Dict[str, Any]:
@@ -230,8 +231,8 @@ def _eta_by_facing_expr(front_eta: Dict[str, Any], back_eta: Dict[str, Any]) -> 
 
 
 def _cos_view_normal_expr() -> Dict[str, Any]:
-    return _core._make_node_expr(
-        _core._nodedef_for("dotproduct", "float", input_type="vector3"),
+    return _expr._make_node_expr(
+        _expr._nodedef_for("dotproduct", "float", input_type="vector3"),
         {"in1": _view_direction_expr(), "in2": _world_reader_expr("normal")},
     )
 
@@ -256,8 +257,8 @@ def _fresnel_node_expr(node, visited, channel, provenance, cache) -> Optional[Di
     )
     if ior is None or (isinstance(ior, dict) and ior.get("kind") == "unresolved"):
         return ior
-    f = _float_node("max", in1=ior, in2=_core._constant_expr(1e-5))
-    eta = _eta_by_facing_expr(f, _float_node("divide", in1=_core._constant_expr(1.0), in2=f))
+    f = _float_node("max", in1=ior, in2=_expr._constant_expr(1e-5))
+    eta = _eta_by_facing_expr(f, _float_node("divide", in1=_expr._constant_expr(1.0), in2=f))
     return _fresnel_dielectric_cos_expr(_cos_view_normal_expr(), eta)
 
 
@@ -295,15 +296,15 @@ def _layer_weight_expr(node, output_name: str, visited, channel, provenance, cac
     if output_name == 'Fresnel':
         eta = max(1.0 - blend, 1e-5)
         return _fresnel_dielectric_cos_expr(
-            cos_ni, _eta_by_facing_expr(_core._constant_expr(1.0 / eta), _core._constant_expr(eta))
+            cos_ni, _eta_by_facing_expr(_expr._constant_expr(1.0 / eta), _expr._constant_expr(eta))
         )
     if output_name == 'Facing':
         facing = _float_node("absval", **{"in": cos_ni})
         if blend != 0.5:
             clamped = min(max(blend, 0.0), 1.0 - 1e-5)
             exponent = 2.0 * clamped if clamped < 0.5 else 0.5 / (1.0 - clamped)
-            facing = _float_node("power", in1=facing, in2=_core._constant_expr(exponent))
-        return _float_node("subtract", in1=_core._constant_expr(1.0), in2=facing)
+            facing = _float_node("power", in1=facing, in2=_expr._constant_expr(exponent))
+        return _float_node("subtract", in1=_expr._constant_expr(1.0), in2=facing)
     return None
 
 
@@ -353,7 +354,7 @@ _SINGLE_CHANNELS = frozenset("rgbaxyzw")
 
 
 def _vector3_node(name: str, **inputs: Any) -> Dict[str, Any]:
-    return _core._make_node_expr(_core._nodedef_for(name, "vector3", input_type="vector3"), inputs)
+    return _expr._make_node_expr(_expr._nodedef_for(name, "vector3", input_type="vector3"), inputs)
 
 
 def _texture_is_scalar(expr: Dict[str, Any]) -> bool:
@@ -381,33 +382,33 @@ def _vector3_operand_expr(expr: Optional[Dict[str, Any]]) -> Optional[Dict[str, 
             parts = [float(v) for v in value][:3]
             while len(parts) < 3:
                 parts.append(parts[-1] if parts else 0.0)
-            return _core._constant_expr(tuple(parts))
+            return _expr._constant_expr(tuple(parts))
         try:
             f = float(value)
         except (TypeError, ValueError):
             return None
-        return _core._constant_expr((f, f, f))
+        return _expr._constant_expr((f, f, f))
     if kind == "texture":
         texture = dict(expr)
         if _texture_is_scalar(texture):
             texture["output_type"] = "float"
-            return _core._make_node_expr(
-                _core._nodedef_for("convert", "vector3", input_type="float"), {"in": texture}
+            return _expr._make_node_expr(
+                _expr._nodedef_for("convert", "vector3", input_type="float"), {"in": texture}
             )
         texture["output_type"] = "color3"
-        return _core._make_node_expr(
-            _core._nodedef_for("convert", "vector3", input_type="color3"), {"in": texture}
+        return _expr._make_node_expr(
+            _expr._nodedef_for("convert", "vector3", input_type="color3"), {"in": texture}
         )
     if kind == "node":
         out_type = _node_expr_output_type(expr) or "vector3"
         if out_type == "vector3":
             return expr
         if out_type == "color4":
-            expr = _core._make_node_expr(_core._nodedef_for("convert", "color3", input_type="color4"), {"in": expr})
+            expr = _expr._make_node_expr(_expr._nodedef_for("convert", "color3", input_type="color4"), {"in": expr})
             out_type = "color3"
         if out_type in ("float", "color3"):
-            return _core._make_node_expr(
-                _core._nodedef_for("convert", "vector3", input_type=out_type), {"in": expr}
+            return _expr._make_node_expr(
+                _expr._nodedef_for("convert", "vector3", input_type=out_type), {"in": expr}
             )
     return None
 
@@ -422,24 +423,24 @@ def _vector_math_operand(node, index, visited, channel, provenance, cache) -> Op
 def _vector_socket_expr(socket, visited, provenance, cache, default=(0.0, 0.0, 0.0)) -> Optional[Dict[str, Any]]:
     """A vector socket's value as a vector3 expression: its link, else its value."""
     if socket is None:
-        return _core._constant_expr(tuple(default))
+        return _expr._constant_expr(tuple(default))
     if getattr(socket, "is_linked", False):
         resolved = _core._resolve_socket_value(
             socket, set(visited or ()), None, list(provenance or ()), cache,
             expected_type="vector3",
         )
         return _vector3_operand_expr(resolved)
-    value = _core._socket_default_value(socket)
+    value = _expr._socket_default_value(socket)
     if value is None:
         return None
-    return _vector3_operand_expr(_core._constant_expr(value))
+    return _vector3_operand_expr(_expr._constant_expr(value))
 
 
 def _float_socket_expr(socket, visited, provenance, cache, default: float = 0.0) -> Optional[Dict[str, Any]]:
     """A scalar socket's value as a float expression: its link (converted as
     Blender converts), its driver, else its value."""
     if socket is None:
-        return _core._constant_expr(float(default))
+        return _expr._constant_expr(float(default))
     if getattr(socket, "is_linked", False):
         resolved = _core._resolve_socket_value(
             socket, set(visited or ()), None, list(provenance or ()), cache,
@@ -449,11 +450,11 @@ def _float_socket_expr(socket, visited, provenance, cache, default: float = 0.0)
     driven = _core._driven_socket_expr(socket)
     if driven is not None:
         return driven
-    value = _core._socket_default_value(socket)
+    value = _expr._socket_default_value(socket)
     try:
-        return _core._constant_expr(float(value))
+        return _expr._constant_expr(float(value))
     except (TypeError, ValueError):
-        return _core._constant_expr(float(default))
+        return _expr._constant_expr(float(default))
 
 
 def _vector_math_scalar_operand(node, socket_name, visited, channel, provenance, cache):
@@ -484,16 +485,16 @@ def _vector_times_float(v: Dict[str, Any], s: Dict[str, Any]) -> Dict[str, Any]:
         except (TypeError, ValueError):
             f = None
         if f is not None:
-            return _vector3_node("multiply", in1=v, in2=_core._constant_expr((f, f, f)))
-    broadcast = _core._make_node_expr(
-        _core._nodedef_for("combine3", "vector3"), {"in1": s, "in2": s, "in3": s}
+            return _vector3_node("multiply", in1=v, in2=_expr._constant_expr((f, f, f)))
+    broadcast = _expr._make_node_expr(
+        _expr._nodedef_for("combine3", "vector3"), {"in1": s, "in2": s, "in3": s}
     )
     return _vector3_node("multiply", in1=v, in2=broadcast)
 
 
 def _vector_dot(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
-    return _core._make_node_expr(
-        _core._nodedef_for("dotproduct", "float", input_type="vector3"), {"in1": a, "in2": b}
+    return _expr._make_node_expr(
+        _expr._nodedef_for("dotproduct", "float", input_type="vector3"), {"in1": a, "in2": b}
     )
 
 
@@ -512,15 +513,15 @@ def _per_component_vector3(function, *vectors) -> Dict[str, Any]:
         for vector in vectors:
             value = _constant_value(vector)
             if isinstance(value, (list, tuple)):
-                operands.append(_core._constant_expr(float(value[index])))
+                operands.append(_expr._constant_expr(float(value[index])))
             else:
-                operands.append(_core._component_expr(vector, "vector3", axis))
+                operands.append(_expr._component_expr(vector, "vector3", axis))
         parts.append(function(*operands))
-    constants = [_core._constant_scalar(part) for part in parts]
+    constants = [_expr._constant_scalar(part) for part in parts]
     if all(value is not None for value in constants):
         return {"kind": "constant", "value": tuple(constants), "value_type": "vector3"}
-    return _core._make_node_expr(
-        _core._nodedef_for("combine3", "vector3"), {"in1": parts[0], "in2": parts[1], "in3": parts[2]}
+    return _expr._make_node_expr(
+        _expr._nodedef_for("combine3", "vector3"), {"in1": parts[0], "in2": parts[1], "in3": parts[2]}
     )
 
 
@@ -552,7 +553,7 @@ def _vector_math_expr(node, from_socket, visited, channel, provenance, cache) ->
         return _vector_math_scalar_operand(node, name, visited, channel, provenance, cache)
 
     def fnode(name, **ins):
-        return _core._make_node_expr(_core._nodedef_for(name, "float"), ins)
+        return _expr._make_node_expr(_expr._nodedef_for(name, "float"), ins)
 
     def vscale(v, s):
         return _vector_times_float(v, s)
@@ -574,7 +575,7 @@ def _vector_math_expr(node, from_socket, visited, channel, provenance, cache) ->
         return _safe_normalize(a) if a else None
     if operation == 'ROUND':
         a = operand(0)
-        return _vector3_node("floor", **{"in": _vector3_node("add", in1=a, in2=_core._constant_expr((0.5, 0.5, 0.5)))}) if a else None
+        return _vector3_node("floor", **{"in": _vector3_node("add", in1=a, in2=_expr._constant_expr((0.5, 0.5, 0.5)))}) if a else None
     if operation == 'MULTIPLY_ADD':
         a, b, c = operand(0), operand(1), operand(2)
         return _vector3_node("add", in1=_vector3_node("multiply", in1=a, in2=b), in2=c) if a and b and c else None
@@ -583,10 +584,10 @@ def _vector_math_expr(node, from_socket, visited, channel, provenance, cache) ->
         return _vector_dot(a, b) if a and b else None
     if operation == 'DISTANCE':
         a, b = operand(0), operand(1)
-        return _core._make_node_expr(_core._nodedef_for("magnitude", "float", input_type="vector3"), {"in": _vector3_node("subtract", in1=a, in2=b)}) if a and b else None
+        return _expr._make_node_expr(_expr._nodedef_for("magnitude", "float", input_type="vector3"), {"in": _vector3_node("subtract", in1=a, in2=b)}) if a and b else None
     if operation == 'LENGTH':
         a = operand(0)
-        return _core._make_node_expr(_core._nodedef_for("magnitude", "float", input_type="vector3"), {"in": a}) if a else None
+        return _expr._make_node_expr(_expr._nodedef_for("magnitude", "float", input_type="vector3"), {"in": a}) if a else None
     if operation == 'SCALE':
         a, s = operand(0), scalar('Scale')
         return vscale(a, s) if a and s else None
@@ -599,16 +600,16 @@ def _vector_math_expr(node, from_socket, visited, channel, provenance, cache) ->
             return None
         len_sq = _vector_dot(b, b)
         projected = vscale(b, fnode("divide", in1=_vector_dot(a, b), in2=len_sq))
-        return _core._make_node_expr(
-            _core._nodedef_for("ifgreater", "vector3", input_type="vector3"),
-            {"value1": len_sq, "value2": _core._constant_expr(0.0), "in1": projected, "in2": _core._constant_expr((0.0, 0.0, 0.0))},
+        return _expr._make_node_expr(
+            _expr._nodedef_for("ifgreater", "vector3", input_type="vector3"),
+            {"value1": len_sq, "value2": _expr._constant_expr(0.0), "in1": projected, "in2": _expr._constant_expr((0.0, 0.0, 0.0))},
         )
     if operation == 'REFLECT':
         a, b = operand(0), operand(1)
         if not (a and b):
             return None
         n = _safe_normalize(b)
-        two_dot = fnode("multiply", in1=_core._constant_expr(2.0), in2=_vector_dot(a, n))
+        two_dot = fnode("multiply", in1=_expr._constant_expr(2.0), in2=_vector_dot(a, n))
         return _vector3_node("subtract", in1=a, in2=vscale(n, two_dot))
     if operation == 'REFRACT':
         a, b, eta = operand(0), operand(1), scalar('Scale')
@@ -616,24 +617,24 @@ def _vector_math_expr(node, from_socket, visited, channel, provenance, cache) ->
             return None
         n = _safe_normalize(b)
         cos_i = _vector_dot(n, a)
-        k = fnode("subtract", in1=_core._constant_expr(1.0), in2=fnode("multiply", in1=fnode("multiply", in1=eta, in2=eta), in2=fnode("subtract", in1=_core._constant_expr(1.0), in2=fnode("multiply", in1=cos_i, in2=cos_i))))
+        k = fnode("subtract", in1=_expr._constant_expr(1.0), in2=fnode("multiply", in1=fnode("multiply", in1=eta, in2=eta), in2=fnode("subtract", in1=_expr._constant_expr(1.0), in2=fnode("multiply", in1=cos_i, in2=cos_i))))
         refracted = _vector3_node(
             "subtract",
             in1=vscale(a, eta),
-            in2=vscale(n, fnode("add", in1=fnode("multiply", in1=eta, in2=cos_i), in2=fnode("sqrt", **{"in": fnode("max", in1=k, in2=_core._constant_expr(0.0))}))),
+            in2=vscale(n, fnode("add", in1=fnode("multiply", in1=eta, in2=cos_i), in2=fnode("sqrt", **{"in": fnode("max", in1=k, in2=_expr._constant_expr(0.0))}))),
         )
         # Cycles' refract returns zero only for k < 0; k == 0 refracts.
-        return _core._make_node_expr(
-            _core._nodedef_for("ifgreatereq", "vector3", input_type="vector3"),
-            {"value1": k, "value2": _core._constant_expr(0.0), "in1": refracted, "in2": _core._constant_expr((0.0, 0.0, 0.0))},
+        return _expr._make_node_expr(
+            _expr._nodedef_for("ifgreatereq", "vector3", input_type="vector3"),
+            {"value1": k, "value2": _expr._constant_expr(0.0), "in1": refracted, "in2": _expr._constant_expr((0.0, 0.0, 0.0))},
         )
     if operation == 'FACEFORWARD':
         a, b, c = operand(0), operand(1), operand(2)
         if not (a and b and c):
             return None
-        return _core._make_node_expr(
-            _core._nodedef_for("ifgreater", "vector3", input_type="vector3"),
-            {"value1": _core._constant_expr(0.0), "value2": _vector_dot(c, b), "in1": a, "in2": vscale(a, _core._constant_expr(-1.0))},
+        return _expr._make_node_expr(
+            _expr._nodedef_for("ifgreater", "vector3", input_type="vector3"),
+            {"value1": _expr._constant_expr(0.0), "value2": _vector_dot(c, b), "in1": a, "in2": vscale(a, _expr._constant_expr(-1.0))},
         )
     return None
 
@@ -668,17 +669,17 @@ def _named_vector_operand(node, name, visited, provenance, cache) -> Optional[Di
             expected_type="vector3",
         )
         return _vector3_operand_expr(resolved)
-    value = _core._socket_default_value(socket)
+    value = _expr._socket_default_value(socket)
     if value is None:
         return None
-    return _vector3_operand_expr(_core._constant_expr(value))
+    return _vector3_operand_expr(_expr._constant_expr(value))
 
 
 def _negated_float(expr: Dict[str, Any]) -> Dict[str, Any]:
     value = _constant_value(expr)
     if value is not None:
-        return _core._constant_expr(-float(value))
-    return _core._make_node_expr(_core._nodedef_for("multiply", "float"), {"in1": expr, "in2": _core._constant_expr(-1.0)})
+        return _expr._constant_expr(-float(value))
+    return _expr._make_node_expr(_expr._nodedef_for("multiply", "float"), {"in1": expr, "in2": _expr._constant_expr(-1.0)})
 
 
 def _rotate_about_unit_axis(p: Dict[str, Any], axis: Dict[str, Any], angle: Dict[str, Any]) -> Dict[str, Any]:
@@ -693,17 +694,17 @@ def _rotate_about_unit_axis(p: Dict[str, Any], axis: Dict[str, Any], angle: Dict
     """
     value = _constant_value(angle)
     if value is not None:
-        cos = _core._constant_expr(math.cos(float(value)))
-        sin = _core._constant_expr(math.sin(float(value)))
-        one_minus_cos = _core._constant_expr(1.0 - math.cos(float(value)))
+        cos = _expr._constant_expr(math.cos(float(value)))
+        sin = _expr._constant_expr(math.sin(float(value)))
+        one_minus_cos = _expr._constant_expr(1.0 - math.cos(float(value)))
     else:
-        cos = _core._make_node_expr(_core._nodedef_for("cos", "float"), {"in": angle})
-        sin = _core._make_node_expr(_core._nodedef_for("sin", "float"), {"in": angle})
-        one_minus_cos = _core._make_node_expr(
-            _core._nodedef_for("subtract", "float"), {"in1": _core._constant_expr(1.0), "in2": cos}
+        cos = _expr._make_node_expr(_expr._nodedef_for("cos", "float"), {"in": angle})
+        sin = _expr._make_node_expr(_expr._nodedef_for("sin", "float"), {"in": angle})
+        one_minus_cos = _expr._make_node_expr(
+            _expr._nodedef_for("subtract", "float"), {"in1": _expr._constant_expr(1.0), "in2": cos}
         )
-    along_axis = _core._make_node_expr(
-        _core._nodedef_for("multiply", "float"), {"in1": _vector_dot(axis, p), "in2": one_minus_cos}
+    along_axis = _expr._make_node_expr(
+        _expr._nodedef_for("multiply", "float"), {"in1": _vector_dot(axis, p), "in2": one_minus_cos}
     )
     return _vector3_node(
         "add",
@@ -750,7 +751,7 @@ def _vector_rotate_expr(node, visited, provenance, cache) -> Optional[Dict[str, 
     if invert:
         angle = _negated_float(angle)
     if rotation_type in _VECTOR_ROTATE_AXES:
-        rotated = _rotate_about_unit_axis(offset, _core._constant_expr(_VECTOR_ROTATE_AXES[rotation_type]), angle)
+        rotated = _rotate_about_unit_axis(offset, _expr._constant_expr(_VECTOR_ROTATE_AXES[rotation_type]), angle)
         return _vector3_node("add", in1=rotated, in2=center)
     if rotation_type != 'AXIS_ANGLE':
         return None
@@ -762,14 +763,14 @@ def _vector_rotate_expr(node, visited, provenance, cache) -> Optional[Dict[str, 
         length = math.sqrt(sum(float(component) ** 2 for component in value))
         if length == 0.0:
             return p
-        unit = _core._constant_expr(tuple(float(component) / length for component in value))
+        unit = _expr._constant_expr(tuple(float(component) / length for component in value))
         rotated = _rotate_about_unit_axis(offset, unit, angle)
         return _vector3_node("add", in1=rotated, in2=center)
     unit = _vector3_node("normalize", **{"in": axis})
     rotated = _vector3_node("add", in1=_rotate_about_unit_axis(offset, unit, angle), in2=center)
-    return _core._make_node_expr(
-        _core._nodedef_for("ifgreater", "vector3", input_type="vector3"),
-        {"value1": _vector_dot(axis, axis), "value2": _core._constant_expr(0.0), "in1": rotated, "in2": p},
+    return _expr._make_node_expr(
+        _expr._nodedef_for("ifgreater", "vector3", input_type="vector3"),
+        {"value1": _vector_dot(axis, axis), "value2": _expr._constant_expr(0.0), "in1": rotated, "in2": p},
     )
 
 
@@ -782,9 +783,9 @@ def _euler_xyz_rotate(p: Dict[str, Any], rotation: Dict[str, Any], inverse: bool
     """
     value = _constant_value(rotation)
     if value is not None:
-        angles = [_core._constant_expr(float(component)) for component in list(value)[:3]]
+        angles = [_expr._constant_expr(float(component)) for component in list(value)[:3]]
     else:
-        angles = [_core._component_expr(rotation, "vector3", axis) for axis in "xyz"]
+        angles = [_expr._component_expr(rotation, "vector3", axis) for axis in "xyz"]
     steps = list(zip(_VECTOR_ROTATE_AXES.values(), angles))
     if inverse:
         steps = [(axis, _negated_float(angle)) for axis, angle in reversed(steps)]
@@ -792,7 +793,7 @@ def _euler_xyz_rotate(p: Dict[str, Any], rotation: Dict[str, Any], inverse: bool
         constant = _constant_value(angle)
         if constant is not None and float(constant) == 0.0:
             continue
-        p = _rotate_about_unit_axis(p, _core._constant_expr(axis), angle)
+        p = _rotate_about_unit_axis(p, _expr._constant_expr(axis), angle)
     return p
 
 
@@ -809,19 +810,19 @@ def _color3_operand_expr(expr: Optional[Dict[str, Any]]) -> Optional[Dict[str, A
             parts = [float(v) for v in value][:3]
             while len(parts) < 3:
                 parts.append(parts[-1] if parts else 0.0)
-            return _core._constant_expr(tuple(parts))
+            return _expr._constant_expr(tuple(parts))
         try:
             f = float(value)
         except (TypeError, ValueError):
             return None
-        return _core._constant_expr((f, f, f))
+        return _expr._constant_expr((f, f, f))
     if kind == "texture":
         texture = dict(expr)
         if _texture_is_scalar(texture):
             # One channel of the file is a float; a colour socket repeats it.
             texture["output_type"] = "float"
-            return _core._make_node_expr(
-                _core._nodedef_for("convert", "color3", input_type="float"), {"in": texture}
+            return _expr._make_node_expr(
+                _expr._nodedef_for("convert", "color3", input_type="float"), {"in": texture}
             )
         texture["output_type"] = "color3"
         return texture
@@ -830,7 +831,7 @@ def _color3_operand_expr(expr: Optional[Dict[str, Any]]) -> Optional[Dict[str, A
         if out_type == "color3":
             return expr
         if out_type in ("float", "vector3", "color4"):
-            return _core._make_node_expr(_core._nodedef_for("convert", "color3", input_type=out_type), {"in": expr})
+            return _expr._make_node_expr(_expr._nodedef_for("convert", "color3", input_type=out_type), {"in": expr})
     return None
 
 
@@ -851,19 +852,19 @@ def _coerce_output(expr: Optional[Dict[str, Any]], expected_type: Optional[str],
         if channel or out_type == "float":
             return expr
         if out_type == "color4":
-            expr = _core._make_node_expr(_core._nodedef_for("convert", "color3", input_type="color4"), {"in": expr})
+            expr = _expr._make_node_expr(_expr._nodedef_for("convert", "color3", input_type="color4"), {"in": expr})
             out_type = "color3"
         if out_type == "color3":
-            as_vector = _core._make_node_expr(_core._nodedef_for("convert", "vector3", input_type="color3"), {"in": expr})
-            return _vector_dot(as_vector, _core._constant_expr(_core._RGB_TO_GRAY))
+            as_vector = _expr._make_node_expr(_expr._nodedef_for("convert", "vector3", input_type="color3"), {"in": expr})
+            return _vector_dot(as_vector, _expr._constant_expr(_expr._RGB_TO_GRAY))
         if out_type == "vector3":
-            return _vector_dot(expr, _core._constant_expr(_core._VECTOR_MEAN))
+            return _vector_dot(expr, _expr._constant_expr(_expr._VECTOR_MEAN))
         return expr
     if expected_type in ("color3", "vector3") and out_type in ("color3", "vector3", "float", "color4"):
         if out_type == "color4" and expected_type == "vector3":
-            expr = _core._make_node_expr(_core._nodedef_for("convert", "color3", input_type="color4"), {"in": expr})
+            expr = _expr._make_node_expr(_expr._nodedef_for("convert", "color3", input_type="color4"), {"in": expr})
             out_type = "color3"
-        return _core._make_node_expr(_core._nodedef_for("convert", expected_type, input_type=out_type), {"in": expr})
+        return _expr._make_node_expr(_expr._nodedef_for("convert", expected_type, input_type=out_type), {"in": expr})
     return expr
 
 
@@ -878,15 +879,15 @@ def _float_to_expected(expr: Optional[Dict[str, Any]], expected_type: Optional[s
         return expr
     kind = expr.get("kind")
     if kind == "constant":
-        value = _core._constant_scalar(expr)
+        value = _expr._constant_scalar(expr)
         if value is None:
             return expr
-        return _core._constant_expr((value,) * (4 if expected_type == "color4" else 3))
+        return _expr._constant_expr((value,) * (4 if expected_type == "color4" else 3))
     if kind == "texture":
         texture = dict(expr)
         texture["output_type"] = "float"
-        return _core._make_node_expr(
-            _core._nodedef_for("convert", expected_type, input_type="float"), {"in": texture}
+        return _expr._make_node_expr(
+            _expr._nodedef_for("convert", expected_type, input_type="float"), {"in": texture}
         )
     if kind == "node":
         return _coerce_output(expr, expected_type)
@@ -921,14 +922,14 @@ def _named_socket(node, name):
 def _named_color_operand(node, name, visited, provenance, cache, default=(0.0, 0.0, 0.0)):
     socket = _named_socket(node, name)
     if socket is None:
-        return _core._constant_expr(tuple(default))
+        return _expr._constant_expr(tuple(default))
     if getattr(socket, "is_linked", False):
         resolved = _core._resolve_socket_value(
             socket, set(visited or ()), None, list(provenance or ()), cache, expected_type="color3",
         )
         return _color3_operand_expr(resolved)
-    value = _core._socket_default_value(socket)
-    return _color3_operand_expr(_core._constant_expr(value if value is not None else default))
+    value = _expr._socket_default_value(socket)
+    return _color3_operand_expr(_expr._constant_expr(value if value is not None else default))
 
 
 def _named_float_operand(node, name, visited, provenance, cache, default: float = 0.0):
@@ -937,15 +938,15 @@ def _named_float_operand(node, name, visited, provenance, cache, default: float 
 
 
 def _color3_node(name: str, **inputs: Any) -> Dict[str, Any]:
-    return _core._make_node_expr(_core._nodedef_for(name, "color3", input_type="color3"), inputs)
+    return _expr._make_node_expr(_expr._nodedef_for(name, "color3", input_type="color3"), inputs)
 
 
 def _broadcast_color3(value: Dict[str, Any]) -> Dict[str, Any]:
     """A float repeated into a color3, folded when it is a constant."""
-    scalar = _core._constant_scalar(value)
+    scalar = _expr._constant_scalar(value)
     if scalar is not None:
-        return _core._constant_expr((scalar, scalar, scalar))
-    return _core._make_node_expr(_core._nodedef_for("combine3", "color3"), {"in1": value, "in2": value, "in3": value})
+        return _expr._constant_expr((scalar, scalar, scalar))
+    return _expr._make_node_expr(_expr._nodedef_for("combine3", "color3"), {"in1": value, "in2": value, "in3": value})
 
 
 def _component_of(expr: Dict[str, Any], channel: str) -> Dict[str, Any]:
@@ -965,13 +966,13 @@ def _component_of(expr: Dict[str, Any], channel: str) -> Dict[str, Any]:
         value = expr.get("value")
         if isinstance(value, (list, tuple)):
             if 0 <= index < len(value):
-                return _core._constant_expr(float(value[index]))
-            return _core._constant_expr(1.0 if index == 3 else 0.0)
+                return _expr._constant_expr(float(value[index]))
+            return _expr._constant_expr(1.0 if index == 3 else 0.0)
         return expr
     if kind == "node":
         out_type = _node_expr_output_type(expr)
         if out_type in ("color3", "vector3", "color4", "vector4"):
-            return _core._component_expr(expr, out_type, letter)
+            return _expr._component_expr(expr, out_type, letter)
         return expr
     if kind == "texture":
         texture = dict(expr)
@@ -1001,31 +1002,31 @@ def _gamma_expr(node, visited, provenance, cache) -> Optional[Dict[str, Any]]:
     gamma_value = _constant_value(gamma)
     color_value = _constant_value(color)
     if gamma_value is not None and float(gamma_value) == 0.0:
-        return _core._constant_expr((1.0, 1.0, 1.0))
+        return _expr._constant_expr((1.0, 1.0, 1.0))
     if gamma_value is not None and color_value is not None:
         g = float(gamma_value)
-        return _core._constant_expr(tuple(c ** g if c > 0.0 else c for c in (float(v) for v in color_value)))
+        return _expr._constant_expr(tuple(c ** g if c > 0.0 else c for c in (float(v) for v in color_value)))
     channels = []
     for index, name in enumerate("rgb"):
         if color_value is not None:
-            component = _core._constant_expr(float(color_value[index]))
+            component = _expr._constant_expr(float(color_value[index]))
         else:
-            component = _core._component_expr(color, "color3", name)
-        raised = _core._make_node_expr(_core._nodedef_for("power", "float"), {"in1": component, "in2": gamma})
+            component = _expr._component_expr(color, "color3", name)
+        raised = _expr._make_node_expr(_expr._nodedef_for("power", "float"), {"in1": component, "in2": gamma})
         if color_value is not None:
             channels.append(raised if float(color_value[index]) > 0.0 else component)
         else:
-            channels.append(_core._make_node_expr(
-                _core._nodedef_for("ifgreater", "float"),
-                {"value1": component, "value2": _core._constant_expr(0.0), "in1": raised, "in2": component},
+            channels.append(_expr._make_node_expr(
+                _expr._nodedef_for("ifgreater", "float"),
+                {"value1": component, "value2": _expr._constant_expr(0.0), "in1": raised, "in2": component},
             ))
-    result = _core._make_node_expr(
-        _core._nodedef_for("combine3", "color3"), {"in1": channels[0], "in2": channels[1], "in3": channels[2]}
+    result = _expr._make_node_expr(
+        _expr._nodedef_for("combine3", "color3"), {"in1": channels[0], "in2": channels[1], "in3": channels[2]}
     )
     if gamma_value is None:
-        result = _core._make_node_expr(
+        result = _expr._make_node_expr(
             "ND_ifequal_color3",
-            {"value1": gamma, "value2": _core._constant_expr(0.0), "in1": _core._constant_expr((1.0, 1.0, 1.0)), "in2": result},
+            {"value1": gamma, "value2": _expr._constant_expr(0.0), "in1": _expr._constant_expr((1.0, 1.0, 1.0)), "in2": result},
         )
     return result
 
@@ -1051,13 +1052,13 @@ def _checker_expr(node, from_socket, visited, provenance, cache) -> Optional[Dic
     p = _vector_times_float(coordinate, scale)
     p = _vector3_node(
         "multiply",
-        in1=_vector3_node("add", in1=p, in2=_core._constant_expr((1e-6, 1e-6, 1e-6))),
-        in2=_core._constant_expr((0.999999, 0.999999, 0.999999)),
+        in1=_vector3_node("add", in1=p, in2=_expr._constant_expr((1e-6, 1e-6, 1e-6))),
+        in2=_expr._constant_expr((0.999999, 0.999999, 0.999999)),
     )
     floors = _vector3_node("floor", **{"in": p})
-    fac = _core._make_node_expr(
-        _core._nodedef_for("modulo", "float"),
-        {"in1": _vector_dot(floors, _core._constant_expr((1.0, 1.0, 1.0))), "in2": _core._constant_expr(2.0)},
+    fac = _expr._make_node_expr(
+        _expr._nodedef_for("modulo", "float"),
+        {"in1": _vector_dot(floors, _expr._constant_expr((1.0, 1.0, 1.0))), "in2": _expr._constant_expr(2.0)},
     )
     if getattr(from_socket, "name", "") == 'Fac':
         return fac
@@ -1065,7 +1066,7 @@ def _checker_expr(node, from_socket, visited, provenance, cache) -> Optional[Dic
     color2 = _named_color_operand(node, 'Color2', visited, provenance, cache, default=(0.2, 0.2, 0.2))
     if not color1 or not color2:
         return None
-    return _core._make_node_expr(_core._nodedef_for("mix", "color3"), {"fg": color1, "bg": color2, "mix": fac})
+    return _expr._make_node_expr(_expr._nodedef_for("mix", "color3"), {"fg": color1, "bg": color2, "mix": fac})
 
 
 def _camera_data_expr(output_name: str) -> Optional[Dict[str, Any]]:
@@ -1087,20 +1088,20 @@ def _camera_data_expr(output_name: str) -> Optional[Dict[str, Any]]:
     """
     if output_name not in ('View Vector', 'View Z Depth', 'View Distance'):
         return None
-    object_position = _core._make_node_expr(
-        _core._nodedef_for("position", "vector3"), {"space": _core._constant_expr("object")}
+    object_position = _expr._make_node_expr(
+        _expr._nodedef_for("position", "vector3"), {"space": _expr._constant_expr("object")}
     )
-    model_to_view = _core._make_node_expr(
+    model_to_view = _expr._make_node_expr(
         "ND_realitykit_surface_model_to_view", {}, output="modelToView"
     )
-    view = _core._make_node_expr(
+    view = _expr._make_node_expr(
         "ND_transformmatrix_vector3M4", {"in": object_position, "mat": model_to_view}
     )
-    camera = _vector3_node("multiply", in1=view, in2=_core._constant_expr((1.0, 1.0, -1.0)))
+    camera = _vector3_node("multiply", in1=view, in2=_expr._constant_expr((1.0, 1.0, -1.0)))
     if output_name == 'View Distance':
-        return _core._make_node_expr(_core._nodedef_for("magnitude", "float", input_type="vector3"), {"in": camera})
+        return _expr._make_node_expr(_expr._nodedef_for("magnitude", "float", input_type="vector3"), {"in": camera})
     if output_name == 'View Z Depth':
-        return _core._component_expr(camera, "vector3", "z")
+        return _expr._component_expr(camera, "vector3", "z")
     return _vector3_node("normalize", **{"in": camera})
 
 
@@ -1111,28 +1112,28 @@ def _safe_divide_vector(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
         reciprocal = tuple(1.0 / float(v) if float(v) != 0.0 else 0.0 for v in list(b_value)[:3])
         if reciprocal == (1.0, 1.0, 1.0):
             return a
-        return _vector3_node("multiply", in1=a, in2=_core._constant_expr(reciprocal))
+        return _vector3_node("multiply", in1=a, in2=_expr._constant_expr(reciprocal))
     parts = []
     for axis in "xyz":
-        numerator = _core._component_expr(a, "vector3", axis)
-        denominator = _core._component_expr(b, "vector3", axis)
-        parts.append(_core._make_node_expr(
-            _core._nodedef_for("ifequal", "float"),
+        numerator = _expr._component_expr(a, "vector3", axis)
+        denominator = _expr._component_expr(b, "vector3", axis)
+        parts.append(_expr._make_node_expr(
+            _expr._nodedef_for("ifequal", "float"),
             {
                 "value1": denominator,
-                "value2": _core._constant_expr(0.0),
-                "in1": _core._constant_expr(0.0),
-                "in2": _core._make_node_expr(_core._nodedef_for("divide", "float"), {"in1": numerator, "in2": denominator}),
+                "value2": _expr._constant_expr(0.0),
+                "in1": _expr._constant_expr(0.0),
+                "in2": _expr._make_node_expr(_expr._nodedef_for("divide", "float"), {"in1": numerator, "in2": denominator}),
             },
         ))
-    return _core._make_node_expr(_core._nodedef_for("combine3", "vector3"), {"in1": parts[0], "in2": parts[1], "in3": parts[2]})
+    return _expr._make_node_expr(_expr._nodedef_for("combine3", "vector3"), {"in1": parts[0], "in2": parts[1], "in3": parts[2]})
 
 
 def _safe_normalize(v: Dict[str, Any]) -> Dict[str, Any]:
     """Cycles' ``safe_normalize``: a zero vector passes through."""
-    return _core._make_node_expr(
-        _core._nodedef_for("ifgreater", "vector3", input_type="vector3"),
-        {"value1": _vector_dot(v, v), "value2": _core._constant_expr(0.0),
+    return _expr._make_node_expr(
+        _expr._nodedef_for("ifgreater", "vector3", input_type="vector3"),
+        {"value1": _vector_dot(v, v), "value2": _expr._constant_expr(0.0),
          "in1": _vector3_node("normalize", **{"in": v}), "in2": v},
     )
 
@@ -1246,7 +1247,7 @@ def _image_coordinate_expr(image_node, visited, provenance, cache) -> Optional[D
             socket, set(visited or ()), None, list(provenance or ()), cache, expected_type="vector3",
         )
         return _vector3_operand_expr(resolved)
-    return _core._make_node_expr(_core._nodedef_for("texcoord", "vector3"), {})
+    return _expr._make_node_expr(_expr._nodedef_for("texcoord", "vector3"), {})
 
 
 def _sample_image(image_node, file_spec, coordinate, read_type, alpha_only=False) -> Dict[str, Any]:
@@ -1257,11 +1258,11 @@ def _sample_image(image_node, file_spec, coordinate, read_type, alpha_only=False
         file_input["channel"] = "a"
     inputs: Dict[str, Any] = {
         "file": file_input,
-        "texcoord": _core._make_node_expr(_core._nodedef_for("convert", "vector2", input_type="vector3"), {"in": coordinate}),
+        "texcoord": _expr._make_node_expr(_expr._nodedef_for("convert", "vector2", input_type="vector3"), {"in": coordinate}),
     }
     for name, value in sorted((_core._image_node_sampling(image_node) or {}).items()):
-        inputs[name] = _core._constant_expr(value)
-    return _core._make_node_expr(_core._nodedef_for("image", read_type), inputs)
+        inputs[name] = _expr._constant_expr(value)
+    return _expr._make_node_expr(_expr._nodedef_for("image", read_type), inputs)
 
 
 def _alpha_output_linked(image_node) -> bool:
@@ -1314,20 +1315,20 @@ def _srgb_decode_color3(expr: Dict[str, Any]) -> Dict[str, Any]:
     """The sRGB transfer function Blender's colour config applies, per channel."""
     channels = []
     for channel in "rgb":
-        c = _core._component_expr(expr, "color3", channel)
-        linear_part = _core._make_node_expr(_core._nodedef_for("divide", "float"), {"in1": c, "in2": _core._constant_expr(12.92)})
-        curve = _core._make_node_expr(_core._nodedef_for("power", "float"), {
-            "in1": _core._make_node_expr(_core._nodedef_for("divide", "float"), {
-                "in1": _core._make_node_expr(_core._nodedef_for("add", "float"), {"in1": c, "in2": _core._constant_expr(0.055)}),
-                "in2": _core._constant_expr(1.055),
+        c = _expr._component_expr(expr, "color3", channel)
+        linear_part = _expr._make_node_expr(_expr._nodedef_for("divide", "float"), {"in1": c, "in2": _expr._constant_expr(12.92)})
+        curve = _expr._make_node_expr(_expr._nodedef_for("power", "float"), {
+            "in1": _expr._make_node_expr(_expr._nodedef_for("divide", "float"), {
+                "in1": _expr._make_node_expr(_expr._nodedef_for("add", "float"), {"in1": c, "in2": _expr._constant_expr(0.055)}),
+                "in2": _expr._constant_expr(1.055),
             }),
-            "in2": _core._constant_expr(2.4),
+            "in2": _expr._constant_expr(2.4),
         })
-        channels.append(_core._make_node_expr(
-            _core._nodedef_for("ifgreater", "float"),
-            {"value1": c, "value2": _core._constant_expr(0.04045), "in1": curve, "in2": linear_part},
+        channels.append(_expr._make_node_expr(
+            _expr._nodedef_for("ifgreater", "float"),
+            {"value1": c, "value2": _expr._constant_expr(0.04045), "in1": curve, "in2": linear_part},
         ))
-    return _core._make_node_expr(_core._nodedef_for("combine3", "color3"), {"in1": channels[0], "in2": channels[1], "in3": channels[2]})
+    return _expr._make_node_expr(_expr._nodedef_for("combine3", "color3"), {"in1": channels[0], "in2": channels[1], "in3": channels[2]})
 
 
 def _sample_color(image_node, file_spec, coordinate) -> Dict[str, Any]:
@@ -1342,11 +1343,11 @@ def _sample_color(image_node, file_spec, coordinate) -> Dict[str, Any]:
         spec["colorspace_role"] = "data"
         spec["channel"] = "a"
     rgba = _sample_image(image_node, spec, coordinate, "color4")
-    rgb = _core._make_node_expr(_core._nodedef_for("convert", "color3", input_type="color4"), {"in": rgba})
-    alpha = _core._component_expr(rgba, "color4", "a")
-    premultiplied = _core._make_node_expr(
-        _core._nodedef_for("multiply", "color3"),
-        {"in1": rgb, "in2": _core._make_node_expr(_core._nodedef_for("combine3", "color3"), {"in1": alpha, "in2": alpha, "in3": alpha})},
+    rgb = _expr._make_node_expr(_expr._nodedef_for("convert", "color3", input_type="color4"), {"in": rgba})
+    alpha = _expr._component_expr(rgba, "color4", "a")
+    premultiplied = _expr._make_node_expr(
+        _expr._nodedef_for("multiply", "color3"),
+        {"in1": rgb, "in2": _expr._make_node_expr(_expr._nodedef_for("combine3", "color3"), {"in1": alpha, "in2": alpha, "in3": alpha})},
     )
     return _srgb_decode_color3(premultiplied) if premultiply == "encoded" else premultiplied
 
@@ -1391,8 +1392,8 @@ def _computed_image_expr(image_node, from_socket, visited, provenance, cache, ex
         return coordinate
     if _core._image_channel_from_output_socket(from_socket) == "a":
         if file_spec.get("source_has_alpha") is False:
-            return _core._constant_expr((1.0, 1.0, 1.0) if expected_type in ("color3", "vector3") else 1.0)
-        return _core._component_expr(_sample_image(image_node, file_spec, coordinate, "color4", alpha_only=True), "color4", "a")
+            return _expr._constant_expr((1.0, 1.0, 1.0) if expected_type in ("color3", "vector3") else 1.0)
+        return _expr._component_expr(_sample_image(image_node, file_spec, coordinate, "color4", alpha_only=True), "color4", "a")
     return _coerce_output(_sample_color(image_node, file_spec, coordinate), expected_type, channel)
 
 
@@ -1418,51 +1419,51 @@ def _environment_texture_expr(node, from_socket, visited, provenance, cache, exp
     direction = _safe_normalize(co)
 
     def component(axis):
-        return _core._component_expr(direction, "vector3", axis)
+        return _expr._component_expr(direction, "vector3", axis)
 
     def f(op, a, b):
-        return _core._make_node_expr(_core._nodedef_for(op, "float"), {"in1": a, "in2": b})
+        return _expr._make_node_expr(_expr._nodedef_for(op, "float"), {"in1": a, "in2": b})
 
     projection = str(getattr(node, "projection", "EQUIRECTANGULAR") or "EQUIRECTANGULAR").upper()
     if projection == 'EQUIRECTANGULAR':
-        z = _core._make_node_expr(_core._nodedef_for("clamp", "float"), {
-            "in": component("z"), "low": _core._constant_expr(-1.0), "high": _core._constant_expr(1.0),
+        z = _expr._make_node_expr(_expr._nodedef_for("clamp", "float"), {
+            "in": component("z"), "low": _expr._constant_expr(-1.0), "high": _expr._constant_expr(1.0),
         })
         # compatible_atan2: straight up or down, x and y are both 0 and Cycles
         # reads u = 0.5 where RealityKit's bare atan2 gives NaN.
-        u = f("divide", f("subtract", _core._compatible_atan2_float(component("y"), component("x")), _core._constant_expr(math.pi)),
-              _core._constant_expr(-2.0 * math.pi))
-        v = f("divide", f("subtract", _core._make_node_expr(_core._nodedef_for("acos", "float"), {"in": z}),
-                          _core._constant_expr(math.pi)), _core._constant_expr(-math.pi))
-        uv = _core._make_node_expr(_core._nodedef_for("combine3", "vector3"), {"in1": u, "in2": v, "in3": _core._constant_expr(0.0)})
-        coordinate = _core._make_node_expr(
-            _core._nodedef_for("ifgreater", "vector3", input_type="vector3"),
-            {"value1": _vector_dot(co, co), "value2": _core._constant_expr(0.0), "in1": uv, "in2": _core._constant_expr((0.0, 0.0, 0.0))},
+        u = f("divide", f("subtract", _core._compatible_atan2_float(component("y"), component("x")), _expr._constant_expr(math.pi)),
+              _expr._constant_expr(-2.0 * math.pi))
+        v = f("divide", f("subtract", _expr._make_node_expr(_expr._nodedef_for("acos", "float"), {"in": z}),
+                          _expr._constant_expr(math.pi)), _expr._constant_expr(-math.pi))
+        uv = _expr._make_node_expr(_expr._nodedef_for("combine3", "vector3"), {"in1": u, "in2": v, "in3": _expr._constant_expr(0.0)})
+        coordinate = _expr._make_node_expr(
+            _expr._nodedef_for("ifgreater", "vector3", input_type="vector3"),
+            {"value1": _vector_dot(co, co), "value2": _expr._constant_expr(0.0), "in1": uv, "in2": _expr._constant_expr((0.0, 0.0, 0.0))},
         )
     elif projection == 'MIRROR_BALL':
-        shifted = _vector3_node("subtract", in1=direction, in2=_core._constant_expr((0.0, 1.0, 0.0)))
-        y = _core._component_expr(shifted, "vector3", "y")
-        root = _core._make_node_expr(_core._nodedef_for("sqrt", "float"), {
-            "in": _core._make_node_expr(_core._nodedef_for("max", "float"), {
-                "in1": f("multiply", _core._constant_expr(-0.5), y), "in2": _core._constant_expr(0.0),
+        shifted = _vector3_node("subtract", in1=direction, in2=_expr._constant_expr((0.0, 1.0, 0.0)))
+        y = _expr._component_expr(shifted, "vector3", "y")
+        root = _expr._make_node_expr(_expr._nodedef_for("sqrt", "float"), {
+            "in": _expr._make_node_expr(_expr._nodedef_for("max", "float"), {
+                "in1": f("multiply", _expr._constant_expr(-0.5), y), "in2": _expr._constant_expr(0.0),
             }),
         })
-        div = f("multiply", _core._constant_expr(2.0), root)
-        scaled = _core._make_node_expr(
-            _core._nodedef_for("ifgreater", "vector3", input_type="vector3"),
-            {"value1": div, "value2": _core._constant_expr(0.0),
-             "in1": _vector_times_float(shifted, f("divide", _core._constant_expr(1.0), div)), "in2": shifted},
+        div = f("multiply", _expr._constant_expr(2.0), root)
+        scaled = _expr._make_node_expr(
+            _expr._nodedef_for("ifgreater", "vector3", input_type="vector3"),
+            {"value1": div, "value2": _expr._constant_expr(0.0),
+             "in1": _vector_times_float(shifted, f("divide", _expr._constant_expr(1.0), div)), "in2": shifted},
         )
         coordinate = _vector3_node(
             "multiply",
-            in1=_vector3_node("add", in1=scaled, in2=_core._constant_expr((1.0, 1.0, 1.0))),
-            in2=_core._constant_expr((0.5, 0.5, 0.5)),
+            in1=_vector3_node("add", in1=scaled, in2=_expr._constant_expr((1.0, 1.0, 1.0))),
+            in2=_expr._constant_expr((0.5, 0.5, 0.5)),
         )
         # (u, v) = 0.5 (x + 1, z + 1)
-        coordinate = _core._make_node_expr(_core._nodedef_for("combine3", "vector3"), {
-            "in1": _core._component_expr(coordinate, "vector3", "x"),
-            "in2": _core._component_expr(coordinate, "vector3", "z"),
-            "in3": _core._constant_expr(0.0),
+        coordinate = _expr._make_node_expr(_expr._nodedef_for("combine3", "vector3"), {
+            "in1": _expr._component_expr(coordinate, "vector3", "x"),
+            "in2": _expr._component_expr(coordinate, "vector3", "z"),
+            "in3": _expr._constant_expr(0.0),
         })
     else:
         return {
@@ -1501,24 +1502,24 @@ def _box_projection_expr(image_node, from_socket, visited, provenance, cache, ex
     blend = float(getattr(image_node, "projection_blend", 0.0) or 0.0)
     limit = 0.5 * (1.0 + blend)
 
-    signed = _core._make_node_expr(_core._nodedef_for("normal", "vector3"), {"space": _core._constant_expr("object")})
+    signed = _expr._make_node_expr(_expr._nodedef_for("normal", "vector3"), {"space": _expr._constant_expr("object")})
     absolute = _vector3_node("absval", **{"in": signed})
-    total = _vector_dot(absolute, _core._constant_expr((1.0, 1.0, 1.0)))
-    n = _vector3_node("divide", in1=absolute, in2=_core._make_node_expr(
-        _core._nodedef_for("combine3", "vector3"), {"in1": total, "in2": total, "in3": total}))
-    nx, ny, nz = (_core._component_expr(n, "vector3", axis) for axis in "xyz")
-    sx, sy, sz = (_core._component_expr(signed, "vector3", axis) for axis in "xyz")
+    total = _vector_dot(absolute, _expr._constant_expr((1.0, 1.0, 1.0)))
+    n = _vector3_node("divide", in1=absolute, in2=_expr._make_node_expr(
+        _expr._nodedef_for("combine3", "vector3"), {"in1": total, "in2": total, "in3": total}))
+    nx, ny, nz = (_expr._component_expr(n, "vector3", axis) for axis in "xyz")
+    sx, sy, sz = (_expr._component_expr(signed, "vector3", axis) for axis in "xyz")
 
     def f(op, a, b):
-        return _core._fold_float(op, a, b) if op in ("add", "subtract", "multiply") else _core._make_node_expr(
-            _core._nodedef_for(op, "float"), {"in1": a, "in2": b})
+        return _core._fold_float(op, a, b) if op in ("add", "subtract", "multiply") else _expr._make_node_expr(
+            _expr._nodedef_for(op, "float"), {"in1": a, "in2": b})
 
     def c(value):
-        return _core._constant_expr(float(value))
+        return _expr._constant_expr(float(value))
 
     def greater(a, b, when_true, when_false, kind="vector3"):
-        return _core._make_node_expr(
-            _core._nodedef_for("ifgreater", kind, input_type=kind if kind != "float" else None),
+        return _expr._make_node_expr(
+            _expr._nodedef_for("ifgreater", kind, input_type=kind if kind != "float" else None),
             {"value1": a, "value2": b, "in1": when_true, "in2": when_false},
         )
 
@@ -1526,10 +1527,10 @@ def _box_projection_expr(image_node, from_socket, visited, provenance, cache, ex
         return greater(a1, b1, greater(a2, b2, when_true, when_false), when_false)
 
     def weights(wx, wy, wz):
-        return _core._make_node_expr(_core._nodedef_for("combine3", "vector3"), {"in1": wx, "in2": wy, "in3": wz})
+        return _expr._make_node_expr(_expr._nodedef_for("combine3", "vector3"), {"in1": wx, "in2": wy, "in3": wz})
 
     def saturate(x):
-        return _core._make_node_expr(_core._nodedef_for("clamp", "float"), {"in": x, "low": c(0.0), "high": c(1.0)})
+        return _expr._make_node_expr(_expr._nodedef_for("clamp", "float"), {"in": x, "low": c(0.0), "high": c(1.0)})
 
     zero, one = c(0.0), c(1.0)
     if blend > 0.0:
@@ -1559,22 +1560,22 @@ def _box_projection_expr(image_node, from_socket, visited, provenance, cache, ex
             ),
         )
     else:
-        between = _core._constant_expr((1.0, 0.0, 0.0))
+        between = _expr._constant_expr((1.0, 0.0, 0.0))
 
     weight = both_greater(
         nx, f("multiply", c(limit), f("add", nx, ny)), nx, f("multiply", c(limit), f("add", nx, nz)),
-        _core._constant_expr((1.0, 0.0, 0.0)),
+        _expr._constant_expr((1.0, 0.0, 0.0)),
         both_greater(
             ny, f("multiply", c(limit), f("add", nx, ny)), ny, f("multiply", c(limit), f("add", ny, nz)),
-            _core._constant_expr((0.0, 1.0, 0.0)),
+            _expr._constant_expr((0.0, 1.0, 0.0)),
             both_greater(
                 nz, f("multiply", c(limit), f("add", nx, nz)), nz, f("multiply", c(limit), f("add", ny, nz)),
-                _core._constant_expr((0.0, 0.0, 1.0)),
+                _expr._constant_expr((0.0, 0.0, 1.0)),
                 between,
             ),
         ),
     )
-    cx, cy, cz = (_core._component_expr(co, "vector3", axis) for axis in "xyz")
+    cx, cy, cz = (_expr._component_expr(co, "vector3", axis) for axis in "xyz")
 
     def flipped(sign_test_positive, sign, value):
         mirrored = f("subtract", one, value)
@@ -1592,23 +1593,23 @@ def _box_projection_expr(image_node, from_socket, visited, provenance, cache, ex
     )
     wants_alpha = _core._image_channel_from_output_socket(from_socket) == "a"
     if wants_alpha and file_spec.get("source_has_alpha") is False:
-        return _core._constant_expr(1.0)
+        return _expr._constant_expr(1.0)
     read_type = "color4" if wants_alpha else "color3"
     summed = None
     for axis, coordinate in sides:
-        w = _core._component_expr(weight, "vector3", axis)
-        broadcast = _core._make_node_expr(
-            _core._nodedef_for("combine4" if read_type == "color4" else "combine3", read_type),
+        w = _expr._component_expr(weight, "vector3", axis)
+        broadcast = _expr._make_node_expr(
+            _expr._nodedef_for("combine4" if read_type == "color4" else "combine3", read_type),
             {"in1": w, "in2": w, "in3": w, **({"in4": w} if read_type == "color4" else {})},
         )
         sample = (
             _sample_image(image_node, file_spec, coordinate, read_type, alpha_only=True)
             if wants_alpha else _sample_color(image_node, file_spec, coordinate)
         )
-        term = _core._make_node_expr(_core._nodedef_for("multiply", read_type), {"in1": sample, "in2": broadcast})
-        summed = term if summed is None else _core._make_node_expr(_core._nodedef_for("add", read_type), {"in1": summed, "in2": term})
+        term = _expr._make_node_expr(_expr._nodedef_for("multiply", read_type), {"in1": sample, "in2": broadcast})
+        summed = term if summed is None else _expr._make_node_expr(_expr._nodedef_for("add", read_type), {"in1": summed, "in2": term})
     if wants_alpha:
-        return _core._component_expr(summed, "color4", "a")
+        return _expr._component_expr(summed, "color4", "a")
     return _coerce_output(summed, expected_type, channel)
 
 
@@ -1662,9 +1663,9 @@ def _object_info_expr(from_socket, provenance) -> Dict[str, Any]:
     """
     output_name = getattr(from_socket, "name", "") or ""
     if output_name == 'Random':
-        return _core._make_node_expr(
-            _core._nodedef_for("geompropvalue", "float"),
-            {"geomprop": _core._constant_expr(OBJECT_RANDOM_PRIMVAR), "default": _core._constant_expr(0.0)},
+        return _expr._make_node_expr(
+            _expr._nodedef_for("geompropvalue", "float"),
+            {"geomprop": _expr._constant_expr(OBJECT_RANDOM_PRIMVAR), "default": _expr._constant_expr(0.0)},
         )
     return {
         "kind": "unresolved",
@@ -1761,13 +1762,13 @@ def _attribute_node_expr(node, from_socket, provenance) -> Dict[str, Any]:
             f"carries no primvars:{name}; add the attribute or fix the name"
         )
     kind, data_type, domain = found
-    one = _core._constant_expr(1.0)
+    one = _expr._constant_expr(1.0)
     if kind == "uv":
         uv_name, refusal = _core.uv_set_resolution(node, name)
         if refusal is not None:
             return refuse(refusal)
         value = _core._uv_set_expr(uv_name)
-        fac, alpha = _core._component_expr(value, "vector3", "x"), one
+        fac, alpha = _expr._component_expr(value, "vector3", "x"), one
     elif kind == "color":
         index = _core._color_attribute_set_index(node, name)
         if index is None:
@@ -1776,13 +1777,13 @@ def _attribute_node_expr(node, from_socket, provenance) -> Dict[str, Any]:
                 "addresses vertex colours by set index, so only the first is exportable; reorder "
                 "the attributes or bake the material"
             )
-        read = _core._make_node_expr(_core._nodedef_for("geomcolor", "color4"), {"index": _core._constant_expr(index)})
-        value = _core._make_node_expr(
-            _core._nodedef_for("convert", "vector3", input_type="color3"),
-            {"in": _core._make_node_expr(_core._nodedef_for("convert", "color3", input_type="color4"), {"in": read})},
+        read = _expr._make_node_expr(_expr._nodedef_for("geomcolor", "color4"), {"index": _expr._constant_expr(index)})
+        value = _expr._make_node_expr(
+            _expr._nodedef_for("convert", "vector3", input_type="color3"),
+            {"in": _expr._make_node_expr(_expr._nodedef_for("convert", "color3", input_type="color4"), {"in": read})},
         )
-        fac = _vector_dot(value, _core._constant_expr((1 / 3, 1 / 3, 1 / 3)))
-        alpha = _core._component_expr(read, "color4", "a")
+        fac = _vector_dot(value, _expr._constant_expr((1 / 3, 1 / 3, 1 / 3)))
+        alpha = _expr._component_expr(read, "color4", "a")
     else:
         if domain not in _ATTRIBUTE_READABLE_DOMAINS:
             return refuse(
@@ -1796,18 +1797,18 @@ def _attribute_node_expr(node, from_socket, provenance) -> Dict[str, Any]:
                 f"Attribute '{name}' is a {data_type.replace('_', ' ').title()} attribute; only "
                 "Float, Vector and Color attributes are exported, so convert it or bake the material"
             )
-        read = _core._make_node_expr(_core._nodedef_for("geompropvalue", read_type), {"geomprop": _core._constant_expr(name)})
+        read = _expr._make_node_expr(_expr._nodedef_for("geompropvalue", read_type), {"geomprop": _expr._constant_expr(name)})
         if read_type == "float":
-            value = _core._make_node_expr(_core._nodedef_for("combine3", "vector3"), {"in1": read, "in2": read, "in3": read})
+            value = _expr._make_node_expr(_expr._nodedef_for("combine3", "vector3"), {"in1": read, "in2": read, "in3": read})
             fac = read
         else:
             value = read
-            fac = _vector_dot(read, _core._constant_expr((1 / 3, 1 / 3, 1 / 3)))
+            fac = _vector_dot(read, _expr._constant_expr((1 / 3, 1 / 3, 1 / 3)))
         alpha = one
     if output_name == 'Fac':
         return fac
     if output_name == 'Alpha':
         return alpha
     if output_name == 'Color':
-        return _core._make_node_expr(_core._nodedef_for("convert", "color3", input_type="vector3"), {"in": value})
+        return _expr._make_node_expr(_expr._nodedef_for("convert", "color3", input_type="vector3"), {"in": value})
     return value

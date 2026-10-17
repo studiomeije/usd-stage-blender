@@ -28,18 +28,18 @@ from Plugin.export.bake_textures import _make_cache_key, _strip_baked_suffix  # 
 
 
 def _key(**overrides):
-    base = dict(
-        source_material_name="Marble",
-        mesh_id=1001,
-        resolution=2048,
-        uv_layer="UVMap",
-        bake_mode="LIT_IBL",
-        bake_base=True,
-        use_opacity=False,
-        bake_roughness_map=False,
-        roughness_single=False,
-        is_flat=False,
-    )
+    base = {
+        "source_material_name": "Marble",
+        "mesh_id": 1001,
+        "resolution": 2048,
+        "uv_layer": "UVMap",
+        "bake_mode": "LIT_IBL",
+        "bake_base": True,
+        "use_opacity": False,
+        "bake_roughness_map": False,
+        "roughness_single": False,
+        "is_flat": False,
+    }
     base.update(overrides)
     return _make_cache_key(**base)
 

@@ -15,12 +15,22 @@ from array import array
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from ....manifest.materialx_nodes import select_nodedef_name_for_node
+from .expr import (
+    _RGB_TO_GRAY,
+    _coerce_constant_value,
+    _component_expr,
+    _constant_expr,
+    _constant_scalar,
+    _expr_is_constant,
+    _get_manifest,
+    _make_node_expr,
+    _nodedef_for,
+    _socket_default_value,
+)
 from ..graph import (
     texture_colorspace_role,
 )
 
-_MANIFEST_CACHE: Optional[Dict[str, Any]] = None
 _STAGED_IMAGE_CACHE: Dict[Any, str] = {}
 _STAGED_IMAGE_DIR: Optional[Path] = None
 _STAGED_IMAGE_DIR_OWNED = False
@@ -825,16 +835,6 @@ def _infer_rk_node_id(group_name: str) -> str:
     return group_name
 
 
-def _get_manifest() -> Dict[str, Any]:
-    """Load and cache the MaterialX manifest."""
-    global _MANIFEST_CACHE
-    if _MANIFEST_CACHE is None:
-        from ....manifest.materialx_nodes import load_manifest
-
-        _MANIFEST_CACHE = load_manifest()
-    return _MANIFEST_CACHE
-
-
 def _input_mtlx_type(node_id: Optional[str], input_name: str) -> Optional[str]:
     """Look up the MaterialX type for a node input."""
     if not node_id:
@@ -1088,27 +1088,6 @@ def _socket_output_type(socket) -> str:
         if len(default) == 2:
             return 'vector2'
     return 'color3'
-
-
-def _socket_default_value(socket):
-    """Get a socket default value normalized to Python primitives."""
-    if not hasattr(socket, "default_value"):
-        return None
-    value = socket.default_value
-    if isinstance(value, str):
-        return value
-    if isinstance(value, (float, int, bool)):
-        return value
-    if isinstance(value, (list, tuple)):
-        return [float(v) for v in value]
-    # mathutils.Euler is a sequence by indexing only, with no __iter__, so
-    # test for either protocol; list() handles both.
-    if (hasattr(value, "__iter__") or hasattr(value, "__getitem__")) and not isinstance(value, (str, bytes)):
-        try:
-            return [float(v) for v in list(value)]
-        except (TypeError, ValueError):
-            return None
-    return None
 
 
 def _is_rk_group_node(node) -> bool:
@@ -1611,7 +1590,7 @@ def _resolve_socket_value(
         )
         ramp = getattr(from_node, "color_ramp", None)
         elements = sorted(
-            list(getattr(ramp, "elements", []) or []),
+            getattr(ramp, "elements", []) or [],
             key=lambda item: float(getattr(item, "position", 0.0)),
         )
         if not elements:
@@ -2424,72 +2403,6 @@ _MATH_COMPOSED_OPS = frozenset({
 })
 
 
-#: Blender's implicit colour-to-float socket conversion, Cycles'
-#: ``linear_rgb_to_gray``: the Y row of the scene-linear RGB to XYZ matrix
-#: Cycles derives from the OpenColorIO config's ``aces_interchange`` role
-#: (ShaderManager::init_xyz_transforms). Measured on Blender 5.2.0 LTS with a
-#: Linear Rec.709 working space by rendering RGB to BW of pure red, green and
-#: blue as emission in Cycles: 0.21263909, 0.71516913, 0.07219274. These are
-#: not the config's rounded luma (0.2126, 0.7152, 0.0722), and they are not
-#: RealityKit's ND_luminance default, which is ACEScg's. They hold for the
-#: Linear Rec.709 working space only.
-_RGB_TO_GRAY = (0.21263909, 0.71516913, 0.07219274)
-
-#: Blender's implicit vector-to-float socket conversion is the mean.
-_VECTOR_MEAN = (1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0)
-
-
-#: Channel order of each MaterialX type a component read can land on.
-_CHANNEL_ORDER = {
-    "color3": "rgb", "vector3": "xyz",
-    "color4": "rgba", "vector4": "xyzw",
-}
-
-#: The vector type each colour type converts to, for the dot-product trick.
-_VECTOR_EQUIVALENT = {
-    "color3": "vector3", "color4": "vector4",
-    "vector3": "vector3", "vector4": "vector4",
-}
-
-
-def _component_expr(expr: Dict[str, Any], from_type: str, channel: str) -> Dict[str, Any]:
-    """Read one channel of a colour/vector expression as a float.
-
-    The read is a convert to the matching vector type followed by a dot
-    product with a unit mask: exact arithmetic from two implemented nodes,
-    and the one component-read form every kit scene has been imported with.
-    """
-    order = _CHANNEL_ORDER.get(from_type)
-    vector_type = _VECTOR_EQUIVALENT.get(from_type)
-    if not order or not vector_type:
-        raise ValueError(
-            f"Cannot read a component of {from_type!r}; bake the material."
-        )
-    letter = (channel or order[0])[:1].lower()
-    index = order.find(letter)
-    if index < 0:
-        # r/g/b/a and x/y/z/w name the same positions.
-        index = max("rgba".find(letter), "xyzw".find(letter))
-        if index >= len(order):
-            index = -1
-    if index < 0:
-        raise ValueError(
-            f"{from_type!r} has no channel {channel!r}; bake the material."
-        )
-
-    value = expr
-    if from_type != vector_type:
-        value = _make_node_expr(
-            _nodedef_for("convert", vector_type, input_type=from_type),
-            {"in": value},
-        )
-    mask = tuple(1.0 if i == index else 0.0 for i in range(len(order)))
-    return _make_node_expr(
-        _nodedef_for("dotproduct", "float", input_type=vector_type),
-        {"in1": value, "in2": _constant_expr(mask)},
-    )
-
-
 def _swizzle_color3_to_float_expr(expr: Dict[str, Any], channels: str) -> Dict[str, Any]:
     """Read one channel of a color3 expression as a float."""
     return _component_expr(expr, "color3", channels)
@@ -2724,19 +2637,6 @@ def _math_socket_expr(node, index, visited, channel, provenance, cache):
         return None
 
 
-def _constant_scalar(expr) -> Optional[float]:
-    """The float an expression folds to, or None when it is not a scalar constant."""
-    if not isinstance(expr, dict) or expr.get("kind") != "constant":
-        return None
-    value = expr.get("value")
-    if isinstance(value, (list, tuple, str)):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _fnode(name: str, **inputs: Any) -> Dict[str, Any]:
     return _make_node_expr(_nodedef_for(name, "float"), inputs)
 
@@ -2922,78 +2822,6 @@ def _math_node_expr(node, operation, visited, channel, provenance, cache):
         # MathNode::expand appends a MINMAX Clamp to [0, 1].
         expr = _clamp_float(expr, 0.0, 1.0)
     return expr
-
-
-def _nodedef_for(
-    node_name: str,
-    output_type: Optional[str] = None,
-    input_type: Optional[str] = None,
-) -> str:
-    """Resolve a manifest nodedef name, failing closed on an impossible ask.
-
-    Every consumer treats a non-None result as success, so a missing nodedef
-    raises instead of returning a name. The error lands in the per-material
-    failure handling in rewrite.py, which names the material and fails the
-    export.
-    """
-    manifest = _get_manifest()
-    nodedef = select_nodedef_name_for_node(
-        manifest,
-        node_name,
-        input_type=input_type,
-        output_type=output_type,
-    )
-    if not nodedef:
-        wanted = ", ".join(
-            part for part in (
-                f"input {input_type}" if input_type else "",
-                f"output {output_type}" if output_type else "",
-            ) if part
-        )
-        raise ValueError(
-            f"No MaterialX nodedef satisfies '{node_name}'"
-            + (f" ({wanted})" if wanted else "")
-            + ". Bake the material, or simplify the node graph."
-        )
-    return nodedef
-
-
-def _make_node_expr(node_id: str, inputs: Dict[str, Any], output: str = "out") -> Dict[str, Any]:
-    """Build a node expression, propagating any unresolved child.
-
-    A node whose input could not be resolved cannot itself be authored
-    faithfully. Callers check only the *top-level* kind for "unresolved", so
-    returning a node expression over a failed child would let the builder drop
-    that child and fall back to a nodedef default with no warning.
-
-    Surfacing the child's own unresolved expression keeps its provenance
-    chain, so the warning names the node that actually failed rather than the
-    one that happened to wrap it.
-    """
-    for value in (inputs or {}).values():
-        if isinstance(value, dict) and value.get("kind") == "unresolved":
-            return value
-    return {
-        "kind": "node",
-        "node_id": node_id,
-        "inputs": inputs,
-        "output": output,
-    }
-
-
-def _constant_expr(value: Any) -> Dict[str, Any]:
-    return {"kind": "constant", "value": value}
-
-
-def _expr_is_constant(expr: Optional[Dict[str, Any]], value: float) -> bool:
-    if not isinstance(expr, dict):
-        return False
-    if expr.get("kind") != "constant":
-        return False
-    try:
-        return abs(float(expr.get("value")) - float(value)) < 1e-6
-    except Exception:
-        return False
 
 
 def _expr_from_socket(
@@ -4417,31 +4245,6 @@ def _input_constant_node_value(node):
     return None
 
 
-def _coerce_constant_value(value: Any, expected: str):
-    """Coerce a constant to the expected type."""
-    if expected == 'float':
-        if isinstance(value, (list, tuple)):
-            # Only colour nodes hand a scalar input a list here (a vector
-            # constant is reduced by the resolver, which knows its type):
-            # Blender's colour-to-float conversion is linear RGB to gray.
-            if len(value) >= 3:
-                return float(sum(float(c) * w for c, w in zip(value, _RGB_TO_GRAY)))
-            return float(value[0]) if value else 0.0
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return 0.0
-    if isinstance(value, (list, tuple)):
-        if len(value) >= 3:
-            return [float(value[0]), float(value[1]), float(value[2])]
-        if len(value) == 1:
-            return [float(value[0])] * 3
-    try:
-        return [float(value)] * 3
-    except (TypeError, ValueError):
-        return [1.0, 1.0, 1.0]
-
-
 #: Blender reports ``Image.depth`` as total bits per pixel across the file's
 #: channels. ``Image.channels`` is the internal pixel-buffer width and is
 #: almost always 4, so it cannot answer whether the file carries alpha.
@@ -4910,29 +4713,24 @@ def _save_image_to_path(image, dest_path: Path) -> bool:
 
 # Sections kept in their own modules, re-exported so callers and tests see one
 # namespace. Imported last: those modules read this one's names at call time.
+#
+# Shared builders live in expr.py, which neither side imports back, so most of
+# what these modules need does not come through here. What remains is the
+# resolver recursion (they resolve the sockets they own by calling back into
+# this module) and the pairs that depend on each other both ways - readers with
+# drivers, readers with displacement - for which this namespace is the
+# mediator. Importing those directly would make a real cycle.
 from .drivers import (  # noqa: E402,F401
     DRIVEN_INPUT_NODE_TYPES,
-    _DRIVER_BINARY,
-    _DRIVER_FUNCTIONS,
     _DriverUnsupported,
-    _ast,
     _driven_socket_expr,
-    _driver_tree,
-    _frame_expr,
     _socket_is_live,
     driver_expression_expr,
     driver_refusal_reason,
-    scene_fps,
-    socket_driver,
 )
 from .hair import (  # noqa: E402,F401
-    HAIR_LOBE_WEIGHT_SCALE,
-    HAIR_STRAND_TANGENT,
     _HAIR_MAPPED_SOCKETS,
     _HAIR_NODE_TYPES,
-    _HAIR_PARAMETRIZATION_LABELS,
-    _HAIR_UNMAPPED_SOCKETS,
-    _enabled_hair_socket,
     _extract_hair_material_data,
     hair_issue,
     hair_notices,
@@ -4943,42 +4741,19 @@ from .closures import (  # noqa: E402,F401
     PRINCIPLED_PRESET_TYPES,
     PrincipledView,
     _CLOSURE_NODE_TYPES,
-    _ConstantSocket,
-    _DerivedLink,
-    _DerivedNode,
-    _DerivedSocket,
-    _LINEAR_MIX_INPUTS,
     _PRINCIPLED_DEFAULTS,
-    _RenamedSocket,
-    _SHADER_LABELS,
-    _StandInInputs,
     _apply_surface_closure,
-    _mix_socket,
-    _preset_sqrt_socket,
-    _principled_constant,
-    _principled_like,
     _same_node,
-    _saturate_float,
     _shader_label,
-    _shader_source,
-    _socket_operand,
-    _sockets_agree,
-    _value_type,
-    _values_differ_loose,
     closure_issue,
     principled_like_issue,
-    principled_mix,
     principled_notices,
-    principled_preset,
     principled_views,
     resolve_surface_closure,
 )
 from .displacement import (  # noqa: E402,F401
-    _COLOR_SHADER_SOCKETS,
-    _DISPLACEMENT_NODE_TYPES,
     _active_output_node,
     _fold_float,
-    _vertex_offset_expr,
     displacement_notices,
     displacement_refusal,
     displacement_source,
@@ -4987,20 +4762,8 @@ from .displacement import (  # noqa: E402,F401
     surface_output_refusal,
 )
 from .readers import (  # noqa: E402,F401
-    EXPORTED_WORKING_SPACE_INTEROP_ID,
     OBJECT_RANDOM_PRIMVAR,
-    _ATTRIBUTE_COLOR_TYPES,
-    _ATTRIBUTE_PRIMVAR_READS,
-    _ATTRIBUTE_READABLE_DOMAINS,
     _READER_NODE_TYPES,
-    _SINGLE_CHANNELS,
-    _VECTOR_MATH_COMPOSED_OPS,
-    _VECTOR_MATH_REFUSED_OPS,
-    _VECTOR_MATH_SINGLE_INPUT_OPS,
-    _VECTOR_MATH_TWO_INPUT_OPS,
-    _VECTOR_MATH_VALUE_OUTPUT_OPS,
-    _VECTOR_ROTATE_AXES,
-    _alpha_output_linked,
     _attribute_description,
     _attribute_node_expr,
     _box_projection_expr,
@@ -5013,20 +4776,13 @@ from .readers import (  # noqa: E402,F401
     _component_of,
     _computed_image_expr,
     _constant_value,
-    _cos_view_normal_expr,
     _environment_texture_expr,
-    _eta_by_facing_expr,
-    _euler_xyz_rotate,
     _float_node,
     _float_socket_expr,
     _float_to_expected,
-    _fresnel_dielectric_cos_expr,
     _fresnel_node_expr,
-    _front_facing_float_expr,
     _gamma_expr,
     _geometry_reader_expr,
-    _image_coordinate_expr,
-    _image_file_spec,
     _image_read_refusal,
     _layer_weight_expr,
     _mapping_vector_expr,
@@ -5034,19 +4790,12 @@ from .readers import (  # noqa: E402,F401
     _named_color_operand,
     _named_float_operand,
     _named_socket,
-    _named_vector_operand,
     _negated_float,
-    _node_expr_output_type,
     _object_info_expr,
     _per_component_vector3,
-    _rotate_about_unit_axis,
     _safe_divide_vector,
     _safe_normalize,
-    _sample_color,
-    _sample_image,
-    _srgb_decode_color3,
     _texture_coordinate_expr,
-    _texture_is_scalar,
     _typed_result,
     _vector3_node,
     _vector3_operand_expr,
@@ -5057,7 +4806,6 @@ from .readers import (  # noqa: E402,F401
     _vector_rotate_expr,
     _vector_socket_expr,
     _vector_times_float,
-    _view_direction_expr,
     _world_reader_expr,
     blender_world_vector,
     cycles_object_random,

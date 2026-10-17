@@ -313,7 +313,7 @@ def _retag_unmapped_color_space_names(stage, diagnostics=None) -> None:
         retagged[str(prim.GetPath())] = (authored, replacement)
 
     if retagged and diagnostics:
-        pairs = sorted({change for change in retagged.values()})
+        pairs = sorted(set(retagged.values()))
         diagnostics.add_info(
             "Renamed Blender colour-space tokens RealityKit has no alias for: "
             + ", ".join(f"{old} -> {new}" for old, new in pairs)

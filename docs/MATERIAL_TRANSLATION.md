@@ -110,6 +110,23 @@ Preflight inspects the **composed USD stage**, not the Blender graph
 binding codes, with the rest, are listed in
 [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#the-composed-stage-preflight).
 
+### Material prim names
+
+Blender reduces a material name to a USD prim name by replacing the characters
+USD cannot use in one, so two names can arrive at the same prim: `My Material`
+and `My-Material` both become `My_Material`. Blender's exporter then writes a
+single Material prim and binds both meshes to it. The material that lost leaves
+no trace, and which of the two survives depends on export order.
+
+The Blender material behind such a prim is therefore ambiguous, and
+`rewrite_materials` refuses the export before it resolves any material, naming
+each colliding group and the prim they share. Rename all but one material in
+each group so the names still differ once those characters are replaced.
+
+A slot no face references is not affected, because the exporter writes no
+material prim for it, and neither is a mesh that binds several materials
+through GeomSubsets.
+
 ---
 
 ## The surface

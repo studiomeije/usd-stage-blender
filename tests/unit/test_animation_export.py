@@ -61,13 +61,13 @@ def _scope_context(scene_objects, selected):
 
 
 def _settings(**values):
-    defaults = dict(
-        selected_objects_only=True,
-        export_armatures=True,
-        evaluation_mode="RENDER",
-        export_meshes=True,
-        export_shapekeys=True,
-    )
+    defaults = {
+        "selected_objects_only": True,
+        "export_armatures": True,
+        "evaluation_mode": "RENDER",
+        "export_meshes": True,
+        "export_shapekeys": True,
+    }
     defaults.update(values)
     return SimpleNamespace(**defaults)
 

@@ -185,7 +185,7 @@ def suspend_setting_persistence(settings):
     command and restore its prior state on every success or failure path.
     """
     try:
-        previous = bool(getattr(settings, "persist_suspended"))
+        previous = bool(settings.persist_suspended)
         settings.persist_suspended = True
     except Exception:
         # Non-Blender test doubles do not necessarily expose the internal

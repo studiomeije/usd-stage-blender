@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from ..graph import texture_colorspace_role
 
 from . import core as _core
+from . import expr as _expr
 
 
 # ---------------------------------------------------------------------------
@@ -219,8 +220,8 @@ def _fold_float(op: str, a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]
         except (TypeError, ValueError):
             x = y = None
         if x is not None:
-            return _core._constant_expr({"subtract": x - y, "multiply": x * y, "add": x + y}[op])
-    return _core._make_node_expr(_core._nodedef_for(op, "float"), {"in1": a, "in2": b})
+            return _expr._constant_expr({"subtract": x - y, "multiply": x * y, "add": x + y}[op])
+    return _expr._make_node_expr(_expr._nodedef_for(op, "float"), {"in1": a, "in2": b})
 
 
 def _vertex_offset_expr(material) -> Optional[Dict[str, Any]]:
@@ -241,8 +242,8 @@ def _vertex_offset_expr(material) -> Optional[Dict[str, Any]]:
         if height is None or midlevel is None or scale is None:
             return {"kind": "unresolved", "provenance": [f"{getattr(node, 'name', 'Displacement')} (DISPLACEMENT)"]}
         amount = _fold_float("multiply", _fold_float("subtract", height, midlevel), scale)
-        normal = _core._make_node_expr(
-            _core._nodedef_for("normal", "vector3"), {"space": _core._constant_expr("object")}
+        normal = _expr._make_node_expr(
+            _expr._nodedef_for("normal", "vector3"), {"space": _expr._constant_expr("object")}
         )
         return _core._vector_times_float(normal, amount)
     vector = _core._vector_math_operand(node, 0, visited, None, provenance, cache)
@@ -250,12 +251,12 @@ def _vertex_offset_expr(material) -> Optional[Dict[str, Any]]:
     scale = _core._math_socket_expr(node, 2, visited, None, provenance, cache)
     if vector is None or midlevel is None or scale is None:
         return {"kind": "unresolved", "provenance": [f"{getattr(node, 'name', 'Vector Displacement')} (VECTOR_DISPLACEMENT)"]}
-    if _core._expr_is_constant(midlevel, 0.0):
+    if _expr._expr_is_constant(midlevel, 0.0):
         centred = vector
     else:
         centred = _core._vector3_node("subtract", in1=vector, in2=_core._vector3_operand_expr(midlevel)
                                 if midlevel.get("kind") == "constant"
-                                else _core._make_node_expr(_core._nodedef_for("combine3", "vector3"),
+                                else _expr._make_node_expr(_expr._nodedef_for("combine3", "vector3"),
                                                      {"in1": midlevel, "in2": midlevel, "in3": midlevel}))
     return _core._vector_times_float(centred, scale)
 

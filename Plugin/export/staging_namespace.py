@@ -57,7 +57,9 @@ def _generation_token(usd_path: Path) -> str:
         existing = _read_generation_marker(marker)
         if existing:
             return existing
-        raise RuntimeError(f"Invalid export-generation marker: {marker}")
+        raise RuntimeError(
+            f"Invalid export-generation marker: {marker}"
+        ) from None
     try:
         os.write(descriptor, f"{token}\n".encode("ascii"))
         os.fsync(descriptor)

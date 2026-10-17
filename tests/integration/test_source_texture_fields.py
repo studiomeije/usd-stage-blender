@@ -58,7 +58,10 @@ def test_texture_fields_drive_the_gate_and_stay_out_of_the_cli(tmp_path):
          "--", str(Path(__file__).resolve().parents[2])],
         capture_output=True, text=True, timeout=300,
     )
-    line = next((l for l in proc.stdout.splitlines() if l.startswith("FIELDS_RESULT ")), None)
+    line = next(
+        (text for text in proc.stdout.splitlines() if text.startswith("FIELDS_RESULT ")),
+        None,
+    )
     assert line, proc.stdout + proc.stderr
     steps = json.loads(line[len("FIELDS_RESULT "):])
 

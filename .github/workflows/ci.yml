@@ -18,6 +18,9 @@ concurrency:
 env:
   PYTHON_VERSION: "3.13"
   PYTEST_VERSION: "9.1.1"
+  # Pinned so a ruff release cannot fail an unrelated revision. ruff.toml at
+  # the repository root holds the rule set.
+  RUFF_VERSION: "0.16.7"
   USD_CORE_VERSION: "26.8"
   # Matches the numpy bundled with Blender 5.2 LTS. Plugin.export.bake_textures
   # uses numpy for pixel-buffer work; without it those tests cannot run.
@@ -97,6 +100,10 @@ jobs:
           numpy==${NUMPY_VERSION}
           PyYAML==${PYYAML_VERSION}
           pillow==${PILLOW_VERSION}
+          ruff==${RUFF_VERSION}
+
+      - name: Lint
+        run: python -m ruff check Plugin scripts tests
 
       - name: Compile Python sources
         run: python -m compileall -q Plugin scripts tests

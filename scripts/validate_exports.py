@@ -976,7 +976,7 @@ def _reserve_compile_output(
     reservations = getattr(args, "_compiled_output_reservations", None)
     if reservations is None:
         reservations = set()
-        setattr(args, "_compiled_output_reservations", reservations)
+        args._compiled_output_reservations = reservations
     if normalized_key in reservations:
         raise RuntimeError(f"Duplicate compiled output name in this run: {filename}")
     if output_path.exists() or output_path.is_symlink():

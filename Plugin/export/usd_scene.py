@@ -145,7 +145,7 @@ def _normalize_owned_double_sided_mesh_specs(
             spec_paths = []
             layer.Traverse(
                 Sdf.Path.absoluteRootPath,
-                lambda path: spec_paths.append(path),
+                spec_paths.append,
             )
             for spec_path in spec_paths:
                 prim_spec = layer.GetObjectAtPath(spec_path)
