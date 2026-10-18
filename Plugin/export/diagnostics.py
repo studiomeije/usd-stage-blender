@@ -218,6 +218,19 @@ class ExportDiagnostics:
         self.data['animations']['segments'] = segments
         self.data['animations']['targets'] = targets
 
+    def set_prim_renames(self, renames: list):
+        """Record prim identifiers normalization had to rename.
+
+        A rename is silent otherwise: the user sees neither the Blender name
+        they typed nor the prim their consumer will address. Recording the
+        pairs makes an export that renamed something auditable without
+        reopening the stage, and spends no warning slot on what is routine.
+        """
+        self.data['prim_renames'] = [
+            {'from': str(old_path), 'to': str(new_path)}
+            for old_path, new_path in renames
+        ]
+
     def to_dict(self) -> Dict[str, Any]:
         """Get diagnostics as dictionary"""
         return self.data.copy()

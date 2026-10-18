@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
-_captured: dict = {"materials": None, "mesh_materials": None}
+_captured: dict = {"materials": None, "mesh_materials": None, "objects": None}
 
 
 def consume_captured_material_map() -> dict | None:
@@ -39,6 +39,26 @@ def consume_captured_mesh_material_map() -> dict | None:
     mesh_materials = _captured.get("mesh_materials")
     _captured["mesh_materials"] = None
     return mesh_materials
+
+
+def consume_captured_object_map() -> dict | None:
+    """Return and clear {object prim path: Blender object name} from the last export.
+
+    This is the only exact answer to "which prim did this object become".
+    Blender does not export collections as prims, so a variant's membership
+    cannot be read back out of the stage's namespace, and prim names are not a
+    safe substitute: ``_rename_invalid_prims`` may have renamed one since.
+    Variant authoring resolves its members through this map and the rename
+    edits ``normalize_scene`` returns, and refuses anything it cannot place
+    exactly.
+
+    The path names the object's own prim - the Xform Blender writes per object,
+    whose subtree holds its mesh - so deactivating it takes the geometry with
+    it.
+    """
+    objects = _captured.get("objects")
+    _captured["objects"] = None
+    return objects
 
 
 def _used_material_names(mesh) -> list:
@@ -79,6 +99,7 @@ def capture_prim_map():
 
     _captured["materials"] = None
     _captured["mesh_materials"] = None
+    _captured["objects"] = None
 
     class USDSTAGE_USD_prim_map_hook(bpy.types.USDHook):
         bl_idname = "usdstage_prim_map_capture"
@@ -92,8 +113,9 @@ def capture_prim_map():
                 return True
             materials: dict[str, str] = {}
             mesh_materials: dict[str, list] = {}
-            # Two independent scans: a prim path that reported both a mesh
-            # and a material would otherwise lose whichever kind came second.
+            objects: dict[str, str] = {}
+            # Independent scans per datablock kind: a prim path that reported
+            # more than one kind would otherwise lose whichever came second.
             for prim_path, ids in prim_map.items():
                 path = str(prim_path)
                 for id_datablock in ids:
@@ -104,8 +126,13 @@ def capture_prim_map():
                     if isinstance(id_datablock, bpy.types.Mesh):
                         mesh_materials[path] = _used_material_names(id_datablock)
                         break
+                for id_datablock in ids:
+                    if isinstance(id_datablock, bpy.types.Object):
+                        objects[path] = id_datablock.name
+                        break
             _captured["materials"] = materials
             _captured["mesh_materials"] = mesh_materials
+            _captured["objects"] = objects
             return True
 
     bpy.utils.register_class(USDSTAGE_USD_prim_map_hook)
