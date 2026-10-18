@@ -18,13 +18,10 @@ from typing import Any
 
 import bpy
 
-
-def _rna_identity(value) -> int:
-    """Stable Blender datablock identity, with a test-double fallback."""
-    try:
-        return int(value.as_pointer())
-    except Exception:
-        return id(value)
+from .object_scope import (
+    is_exportable_object as _is_exportable_object,
+    rna_identity as _rna_identity,
+)
 
 
 def collect_export_objects(context, settings) -> list:
@@ -751,32 +748,6 @@ def _slot_matches_owner(slot, owner) -> bool:
     identifier = str(getattr(slot, "identifier", "") or "")
     # Blender prefixes Action slot identifiers by ID type (OB, KE, ...).
     return len(identifier) > 2 and identifier[2:] == owner_name
-
-
-#: Object types the RealityKit delivery contract never exports. The native
-#: exporter's flags for them are hard-disabled too, so selection filtering must
-#: never admit them.
-_NEVER_EXPORTED_TYPES = frozenset({"LIGHT", "CAMERA", "CURVE", "CURVES", "POINTCLOUD", "VOLUME"})
-
-
-def _is_exportable_object(obj, settings) -> bool:
-    """Whether an object belongs in the export scope.
-
-    Meshes always export: the USD exporter's mesh flag is hard-coded on
-    (``_build_export_kwargs``), so no setting can drop one. Armatures follow
-    ``export_armatures``. Empties are real USD Xforms and collection-instance
-    roots; any other Blender object class is out of scope, so selected-only
-    validation cannot succeed on a selection that would publish only the
-    synthetic export root.
-    """
-    object_type = str(getattr(obj, "type", ""))
-    if object_type == "MESH":
-        return True
-    if object_type == "ARMATURE":
-        return bool(getattr(settings, "export_armatures", True))
-    if object_type in _NEVER_EXPORTED_TYPES:
-        return False
-    return object_type == "EMPTY"
 
 
 def _has_shapekeys(obj, settings) -> bool:

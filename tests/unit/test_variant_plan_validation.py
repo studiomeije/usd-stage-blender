@@ -1,0 +1,383 @@
+"""Resolution and refusal rules for declared USD variant sets."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from Plugin.export import variants as variant_plan
+from Plugin.export.variants import (
+    ERROR,
+    WARNING,
+    VariantPlanError,
+    require_valid_variant_plan,
+    resolve_variant_plan,
+    validate_variant_plan,
+)
+
+
+def _object(name: str, object_type: str = "MESH"):
+    return SimpleNamespace(name=name, type=object_type)
+
+
+def _collection(name: str, objects=(), children=()):
+    return SimpleNamespace(name=name, objects=list(objects), children=list(children))
+
+
+def _variant(name: str, collection):
+    return SimpleNamespace(name=name, collection=collection)
+
+
+def _variant_set(name: str, variants, default_variant: str | None = None):
+    if default_variant is None:
+        default_variant = variants[0].name if variants else ""
+    return SimpleNamespace(
+        name=name,
+        variants=list(variants),
+        default_variant=default_variant,
+    )
+
+
+def _context(*variant_sets):
+    return SimpleNamespace(
+        scene=SimpleNamespace(usd_stage_variant_sets=list(variant_sets))
+    )
+
+
+def _settings(**overrides):
+    values = {"export_variants": True, "export_armatures": True}
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def _codes(issues, severity=ERROR):
+    return [issue.code for issue in issues if issue.severity == severity]
+
+
+def _plan(*variant_sets, settings=None):
+    return resolve_variant_plan(_context(*variant_sets), settings or _settings())
+
+
+def _seat_plan():
+    """A well-formed two-variant set, used as the baseline for most tests."""
+    fabric = _collection("Fabric", objects=[_object("SeatFabric")])
+    leather = _collection("Leather", objects=[_object("SeatLeather")])
+    return _plan(
+        _variant_set(
+            "Seat",
+            [_variant("Fabric", fabric), _variant("Leather", leather)],
+        )
+    )
+
+
+# --------------------------------------------------------------------------
+# Resolution
+# --------------------------------------------------------------------------
+
+def test_scene_without_variant_sets_resolves_to_an_empty_plan():
+    plan = resolve_variant_plan(_context(), _settings())
+    assert plan.is_empty
+    assert validate_variant_plan(plan) == []
+
+
+def test_scene_missing_the_property_entirely_resolves_to_an_empty_plan():
+    """The export path runs before the UI registers its property group."""
+    context = SimpleNamespace(scene=SimpleNamespace())
+    assert resolve_variant_plan(context, _settings()).is_empty
+
+
+def test_export_variants_off_ignores_declared_sets():
+    collection = _collection("Fabric", objects=[_object("SeatFabric")])
+    plan = _plan(
+        _variant_set("Seat", [_variant("Fabric", collection)]),
+        settings=_settings(export_variants=False),
+    )
+    assert plan.is_empty
+
+
+def test_resolution_collects_objects_from_nested_child_collections():
+    inner = _collection("Trim", objects=[_object("TrimPiece")])
+    outer = _collection("Fabric", objects=[_object("SeatFabric")], children=[inner])
+    other = _collection("Leather", objects=[_object("SeatLeather")])
+    plan = _plan(
+        _variant_set("Seat", [_variant("Fabric", outer), _variant("Leather", other)])
+    )
+    fabric = plan.sets[0].variants[0]
+    assert set(fabric.object_names) == {"SeatFabric", "TrimPiece"}
+    assert validate_variant_plan(plan) == []
+
+
+def test_resolution_drops_object_classes_the_export_never_writes():
+    collection = _collection(
+        "Fabric",
+        objects=[_object("SeatFabric"), _object("KeyLight", "LIGHT")],
+    )
+    other = _collection("Leather", objects=[_object("SeatLeather")])
+    plan = _plan(
+        _variant_set("Seat", [_variant("Fabric", collection), _variant("Leather", other)])
+    )
+    assert plan.sets[0].variants[0].object_names == ("SeatFabric",)
+
+
+def test_armature_membership_follows_the_export_armatures_setting():
+    collection = _collection("Rigged", objects=[_object("Rig", "ARMATURE")])
+    other = _collection("Plain", objects=[_object("SeatPlain")])
+    declared = _variant_set(
+        "Seat", [_variant("Rigged", collection), _variant("Plain", other)]
+    )
+
+    with_armatures = _plan(declared, settings=_settings(export_armatures=True))
+    assert with_armatures.sets[0].variants[0].object_names == ("Rig",)
+
+    without = _plan(declared, settings=_settings(export_armatures=False))
+    assert without.sets[0].variants[0].object_names == ()
+    assert "VARIANT_EMPTY" in _codes(validate_variant_plan(without))
+
+
+def test_a_collection_cycle_cannot_hang_resolution():
+    left = _collection("Left", objects=[_object("LeftMesh")])
+    right = _collection("Right", objects=[_object("RightMesh")], children=[left])
+    left.children.append(right)
+    other = _collection("Other", objects=[_object("OtherMesh")])
+    plan = _plan(
+        _variant_set("Seat", [_variant("Looped", left), _variant("Other", other)])
+    )
+    assert set(plan.sets[0].variants[0].object_names) == {"LeftMesh", "RightMesh"}
+
+
+# --------------------------------------------------------------------------
+# Refusals
+# --------------------------------------------------------------------------
+
+def test_a_well_formed_plan_has_no_findings():
+    assert validate_variant_plan(_seat_plan()) == []
+
+
+@pytest.mark.parametrize("name", ["", "1Seat", "Seat finish", "Seat-finish", "Chaise_Café"])
+def test_invalid_variant_set_names_are_refused(name):
+    collection = _collection("Fabric", objects=[_object("SeatFabric")])
+    other = _collection("Leather", objects=[_object("SeatLeather")])
+    plan = _plan(
+        _variant_set(name, [_variant("Fabric", collection), _variant("Leather", other)])
+    )
+    assert "VARIANT_SET_NAME_INVALID" in _codes(validate_variant_plan(plan))
+
+
+def test_invalid_variant_names_are_refused():
+    collection = _collection("Fabric", objects=[_object("SeatFabric")])
+    other = _collection("Leather", objects=[_object("SeatLeather")])
+    plan = _plan(
+        _variant_set(
+            "Seat",
+            [_variant("has space", collection), _variant("Leather", other)],
+            default_variant="Leather",
+        )
+    )
+    assert "VARIANT_NAME_INVALID" in _codes(validate_variant_plan(plan))
+
+
+def test_two_sets_with_one_name_are_refused():
+    first = _collection("Fabric", objects=[_object("SeatFabric")])
+    second = _collection("Leather", objects=[_object("SeatLeather")])
+    third = _collection("Oak", objects=[_object("LegOak")])
+    fourth = _collection("Steel", objects=[_object("LegSteel")])
+    plan = _plan(
+        _variant_set("Seat", [_variant("Fabric", first), _variant("Leather", second)]),
+        _variant_set("Seat", [_variant("Oak", third), _variant("Steel", fourth)]),
+    )
+    assert "VARIANT_SET_NAME_DUPLICATE" in _codes(validate_variant_plan(plan))
+
+
+def test_a_repeated_variant_name_is_refused():
+    first = _collection("Fabric", objects=[_object("SeatFabric")])
+    second = _collection("Other", objects=[_object("SeatOther")])
+    plan = _plan(
+        _variant_set("Seat", [_variant("Fabric", first), _variant("Fabric", second)])
+    )
+    assert "VARIANT_NAME_DUPLICATE" in _codes(validate_variant_plan(plan))
+
+
+def test_a_deleted_collection_is_refused_rather_than_dropped():
+    collection = _collection("Fabric", objects=[_object("SeatFabric")])
+    plan = _plan(
+        _variant_set(
+            "Seat",
+            [_variant("Fabric", collection), _variant("Leather", None)],
+        )
+    )
+    assert "VARIANT_COLLECTION_MISSING" in _codes(validate_variant_plan(plan))
+
+
+def test_a_variant_with_nothing_exportable_is_refused():
+    collection = _collection("Fabric", objects=[_object("SeatFabric")])
+    empty = _collection("Leather", objects=[])
+    plan = _plan(
+        _variant_set("Seat", [_variant("Fabric", collection), _variant("Leather", empty)])
+    )
+    assert "VARIANT_EMPTY" in _codes(validate_variant_plan(plan))
+
+
+def test_a_set_with_no_variants_is_refused():
+    plan = _plan(_variant_set("Seat", []))
+    assert "VARIANT_SET_EMPTY" in _codes(validate_variant_plan(plan))
+
+
+def test_one_object_in_two_variants_of_a_set_is_refused():
+    shared = _object("SeatShell")
+    first = _collection("Fabric", objects=[shared, _object("SeatFabric")])
+    second = _collection("Leather", objects=[shared, _object("SeatLeather")])
+    plan = _plan(
+        _variant_set("Seat", [_variant("Fabric", first), _variant("Leather", second)])
+    )
+    assert "VARIANT_MEMBER_SHARED_IN_SET" in _codes(validate_variant_plan(plan))
+
+
+def test_one_variant_collection_nested_in_another_is_refused_as_shared_membership():
+    """Nesting needs no rule of its own: the outer set is a superset."""
+    inner = _collection("Leather", objects=[_object("SeatLeather")])
+    outer = _collection("Fabric", objects=[_object("SeatFabric")], children=[inner])
+    plan = _plan(
+        _variant_set("Seat", [_variant("Fabric", outer), _variant("Leather", inner)])
+    )
+    assert "VARIANT_MEMBER_SHARED_IN_SET" in _codes(validate_variant_plan(plan))
+
+
+def test_one_object_claimed_by_two_sets_is_refused():
+    shared = _object("SeatShell")
+    first = _collection("Fabric", objects=[shared])
+    second = _collection("Leather", objects=[_object("SeatLeather")])
+    third = _collection("Oak", objects=[shared])
+    fourth = _collection("Steel", objects=[_object("LegSteel")])
+    plan = _plan(
+        _variant_set("Seat", [_variant("Fabric", first), _variant("Leather", second)]),
+        _variant_set("Legs", [_variant("Oak", third), _variant("Steel", fourth)]),
+    )
+    assert "VARIANT_MEMBER_SHARED_ACROSS_SETS" in _codes(validate_variant_plan(plan))
+
+
+def test_a_shared_pair_is_reported_once_however_many_objects_overlap():
+    shared = [_object(f"Shell{index}") for index in range(5)]
+    first = _collection("Fabric", objects=list(shared))
+    second = _collection("Leather", objects=list(shared))
+    plan = _plan(
+        _variant_set("Seat", [_variant("Fabric", first), _variant("Leather", second)])
+    )
+    codes = _codes(validate_variant_plan(plan))
+    assert codes.count("VARIANT_MEMBER_SHARED_IN_SET") == 1
+
+
+def test_an_unknown_default_selection_is_refused():
+    first = _collection("Fabric", objects=[_object("SeatFabric")])
+    second = _collection("Leather", objects=[_object("SeatLeather")])
+    plan = _plan(
+        _variant_set(
+            "Seat",
+            [_variant("Fabric", first), _variant("Leather", second)],
+            default_variant="Vinyl",
+        )
+    )
+    assert "VARIANT_DEFAULT_UNKNOWN" in _codes(validate_variant_plan(plan))
+
+
+def test_a_single_variant_set_warns_without_refusing():
+    collection = _collection("Fabric", objects=[_object("SeatFabric")])
+    plan = _plan(_variant_set("Seat", [_variant("Fabric", collection)]))
+    issues = validate_variant_plan(plan)
+    assert _codes(issues, ERROR) == []
+    assert "VARIANT_SET_SINGLE" in _codes(issues, WARNING)
+
+
+def test_too_many_composed_states_are_refused_before_anything_is_staged():
+    declared = []
+    # 3 sets of 7 variants compose 343 states, over the preflight's bound.
+    for set_index in range(3):
+        members = [
+            _variant(
+                f"V{variant_index}",
+                _collection(
+                    f"C{set_index}_{variant_index}",
+                    objects=[_object(f"O{set_index}_{variant_index}")],
+                ),
+            )
+            for variant_index in range(7)
+        ]
+        declared.append(_variant_set(f"Set{set_index}", members))
+    plan = _plan(*declared)
+    assert plan.combination_count > variant_plan.MAX_VARIANT_COMBINATIONS
+    assert "VARIANT_COMBINATIONS_EXCEEDED" in _codes(validate_variant_plan(plan))
+
+
+def test_a_plan_at_the_limit_is_allowed():
+    declared = []
+    for set_index in range(8):
+        members = [
+            _variant(
+                f"V{variant_index}",
+                _collection(
+                    f"C{set_index}_{variant_index}",
+                    objects=[_object(f"O{set_index}_{variant_index}")],
+                ),
+            )
+            for variant_index in range(2)
+        ]
+        declared.append(_variant_set(f"Set{set_index}", members))
+    plan = _plan(*declared)
+    assert plan.combination_count == variant_plan.MAX_VARIANT_COMBINATIONS
+    assert _codes(validate_variant_plan(plan)) == []
+
+
+# --------------------------------------------------------------------------
+# require_valid_variant_plan
+# --------------------------------------------------------------------------
+
+class _Diagnostics:
+    def __init__(self):
+        self.errors: list[str] = []
+        self.warnings: list[str] = []
+
+    def add_error(self, message):
+        self.errors.append(message)
+
+    def add_warning(self, message):
+        self.warnings.append(message)
+
+
+def test_require_returns_a_clean_plan_unchanged():
+    plan = _seat_plan()
+    assert require_valid_variant_plan(plan) is plan
+
+
+def test_require_raises_with_every_error_at_once():
+    first = _collection("Fabric", objects=[_object("SeatFabric")])
+    plan = _plan(
+        _variant_set(
+            "has space",
+            [_variant("Fabric", first), _variant("Leather", None)],
+            default_variant="Vinyl",
+        )
+    )
+    diagnostics = _Diagnostics()
+    with pytest.raises(VariantPlanError) as excinfo:
+        require_valid_variant_plan(plan, diagnostics)
+
+    codes = {issue.code for issue in excinfo.value.issues}
+    assert codes == {
+        "VARIANT_SET_NAME_INVALID",
+        "VARIANT_COLLECTION_MISSING",
+        "VARIANT_DEFAULT_UNKNOWN",
+    }
+    # Every refusal reaches the user, not just the first one hit.
+    assert len(diagnostics.errors) == 3
+    message = str(excinfo.value)
+    assert "has space" in message and "Vinyl" in message
+
+
+def test_require_reports_warnings_without_stopping_the_export():
+    collection = _collection("Fabric", objects=[_object("SeatFabric")])
+    plan = _plan(_variant_set("Seat", [_variant("Fabric", collection)]))
+    diagnostics = _Diagnostics()
+
+    assert require_valid_variant_plan(plan, diagnostics) is plan
+    assert diagnostics.errors == []
+    assert len(diagnostics.warnings) == 1
