@@ -34,6 +34,11 @@ and what you have to do differently. Internal refactors are not listed.
   different things, one object can belong to a shape set and a finish set at
   once: three tops and four finishes is twelve looks from three meshes.
   Offering a finish nothing currently wears works too.
+- Exports now identify themselves as an asset. The root prim carries a USD
+  `kind` (Component by default), `assetInfo` naming the file a consumer
+  references, and an `extentsHint` giving its bounds. Another stage can
+  therefore reference, instance and lay out the export as one model without
+  loading its geometry. Set Asset Kind to None to author none of it.
 - `usdstage info` lists the variant sets a `.blend` declares, so you can see
   what a file will export without exporting it, and the diagnostics report
   records what an export authored.

@@ -264,6 +264,22 @@ class USDStageExportSettings(PropertyGroup):
         update=_on_settings_changed,
     )
 
+    root_prim_kind: EnumProperty(
+        name="Asset Kind",
+        description=(
+            "The USD model kind written on the root prim, which lets another "
+            "stage treat the export as one model"
+        ),
+        items=[
+            ('COMPONENT', "Component", "One asset, with no models inside it"),
+            ('GROUP', "Group", "A group of models"),
+            ('ASSEMBLY', "Assembly", "An assembly of published models"),
+            ('NONE', "None", "Author no kind, asset info or bounds hint"),
+        ],
+        default='COMPONENT',
+        update=_on_settings_changed,
+    )
+
     export_variants: BoolProperty(
         name="Author Variant Sets",
         description=(
@@ -901,6 +917,7 @@ class USDSTAGE_PT_export_usd_root(Panel):
 
 def _draw_usd_general_section(layout, settings):
     layout.prop(settings, "root_prim_name", placeholder="Scene")
+    layout.prop(settings, "root_prim_kind")
     layout.prop(settings, "export_custom_properties")
     if settings.export_custom_properties:
         layout.prop(settings, "custom_properties_namespace")
