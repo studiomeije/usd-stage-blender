@@ -268,7 +268,8 @@ class USDStageExportSettings(PropertyGroup):
         name="Author Variant Sets",
         description=(
             "Author the scene's declared variant sets. Turn off to export the "
-            "default selection flat, without variants"
+            "scene exactly as the viewport shows it, with no variant sets and "
+            "no hidden variants brought in"
         ),
         default=True,
         update=_on_settings_changed,

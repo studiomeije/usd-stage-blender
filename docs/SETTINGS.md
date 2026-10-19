@@ -47,7 +47,7 @@ UI paths below start from the **USD Stage** tab. Where a row says "see below", t
 | `export_animation` | Export ▸ Include ▸ Animation | both | Master switch for animation, including `author_animation_library`. |
 | `author_animation_library` | Export ▸ RCP Clip Library, shown only with Animation on | both | Needs `export_animation`. See below. |
 | `selected_objects_only` | Export ▸ Include ▸ Selection Only | both | Narrows validation and fails on an empty selection. See below. CLI flag: `--selected-only`. |
-| `export_variants` | Variants ▸ Author Variant Sets, shown once a set is declared | both | Off exports the default selection flat. The sets themselves live on the scene, not here. See below. |
+| `export_variants` | Variants ▸ Author Variant Sets, shown once a set is declared | both | Off skips variant authoring and the visibility staging with it, so the export holds only what the viewport shows. The sets themselves live on the scene, not here. See below. |
 | `export_custom_properties` | Advanced USD ▸ General ▸ Custom Properties | both | Master switch for the next two keys. See below. |
 | `custom_properties_namespace` | Advanced USD ▸ General ▸ Namespace, shown only with Custom Properties on | both | Ignored when `export_custom_properties` is off. |
 | `author_blender_name` | Advanced USD ▸ General ▸ Blender Names, grayed out with Custom Properties off | both | Ignored when `export_custom_properties` is off. |

@@ -33,6 +33,9 @@ Core design constraints:
 | `Plugin/export/usd_scene.py` | Stage metadata, prim naming, and mesh normalization. |
 | `Plugin/export/usd_assets.py`, `Plugin/export/usd_textures.py` | Dependency localization and texture staging with relative paths. |
 | `Plugin/export/usd_animation_library.py` | The opt-in Reality Composer Pro clip library. |
+| `Plugin/export/variants.py` | Resolves the scene's declared variant sets into object sets, refuses the ones that cannot be authored, and stages every member's visibility for the export. Imports no OpenUSD. |
+| `Plugin/export/variant_authoring.py` | Writes those sets onto the stage's root prim, activating each variant's members and deactivating its siblings. |
+| `Plugin/export/object_scope.py` | Which objects an export covers, and stable datablock identity. Shared by animation staging and variant planning, and free of `bpy`. |
 | `Plugin/export/realitykit_preflight.py` | Strict checks on the composed stage; fails the export on violation. |
 | `Plugin/export/asset_preflight.py` | Missing or unpacked source assets, checked before baking and in support bundles. |
 | `Plugin/export/bake_textures.py`, `Plugin/export/bake_finalize.py` | Texture baking and baked-material rebuild; whether baked materials are authored Unlit. |
@@ -51,7 +54,8 @@ Core design constraints:
 | `Plugin/nodes/metadata.py` | The RealityKit node catalog and the node-group version. |
 | `Plugin/assets/nodegroups.blend` | The generated node-group library. |
 | `Plugin/ui/` | `panel.py` (3D View sidebar: the main panel with Material Settings, Textures, Advanced USD, and Diagnostics child panels, plus the scene settings group); `shader_panel.py`, `shader_authoring_panel.py`, `shader_menu.py` for the Shader Editor. |
-| `Plugin/ops/` | Operators: `export_operator.py`, `bake_export_operator.py`, `validation_operators.py`, `nodegroup_operators.py`. |
+| `Plugin/ui/variants_panel.py` | The Variants panel, its two `UIList`s, and the variant property groups registered on `Scene`. |
+| `Plugin/ops/` | Operators: `export_operator.py`, `bake_export_operator.py`, `validation_operators.py`, `nodegroup_operators.py`, `variant_operators.py`. |
 
 ## Export pipeline
 
@@ -63,7 +67,7 @@ Bake-backed exports run `usdstage.bake_export_background` (`Plugin/ops/bake_expo
 |---|---|---|
 | 1. Validate | `Plugin/nodes/validate.py` refuses unsupported nodes before anything is written. Bake-backed exports skip it. | [FEATURE_SUPPORT.md](FEATURE_SUPPORT.md#shader-nodes) |
 | 2. Base USD export | `blender_usd_export.export_blender_scene` exports into a per-attempt staging directory, with `animation_export.prepare_animation_export` and `usd_hook.capture_prim_map` around Blender's exporter. | [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#1-the-apple-spatial-contract) |
-| 3. Post-process | `postprocess_usd.process_usd_stage`, in order: `localize_source_dependencies` (`usd_assets.prepare_assets`, which stages textures through `usd_textures`), `normalize_scene`, `save_localized_layers`, `rewrite_materials`, `author_animation_library`, `finalize_assets`, `normalize_finalized_meshes`, `retag_unmapped_color_spaces`, `author_hair_strand_tangents`, `publish_vertex_colors_as_display_color`, `complete_blend_shape_weights`, `realitykit_preflight`, then the stage is saved. | [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#where-textures-are-staged), [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#the-composed-stage-preflight), [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#the-experimental-rcp-clip-library) |
+| 3. Post-process | `postprocess_usd.process_usd_stage`, in order: `localize_source_dependencies` (`usd_assets.prepare_assets`, which stages textures through `usd_textures`), `normalize_scene`, `save_localized_layers`, `rewrite_materials`, `author_animation_library`, `finalize_assets`, `normalize_finalized_meshes`, `retag_unmapped_color_spaces`, `author_hair_strand_tangents`, `publish_vertex_colors_as_display_color`, `complete_blend_shape_weights`, `author_variant_sets`, `realitykit_preflight`, then the stage is saved. | [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#where-textures-are-staged), [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#the-composed-stage-preflight), [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#the-experimental-rcp-clip-library) |
 | 4. Package or publish | `pack_usdz.create_usdz` for USDZ; otherwise `blender_usd_export.publish_unpacked_export` copies the stage and its owned sidecars. | [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md) |
 | 5. Diagnostics | `diagnostics.py` writes `<output>.diagnostics.json`; `support_bundle.py` builds redacted ZIPs. | [CLI.md](CLI.md#diagnostics-files) |
 
