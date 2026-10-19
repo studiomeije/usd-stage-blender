@@ -34,6 +34,12 @@ and what you have to do differently. Internal refactors are not listed.
   different things, one object can belong to a shape set and a finish set at
   once: three tops and four finishes is twelve looks from three meshes.
   Offering a finish nothing currently wears works too.
+- An export can now be split into an asset interface and a payload, with
+  Advanced USD ▸ Payload Geometry. The interface holds the root prim, its
+  kind, asset info, bounds and variant sets; the geometry moves to
+  `assets/<name>_payload`. Another scene can then reference your asset,
+  place it and pick a variant without loading any geometry, and a USDZ
+  still carries both halves. Composed, it is identical to a flat export.
 - Objects with Blender Rigid Body enabled now export with a RealityKit
   collider, sized from the object's own bounds, so an asset can be tapped,
   dragged or collided with in an app without adding a collision component

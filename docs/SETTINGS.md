@@ -46,6 +46,7 @@ UI paths below start from the **USD Stage** tab. Where a row says "see below", t
 | `root_prim_name` | Advanced USD ▸ General ▸ Root Prim | both | A missing leading `/` is added. Empty means `Scene`. |
 | `root_prim_kind` | Advanced USD ▸ General ▸ Asset Kind | both | The USD model kind on the root prim. `None` authors no kind, asset info or bounds hint. See below. |
 | `export_colliders` | Advanced USD ▸ General ▸ Colliders | both | Authors a RealityKit collider for every object with Blender Rigid Body enabled. See below. |
+| `payload_geometry` | Advanced USD ▸ General ▸ Payload Geometry | both | Splits the export into an asset interface and a payload layer under `assets/`. Off by default. See below. |
 | `export_animation` | Export ▸ Include ▸ Animation | both | Master switch for animation, including `author_animation_library`. |
 | `author_animation_library` | Export ▸ RCP Clip Library, shown only with Animation on | both | Needs `export_animation`. See below. |
 | `selected_objects_only` | Export ▸ Include ▸ Selection Only | both | Narrows validation and fails on an empty selection. See below. CLI flag: `--selected-only`. |
@@ -92,6 +93,8 @@ UI paths below start from the **USD Stage** tab. Where a row says "see below", t
 - A selected skinned mesh brings its deforming armature along, when `export_armatures` is on.
 - A bake re-applies your selection after baking, so the bake's own selection changes cannot widen the export.
 - A variant set the selection touches brings its other variants' objects along, so an authored variant cannot switch to a prim the export never wrote. A set the selection does not touch is left out of the export and is not authored.
+
+**`payload_geometry` changes the shape of the output, not its contents.** On, the export writes two files: the interface, holding the root prim with its kind, asset info, bounds hint and variant sets plus a payload arc; and `assets/<name>_payload.<ext>`, holding the geometry and materials. A consumer can then reference the asset, read what it is, size it and choose a variant with the geometry still on disk. Composed, the two are identical to a flat export, and a USDZ carries both layers. The variant sets stay in the interface alone: two layers authoring one selection would fight over it.
 
 **Colliders come from Blender's own Rigid Body, and are always boxes.** Enable Rigid Body on an object and the export writes a RealityKit collider sized from that object's bounds, so the asset is interactive without hand-work in Reality Composer Pro. Any other Blender collision shape is approximated by that box and the diagnostics report says which objects were approximated: Box is the one shape whose RealityKit spelling is verified. The component written is RealityKit's own, not `UsdPhysics`, which [never reaches RealityKit](APPLE_CONFORMANCE.md).
 

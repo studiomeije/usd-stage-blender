@@ -17,6 +17,7 @@ from .realitykit_preflight import (
 from .usd_scene import normalize_scene, _normalize_owned_double_sided_mesh_specs
 from . import asset_metadata
 from . import colliders as colliders_module
+from . import payload
 from . import usd_hook
 from . import variant_authoring
 from . import variants
@@ -201,6 +202,18 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
             diagnostics,
             "realitykit_preflight",
             _require_realitykit_preflight,
+            stage,
+            usd_path,
+            settings,
+            diagnostics,
+        )
+
+        # Last, after the preflight has judged the whole composed asset: the
+        # split only moves where things live, not what they are.
+        _run_step(
+            diagnostics,
+            "split_asset_payload",
+            payload.split_asset_payload,
             stage,
             usd_path,
             settings,
