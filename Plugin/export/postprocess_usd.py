@@ -311,11 +311,11 @@ def _author_colliders(
     stage, settings, context, object_map, prim_path_edits, diagnostics=None
 ):
     """Author RealityKit collider components for Blender's rigid bodies."""
-    plan = colliders_module.resolve_collider_plan(context, settings)
-    if plan.is_empty:
+    members = colliders_module.resolve_collider_plan(context, settings)
+    if not members:
         return ()
     return colliders_module.author_colliders(
-        stage, plan, object_map, prim_path_edits, diagnostics
+        stage, members, object_map, prim_path_edits, diagnostics
     )
 
 

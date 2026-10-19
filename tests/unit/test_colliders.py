@@ -64,7 +64,7 @@ def test_only_objects_with_rigid_body_ask_for_a_collider():
         _settings(),
     )
 
-    assert [m.object_name for m in plan.members] == ["Table"]
+    assert [m.object_name for m in plan] == ["Table"]
 
 
 def test_the_setting_turns_it_off():
@@ -72,7 +72,7 @@ def test_the_setting_turns_it_off():
         _context(_object("Table")), _settings(export_colliders=False)
     )
 
-    assert plan.is_empty
+    assert plan == ()
 
 
 def test_an_object_class_the_export_drops_is_not_given_a_collider():
@@ -80,7 +80,7 @@ def test_an_object_class_the_export_drops_is_not_given_a_collider():
         _context(_object("KeyLight", object_type="LIGHT")), _settings()
     )
 
-    assert plan.is_empty
+    assert plan == ()
 
 
 # --------------------------------------------------------------------------
