@@ -51,19 +51,10 @@ class ColliderMember:
     blender_shape: str
 
 
-@dataclass(frozen=True)
-class ColliderPlan:
-    members: tuple[ColliderMember, ...] = ()
-
-    @property
-    def is_empty(self) -> bool:
-        return not self.members
-
-
-def resolve_collider_plan(context, settings) -> ColliderPlan:
+def resolve_collider_plan(context, settings) -> tuple[ColliderMember, ...]:
     """The objects whose Rigid Body settings ask for a collider."""
     if not bool(getattr(settings, "export_colliders", True)):
-        return ColliderPlan()
+        return ()
 
     scene = getattr(context, "scene", None)
     members: list[ColliderMember] = []
@@ -79,12 +70,12 @@ def resolve_collider_plan(context, settings) -> ColliderPlan:
                 blender_shape=str(getattr(rigid_body, "collision_shape", "BOX")),
             )
         )
-    return ColliderPlan(members=tuple(members))
+    return tuple(members)
 
 
 def author_colliders(
     stage,
-    plan: ColliderPlan,
+    members: tuple[ColliderMember, ...],
     object_map: dict | None,
     path_edits=(),
     diagnostics=None,
@@ -95,7 +86,7 @@ def author_colliders(
     rather than from Blender, so the box is already in the Apple spatial
     contract's axes and needs no conversion of its own.
     """
-    if plan.is_empty:
+    if not members:
         return ()
     require_pxr()
 
@@ -119,7 +110,7 @@ def author_colliders(
 
     authored: list[str] = []
     approximated: list[str] = []
-    for member in plan.members:
+    for member in members:
         path = prim_paths.get(member.object_name)
         prim = stage.GetPrimAtPath(path) if path else None
         if not prim:

@@ -42,11 +42,6 @@ GEOMETRY = "GEOMETRY"
 MATERIAL = "MATERIAL"
 
 
-def is_valid_identifier(name: str) -> bool:
-    """Whether a variant or variant-set name can be written to USD as-is."""
-    return bool(_USD_IDENTIFIER.match(name or ""))
-
-
 def suggest_identifier(name: str, fallback: str = "Variant") -> str:
     """A usable USD identifier derived from a Blender name.
 
@@ -87,6 +82,26 @@ class VariantIssue:
         return result
 
 
+class _Issues(list):
+    """The findings so far, and a short way to add one.
+
+    Every refusal reads the same way at its call site, so the shape of the
+    issue stays out of the way of what is being refused.
+    """
+
+    def error(self, code: str, message: str, **where) -> None:
+        self._add(ERROR, code, message, **where)
+
+    def warn(self, code: str, message: str, **where) -> None:
+        self._add(WARNING, code, message, **where)
+
+    def _add(self, severity: str, code: str, message: str,
+             *, variant_set=None, variant=None, **details) -> None:
+        self.append(
+            VariantIssue(severity, code, message, variant_set, variant, details)
+        )
+
+
 @dataclass(frozen=True)
 class VariantMember:
     """One variant of one set.
@@ -100,10 +115,8 @@ class VariantMember:
     name: str
     collection_name: str
     has_collection: bool
-    object_names: tuple[str, ...]
-    identities: frozenset[int]
-    #: The objects themselves, for the passes that must act on them rather
-    #: than reason about them: visibility staging and selection closure.
+    #: The objects this variant owns. Names and identities are derived from
+    #: them rather than stored, so there is one thing to keep correct.
     objects: tuple = ()
     #: Material variants only: the Blender material this variant binds.
     material_name: str = ""
@@ -111,6 +124,14 @@ class VariantMember:
     #: Nested finishes only: the parent variants that offer this finish.
     #: Empty means every one of them.
     applies_to: tuple[str, ...] = ()
+
+    @property
+    def object_names(self) -> tuple[str, ...]:
+        return tuple(str(getattr(obj, "name", "")) for obj in self.objects)
+
+    @property
+    def identities(self) -> frozenset[int]:
+        return frozenset(rna_identity(obj) for obj in self.objects)
 
     def applies_to_parent(self, parent_variant: str) -> bool:
         return not self.applies_to or parent_variant in self.applies_to
@@ -127,13 +148,19 @@ class VariantSetPlan:
     #: Material sets only: the objects whose binding this set varies.
     target_collection_name: str = ""
     has_target: bool = False
-    target_object_names: tuple[str, ...] = ()
-    target_identities: frozenset[int] = frozenset()
     target_objects: tuple = ()
     #: Material sets only: the shape set this one is authored inside, so a
     #: finish can be offered on some shapes and not others. Empty means the
     #: set stands on its own.
     parent_set: str = ""
+
+    @property
+    def target_object_names(self) -> tuple[str, ...]:
+        return tuple(str(getattr(obj, "name", "")) for obj in self.target_objects)
+
+    @property
+    def target_identities(self) -> frozenset[int]:
+        return frozenset(rna_identity(obj) for obj in self.target_objects)
 
     def default_for(self, parent_variant: str, offered) -> str:
         """The selection a nested set ships with under one parent variant.
@@ -184,15 +211,28 @@ class VariantPlan:
         """
         total = 1
         for variant_set in self.sets:
-            total *= max(len(variant_set.variants), 1)
+            if not variant_set.parent_set:
+                total *= self._states(variant_set)
         return total
 
-    def member_identities(self) -> frozenset[int]:
-        identities: set[int] = set()
-        for variant_set in self.sets:
-            for variant in variant_set.variants:
-                identities |= variant.identities
-        return frozenset(identities)
+    def _states(self, variant_set) -> int:
+        """Stage states one top-level set produces, nested sets included."""
+        nested = [s for s in self.sets if s.parent_set == variant_set.name]
+        if not nested:
+            return max(len(variant_set.variants), 1)
+        states = 0
+        for variant in variant_set.variants:
+            offered = 1
+            for child in nested:
+                offered *= max(
+                    sum(
+                        1 for finish in child.variants
+                        if finish.applies_to_parent(variant.name)
+                    ),
+                    1,
+                )
+            states += offered
+        return states or 1
 
     def set_named(self, name: str):
         """The declared set with this name, or None."""
@@ -293,10 +333,6 @@ def resolve_variant_plan(context, settings) -> VariantPlan:
                 kind=kind,
                 target_collection_name=str(getattr(target, "name", "") or ""),
                 has_target=target is not None,
-                target_object_names=tuple(
-                    str(getattr(obj, "name", "")) for obj in target_objects
-                ),
-                target_identities=frozenset(rna_identity(obj) for obj in target_objects),
                 target_objects=tuple(target_objects),
                 parent_set=str(getattr(entry, "parent_set", "") or "").strip(),
             )
@@ -313,8 +349,6 @@ def _resolve_variant(declared_variant, settings, kind: str = GEOMETRY) -> Varian
             name=name,
             collection_name="",
             has_collection=False,
-            object_names=(),
-            identities=frozenset(),
             material_name=str(getattr(material, "name", "") or ""),
             has_material=material is not None,
             applies_to=tuple(
@@ -330,8 +364,6 @@ def _resolve_variant(declared_variant, settings, kind: str = GEOMETRY) -> Varian
             name=name,
             collection_name="",
             has_collection=False,
-            object_names=(),
-            identities=frozenset(),
         )
 
     objects = _collection_objects(collection)
@@ -340,8 +372,6 @@ def _resolve_variant(declared_variant, settings, kind: str = GEOMETRY) -> Varian
         name=name,
         collection_name=str(getattr(collection, "name", "") or ""),
         has_collection=True,
-        object_names=tuple(str(getattr(obj, "name", "")) for obj in exportable),
-        identities=frozenset(rna_identity(obj) for obj in exportable),
         objects=tuple(exportable),
     )
 
@@ -376,14 +406,11 @@ def _collection_objects(collection) -> list:
 
 def validate_variant_plan(plan: VariantPlan) -> list[VariantIssue]:
     """Return every finding about a resolved plan, errors and warnings alike."""
-    issues: list[VariantIssue] = []
+    issues = _Issues()
     if plan.is_empty:
         return issues
 
     seen_set_names: set[str] = set()
-    # {object identity: (set name, variant name)} of the first claim seen, so a
-    # second claim can name both sides of the conflict.
-    claimed: dict[int, tuple[str, str]] = {}
     # Keyed by property as well as object: a geometry set and a material set
     # vary different properties, so both may act on one object.
     claimed_properties: dict[tuple[int, str], str] = {}
@@ -396,25 +423,18 @@ def validate_variant_plan(plan: VariantPlan) -> list[VariantIssue]:
             _validate_material_set(variant_set, issues)
             _validate_nesting(variant_set, plan, issues)
         else:
-            _validate_membership(variant_set, claimed, issues)
+            _validate_membership(variant_set, issues)
         _validate_property_ownership(variant_set, claimed_properties, issues)
 
     if plan.combination_count > MAX_VARIANT_COMBINATIONS:
-        issues.append(
-            VariantIssue(
-                severity=ERROR,
-                code="VARIANT_COMBINATIONS_EXCEEDED",
-                message=(
-                    f"The declared variant sets compose "
-                    f"{plan.combination_count} stage states, over the preflight "
-                    f"limit of {MAX_VARIANT_COMBINATIONS}. Split the asset or "
-                    "declare fewer variants."
-                ),
-                details={
-                    "combinations": plan.combination_count,
-                    "limit": MAX_VARIANT_COMBINATIONS,
-                },
-            )
+        issues.error(
+            "VARIANT_COMBINATIONS_EXCEEDED",
+            f"The declared variant sets compose "
+            f"{plan.combination_count} stage states, over the preflight "
+            f"limit of {MAX_VARIANT_COMBINATIONS}. Split the asset or "
+            "declare fewer variants.",
+            combinations=plan.combination_count,
+            limit=MAX_VARIANT_COMBINATIONS,
         )
     return issues
 
@@ -422,92 +442,64 @@ def validate_variant_plan(plan: VariantPlan) -> list[VariantIssue]:
 def _validate_set_name(
     variant_set: VariantSetPlan,
     seen_set_names: set[str],
-    issues: list[VariantIssue],
+    issues: _Issues,
 ) -> None:
     name = variant_set.name
     if not _USD_IDENTIFIER.match(name or ""):
-        issues.append(
-            VariantIssue(
-                severity=ERROR,
-                code="VARIANT_SET_NAME_INVALID",
-                message=(
-                    f"Variant set name {name!r} is not a USD identifier. Use "
-                    "letters, digits and underscores, starting with a letter "
-                    "or underscore."
-                ),
-                variant_set=name,
-            )
+        issues.error(
+            "VARIANT_SET_NAME_INVALID",
+            f"Variant set name {name!r} is not a USD identifier. Use "
+            "letters, digits and underscores, starting with a letter "
+            "or underscore.",
+            variant_set=name,
         )
     elif name in seen_set_names:
-        issues.append(
-            VariantIssue(
-                severity=ERROR,
-                code="VARIANT_SET_NAME_DUPLICATE",
-                message=(
-                    f"Two variant sets are both named {name!r}. Each set is "
-                    "authored on the same prim, so their names must differ."
-                ),
-                variant_set=name,
-            )
+        issues.error(
+            "VARIANT_SET_NAME_DUPLICATE",
+            f"Two variant sets are both named {name!r}. Each set is "
+            "authored on the same prim, so their names must differ.",
+            variant_set=name,
         )
     else:
         seen_set_names.add(name)
 
 
-def _validate_variants(variant_set: VariantSetPlan, issues: list[VariantIssue]) -> None:
+def _validate_variants(variant_set: VariantSetPlan, issues: _Issues) -> None:
     if not variant_set.variants:
-        issues.append(
-            VariantIssue(
-                severity=ERROR,
-                code="VARIANT_SET_EMPTY",
-                message=f"Variant set {variant_set.name!r} declares no variants.",
-                variant_set=variant_set.name,
-            )
+        issues.error(
+            "VARIANT_SET_EMPTY",
+            f"Variant set {variant_set.name!r} declares no variants.",
+            variant_set=variant_set.name,
         )
         return
 
     if len(variant_set.variants) == 1:
-        issues.append(
-            VariantIssue(
-                severity=WARNING,
-                code="VARIANT_SET_SINGLE",
-                message=(
-                    f"Variant set {variant_set.name!r} has one variant, so "
-                    "there is nothing to switch between."
-                ),
-                variant_set=variant_set.name,
-            )
+        issues.warn(
+            "VARIANT_SET_SINGLE",
+            f"Variant set {variant_set.name!r} has one variant, so "
+            "there is nothing to switch between.",
+            variant_set=variant_set.name,
         )
 
     seen_names: set[str] = set()
     for variant in variant_set.variants:
         if not _USD_IDENTIFIER.match(variant.name or ""):
-            issues.append(
-                VariantIssue(
-                    severity=ERROR,
-                    code="VARIANT_NAME_INVALID",
-                    message=(
-                        f"Variant name {variant.name!r} in set "
-                        f"{variant_set.name!r} is not a USD identifier. Use "
-                        "letters, digits and underscores, starting with a "
-                        "letter or underscore."
-                    ),
-                    variant_set=variant_set.name,
-                    variant=variant.name,
-                )
+            issues.error(
+                "VARIANT_NAME_INVALID",
+                f"Variant name {variant.name!r} in set "
+                f"{variant_set.name!r} is not a USD identifier. Use "
+                "letters, digits and underscores, starting with a "
+                "letter or underscore.",
+                variant_set=variant_set.name,
+                variant=variant.name,
             )
         elif variant.name in seen_names:
-            issues.append(
-                VariantIssue(
-                    severity=ERROR,
-                    code="VARIANT_NAME_DUPLICATE",
-                    message=(
-                        f"Variant set {variant_set.name!r} declares "
-                        f"{variant.name!r} twice."
-                    ),
-                    variant_set=variant_set.name,
-                    variant=variant.name,
-                )
+            issues.error(
+                "VARIANT_NAME_DUPLICATE",
+                f"Variant set {variant_set.name!r} declares "
+                f"{variant.name!r} twice.",
+                variant_set=variant_set.name,
+                variant=variant.name,
             )
         else:
             seen_names.add(variant.name)
@@ -518,166 +510,116 @@ def _validate_variants(variant_set: VariantSetPlan, issues: list[VariantIssue]) 
             continue
 
         if not variant.has_collection:
-            issues.append(
-                VariantIssue(
-                    severity=ERROR,
-                    code="VARIANT_COLLECTION_MISSING",
-                    message=(
-                        f"Variant {variant.name!r} in set {variant_set.name!r} "
-                        "has no collection. Assign one, or remove the variant."
-                    ),
-                    variant_set=variant_set.name,
-                    variant=variant.name,
-                )
+            issues.error(
+                "VARIANT_COLLECTION_MISSING",
+                f"Variant {variant.name!r} in set {variant_set.name!r} "
+                "has no collection. Assign one, or remove the variant.",
+                variant_set=variant_set.name,
+                variant=variant.name,
             )
         elif not variant.identities:
-            issues.append(
-                VariantIssue(
-                    severity=ERROR,
-                    code="VARIANT_EMPTY",
-                    message=(
-                        f"Variant {variant.name!r} in set {variant_set.name!r} "
-                        f"resolves to nothing exportable in collection "
-                        f"{variant.collection_name!r}."
-                    ),
-                    variant_set=variant_set.name,
-                    variant=variant.name,
-                    details={"collection": variant.collection_name},
-                )
+            issues.error(
+                "VARIANT_EMPTY",
+                f"Variant {variant.name!r} in set {variant_set.name!r} "
+                f"resolves to nothing exportable in collection "
+                f"{variant.collection_name!r}.",
+                variant_set=variant_set.name,
+                variant=variant.name,
+                collection=variant.collection_name,
             )
 
 
 def _validate_default_selection(
     variant_set: VariantSetPlan,
-    issues: list[VariantIssue],
+    issues: _Issues,
 ) -> None:
     if not variant_set.variants:
         return
     names = {variant.name for variant in variant_set.variants}
     if variant_set.default_variant not in names:
-        issues.append(
-            VariantIssue(
-                severity=ERROR,
-                code="VARIANT_DEFAULT_UNKNOWN",
-                message=(
-                    f"Variant set {variant_set.name!r} selects "
-                    f"{variant_set.default_variant!r} by default, which is not "
-                    f"one of its variants ({', '.join(sorted(names))})."
-                ),
-                variant_set=variant_set.name,
-                details={"default_variant": variant_set.default_variant},
-            )
+        issues.error(
+            "VARIANT_DEFAULT_UNKNOWN",
+            f"Variant set {variant_set.name!r} selects "
+            f"{variant_set.default_variant!r} by default, which is not "
+            f"one of its variants ({', '.join(sorted(names))}).",
+            variant_set=variant_set.name,
+            default_variant=variant_set.default_variant,
         )
 
 
-def _validate_membership(
-    variant_set: VariantSetPlan,
-    claimed: dict[int, tuple[str, str]],
-    issues: list[VariantIssue],
-) -> None:
-    """Refuse an object claimed twice, within one set or across two.
+def _validate_membership(variant_set: VariantSetPlan, issues: _Issues) -> None:
+    """Refuse an object two variants of this set both claim.
 
-    Membership is compared per object, not per collection, because an object
-    exports to exactly one prim however many collections hold it - and one prim
-    cannot be activated by two variants at once.  Comparing objects also covers
-    nesting for free: a collection that contains another's resolves to a
-    superset of its objects, so the overlap is caught here rather than needing a
-    separate hierarchy rule.
+    Membership is compared per object, not per collection: an object exports
+    to exactly one prim however many collections hold it, and one prim cannot
+    be activated by two variants at once. That also covers nesting for free -
+    a collection containing another's resolves to a superset of its objects,
+    so the overlap shows up here rather than needing a hierarchy rule.
+
+    Overlap between two *sets* is a different question, judged by property
+    rather than by object; see :func:`_validate_property_ownership`.
     """
+    claimed: dict[int, str] = {}
     for variant in variant_set.variants:
-        reported_against: set[tuple[str, str]] = set()
-        for identity in sorted(variant.identities):
-            previous = claimed.get(identity)
-            if previous is None:
-                claimed[identity] = (variant_set.name, variant.name)
-                continue
-            if previous in reported_against:
-                continue
-            reported_against.add(previous)
-
-            previous_set, previous_variant = previous
-            if previous_set != variant_set.name:
-                # Cross-set overlap is judged by property, not by object.
-                continue
-            issues.append(
-                VariantIssue(
-                    severity=ERROR,
-                    code="VARIANT_MEMBER_SHARED_IN_SET",
-                    message=(
-                        f"Variants {previous_variant!r} and {variant.name!r} "
-                        f"of set {variant_set.name!r} share objects. One "
-                        "object cannot belong to two variants of the same "
-                        "set."
-                    ),
-                    variant_set=variant_set.name,
-                    variant=variant.name,
-                    details={"conflicts_with": previous_variant},
-                )
+        for other in sorted({
+            claimed[identity] for identity in variant.identities
+            if identity in claimed
+        }):
+            issues.error(
+                "VARIANT_MEMBER_SHARED_IN_SET",
+                f"Variants {other!r} and {variant.name!r} of set "
+                f"{variant_set.name!r} share objects. One object cannot "
+                "belong to two variants of the same set.",
+                variant_set=variant_set.name,
+                variant=variant.name,
+                conflicts_with=other,
             )
+        for identity in variant.identities:
+            claimed.setdefault(identity, variant.name)
 
 
 def _validate_material_set(
     variant_set: VariantSetPlan,
-    issues: list[VariantIssue],
+    issues: _Issues,
 ) -> None:
     """A material set needs objects to rebind and a material per variant."""
     if not variant_set.has_target:
-        issues.append(
-            VariantIssue(
-                severity=ERROR,
-                code="VARIANT_TARGET_MISSING",
-                message=(
-                    f"Material variant set {variant_set.name!r} has no target "
-                    "collection, so there is nothing for it to rebind."
-                ),
-                variant_set=variant_set.name,
-            )
+        issues.error(
+            "VARIANT_TARGET_MISSING",
+            f"Material variant set {variant_set.name!r} has no target "
+            "collection, so there is nothing for it to rebind.",
+            variant_set=variant_set.name,
         )
     elif not variant_set.target_identities:
-        issues.append(
-            VariantIssue(
-                severity=ERROR,
-                code="VARIANT_TARGET_EMPTY",
-                message=(
-                    f"Material variant set {variant_set.name!r} targets "
-                    f"{variant_set.target_collection_name!r}, which holds "
-                    "nothing exportable."
-                ),
-                variant_set=variant_set.name,
-                details={"collection": variant_set.target_collection_name},
-            )
+        issues.error(
+            "VARIANT_TARGET_EMPTY",
+            f"Material variant set {variant_set.name!r} targets "
+            f"{variant_set.target_collection_name!r}, which holds "
+            "nothing exportable.",
+            variant_set=variant_set.name,
+            collection=variant_set.target_collection_name,
         )
 
     seen_materials: dict[str, str] = {}
     for variant in variant_set.variants:
         if not variant.has_material:
-            issues.append(
-                VariantIssue(
-                    severity=ERROR,
-                    code="VARIANT_MATERIAL_MISSING",
-                    message=(
-                        f"Variant {variant.name!r} of material set "
-                        f"{variant_set.name!r} has no material assigned."
-                    ),
-                    variant_set=variant_set.name,
-                    variant=variant.name,
-                )
+            issues.error(
+                "VARIANT_MATERIAL_MISSING",
+                f"Variant {variant.name!r} of material set "
+                f"{variant_set.name!r} has no material assigned.",
+                variant_set=variant_set.name,
+                variant=variant.name,
             )
             continue
         previous = seen_materials.get(variant.material_name)
         if previous is not None:
-            issues.append(
-                VariantIssue(
-                    severity=WARNING,
-                    code="VARIANT_MATERIAL_REPEATED",
-                    message=(
-                        f"Variants {previous!r} and {variant.name!r} of set "
-                        f"{variant_set.name!r} both bind "
-                        f"{variant.material_name!r}, so they look identical."
-                    ),
-                    variant_set=variant_set.name,
-                    variant=variant.name,
-                )
+            issues.warn(
+                "VARIANT_MATERIAL_REPEATED",
+                f"Variants {previous!r} and {variant.name!r} of set "
+                f"{variant_set.name!r} both bind "
+                f"{variant.material_name!r}, so they look identical.",
+                variant_set=variant_set.name,
+                variant=variant.name,
             )
         else:
             seen_materials[variant.material_name] = variant.name
@@ -686,7 +628,7 @@ def _validate_material_set(
 def _validate_nesting(
     variant_set: VariantSetPlan,
     plan: VariantPlan,
-    issues: list[VariantIssue],
+    issues: _Issues,
 ) -> None:
     """A nested finish set has to name a shape set, and real variants of it."""
     if not variant_set.parent_set:
@@ -694,58 +636,40 @@ def _validate_nesting(
 
     parent = plan.set_named(variant_set.parent_set)
     if parent is None:
-        issues.append(
-            VariantIssue(
-                severity=ERROR,
-                code="VARIANT_PARENT_UNKNOWN",
-                message=(
-                    f"Variant set {variant_set.name!r} nests inside "
-                    f"{variant_set.parent_set!r}, which is not a declared set."
-                ),
-                variant_set=variant_set.name,
-            )
+        issues.error(
+            "VARIANT_PARENT_UNKNOWN",
+            f"Variant set {variant_set.name!r} nests inside "
+            f"{variant_set.parent_set!r}, which is not a declared set.",
+            variant_set=variant_set.name,
         )
         return
 
     if parent.name == variant_set.name:
-        issues.append(
-            VariantIssue(
-                severity=ERROR,
-                code="VARIANT_PARENT_SELF",
-                message=f"Variant set {variant_set.name!r} nests inside itself.",
-                variant_set=variant_set.name,
-            )
+        issues.error(
+            "VARIANT_PARENT_SELF",
+            f"Variant set {variant_set.name!r} nests inside itself.",
+            variant_set=variant_set.name,
         )
         return
 
     if parent.kind == MATERIAL:
-        issues.append(
-            VariantIssue(
-                severity=ERROR,
-                code="VARIANT_PARENT_NOT_A_SHAPE",
-                message=(
-                    f"Variant set {variant_set.name!r} nests inside "
-                    f"{parent.name!r}, which is a finish set. A finish nests "
-                    "inside a shape, so that different shapes can offer "
-                    "different finishes."
-                ),
-                variant_set=variant_set.name,
-            )
+        issues.error(
+            "VARIANT_PARENT_NOT_A_SHAPE",
+            f"Variant set {variant_set.name!r} nests inside "
+            f"{parent.name!r}, which is a finish set. A finish nests "
+            "inside a shape, so that different shapes can offer "
+            "different finishes.",
+            variant_set=variant_set.name,
         )
         return
 
     if parent.parent_set:
-        issues.append(
-            VariantIssue(
-                severity=ERROR,
-                code="VARIANT_NESTING_TOO_DEEP",
-                message=(
-                    f"Variant set {parent.name!r} is itself nested, so "
-                    f"{variant_set.name!r} cannot nest inside it. One level "
-                    "is the limit."
-                ),
-                variant_set=variant_set.name,
-            )
+        issues.error(
+            "VARIANT_NESTING_TOO_DEEP",
+            f"Variant set {parent.name!r} is itself nested, so "
+            f"{variant_set.name!r} cannot nest inside it. One level "
+            "is the limit.",
+            variant_set=variant_set.name,
         )
         return
 
@@ -753,21 +677,16 @@ def _validate_nesting(
     for variant in variant_set.variants:
         unknown = sorted(set(variant.applies_to) - parent_names)
         if unknown:
-            issues.append(
-                VariantIssue(
-                    severity=ERROR,
-                    code="VARIANT_APPLIES_TO_UNKNOWN",
-                    message=(
-                        f"Variant {variant.name!r} of set "
-                        f"{variant_set.name!r} applies to "
-                        f"{', '.join(repr(name) for name in unknown)}, which "
-                        f"{'is' if len(unknown) == 1 else 'are'} not "
-                        f"{parent.name!r} variant"
-                        f"{'' if len(unknown) == 1 else 's'}."
-                    ),
-                    variant_set=variant_set.name,
-                    variant=variant.name,
-                )
+            issues.error(
+                "VARIANT_APPLIES_TO_UNKNOWN",
+                f"Variant {variant.name!r} of set "
+                f"{variant_set.name!r} applies to "
+                f"{', '.join(repr(name) for name in unknown)}, which "
+                f"{'is' if len(unknown) == 1 else 'are'} not "
+                f"{parent.name!r} variant"
+                f"{'' if len(unknown) == 1 else 's'}.",
+                variant_set=variant_set.name,
+                variant=variant.name,
             )
 
     for parent_variant in parent.variants:
@@ -776,25 +695,20 @@ def _validate_nesting(
             if variant.applies_to_parent(parent_variant.name)
         ]
         if not offered:
-            issues.append(
-                VariantIssue(
-                    severity=ERROR,
-                    code="VARIANT_PARENT_HAS_NO_FINISH",
-                    message=(
-                        f"No variant of {variant_set.name!r} applies to "
-                        f"{parent_variant.name!r}, so that shape would ship "
-                        "with no finish to choose."
-                    ),
-                    variant_set=variant_set.name,
-                    details={"parent_variant": parent_variant.name},
-                )
+            issues.error(
+                "VARIANT_PARENT_HAS_NO_FINISH",
+                f"No variant of {variant_set.name!r} applies to "
+                f"{parent_variant.name!r}, so that shape would ship "
+                "with no finish to choose.",
+                variant_set=variant_set.name,
+                parent_variant=parent_variant.name,
             )
 
 
 def _validate_property_ownership(
     variant_set: VariantSetPlan,
     claimed_properties: dict[tuple[int, str], str],
-    issues: list[VariantIssue],
+    issues: _Issues,
 ) -> None:
     """Refuse two sets varying the SAME property of the same object.
 
@@ -819,19 +733,15 @@ def _validate_property_ownership(
         if previous == variant_set.name or previous in reported:
             continue
         reported.add(previous)
-        issues.append(
-            VariantIssue(
-                severity=ERROR,
-                code="VARIANT_PROPERTY_CONTESTED",
-                message=(
-                    f"Sets {previous!r} and {variant_set.name!r} both vary "
-                    f"{varied!r} on the same objects. Whichever composes "
-                    "second would win, so one of them could never take "
-                    "effect."
-                ),
-                variant_set=variant_set.name,
-                details={"conflicts_with_set": previous, "property": varied},
-            )
+        issues.error(
+            "VARIANT_PROPERTY_CONTESTED",
+            f"Sets {previous!r} and {variant_set.name!r} both vary "
+            f"{varied!r} on the same objects. Whichever composes "
+            "second would win, so one of them could never take "
+            "effect.",
+            variant_set=variant_set.name,
+            conflicts_with_set=previous,
+            property=varied,
         )
 
 

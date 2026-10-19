@@ -585,3 +585,20 @@ def test_a_nested_set_does_not_contest_a_set_on_the_root_prim():
 def test_a_finish_offered_everywhere_needs_no_applies_to():
     plan = _nested_plan(applies_to=("", ""))
     assert validate_variant_plan(plan) == []
+
+
+def test_a_nested_set_counts_what_each_shape_offers():
+    """Not every finish against every shape: only the ones on offer."""
+    # Round offers Oak; Square offers Oak and Walnut. Three states, not four.
+    plan = _nested_plan(applies_to=("", "Square"))
+    assert plan.combination_count == 3
+
+
+def test_an_unnested_finish_set_still_multiplies():
+    fabric = _collection("Fabric", objects=[_object("SeatFabric")])
+    leather = _collection("Leather", objects=[_object("SeatLeather")])
+    plan = _plan(
+        _variant_set("Seat", [_variant("Fabric", fabric), _variant("Leather", leather)]),
+        _finish_set(target=_collection("Tops", objects=[_object("TableTop")])),
+    )
+    assert plan.combination_count == 4
