@@ -36,6 +36,11 @@ _USD_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ERROR = "error"
 WARNING = "warning"
 
+#: What a variant set varies. A geometry set switches whole objects on and
+#: off; a material set leaves them all present and rebinds their material.
+GEOMETRY = "GEOMETRY"
+MATERIAL = "MATERIAL"
+
 
 def is_valid_identifier(name: str) -> bool:
     """Whether a variant or variant-set name can be written to USD as-is."""
@@ -84,7 +89,13 @@ class VariantIssue:
 
 @dataclass(frozen=True)
 class VariantMember:
-    """One variant of one set, resolved to the objects it owns."""
+    """One variant of one set.
+
+    A geometry variant owns a collection, and switching the set activates its
+    objects. A material variant owns a material instead, and switching the set
+    rebinds the objects its *set* targets. The two kinds vary different USD
+    properties, which is what lets both act on one object.
+    """
 
     name: str
     collection_name: str
@@ -94,6 +105,9 @@ class VariantMember:
     #: The objects themselves, for the passes that must act on them rather
     #: than reason about them: visibility staging and selection closure.
     objects: tuple = ()
+    #: Material variants only: the Blender material this variant binds.
+    material_name: str = ""
+    has_material: bool = False
 
 
 @dataclass(frozen=True)
@@ -103,6 +117,32 @@ class VariantSetPlan:
     name: str
     variants: tuple[VariantMember, ...]
     default_variant: str
+    kind: str = GEOMETRY
+    #: Material sets only: the objects whose binding this set varies.
+    target_collection_name: str = ""
+    has_target: bool = False
+    target_object_names: tuple[str, ...] = ()
+    target_identities: frozenset[int] = frozenset()
+    target_objects: tuple = ()
+
+    @property
+    def varied_property(self) -> str:
+        """The USD property this set authors, and therefore owns.
+
+        Two sets may act on the same object as long as they vary different
+        properties; the conflict is over the property, not the object.
+        """
+        return "material:binding" if self.kind == MATERIAL else "active"
+
+    @property
+    def claimed_identities(self) -> frozenset[int]:
+        """Objects whose varied property this set owns."""
+        if self.kind == MATERIAL:
+            return self.target_identities
+        claimed: set[int] = set()
+        for variant in self.variants:
+            claimed |= variant.identities
+        return frozenset(claimed)
 
 
 @dataclass(frozen=True)
@@ -135,17 +175,27 @@ class VariantPlan:
         return frozenset(identities)
 
     def member_objects(self) -> list:
-        """Every member object across every set, each once, in declared order."""
+        """Every object a set acts on, each once, in declared order.
+
+        Includes a material set's targets: they have to be in the export for
+        it to rebind them, even though it never deactivates them.
+        """
         seen: set[int] = set()
         members: list = []
+
+        def add(obj) -> None:
+            identity = rna_identity(obj)
+            if identity in seen:
+                return
+            seen.add(identity)
+            members.append(obj)
+
         for variant_set in self.sets:
+            for obj in variant_set.target_objects:
+                add(obj)
             for variant in variant_set.variants:
                 for obj in variant.objects:
-                    identity = rna_identity(obj)
-                    if identity in seen:
-                        continue
-                    seen.add(identity)
-                    members.append(obj)
+                    add(obj)
         return members
 
     def sets_touching(self, identities) -> tuple[VariantSetPlan, ...]:
@@ -159,7 +209,8 @@ class VariantPlan:
         return tuple(
             variant_set
             for variant_set in self.sets
-            if any(variant.identities & wanted for variant in variant_set.variants)
+            if (variant_set.target_identities & wanted)
+            or any(variant.identities & wanted for variant in variant_set.variants)
         )
 
 
@@ -195,21 +246,52 @@ def resolve_variant_plan(context, settings) -> VariantPlan:
 
     sets: list[VariantSetPlan] = []
     for entry in declared:
+        kind = str(getattr(entry, "kind", GEOMETRY) or GEOMETRY)
         variants: list[VariantMember] = []
         for declared_variant in getattr(entry, "variants", None) or ():
-            variants.append(_resolve_variant(declared_variant, settings))
+            variants.append(_resolve_variant(declared_variant, settings, kind))
+
+        target = getattr(entry, "target_collection", None) if kind == MATERIAL else None
+        target_objects: list = []
+        if target is not None:
+            target_objects = [
+                obj for obj in _collection_objects(target)
+                if is_exportable_object(obj, settings)
+            ]
+
         sets.append(
             VariantSetPlan(
                 name=str(getattr(entry, "name", "") or "").strip(),
                 variants=tuple(variants),
                 default_variant=str(getattr(entry, "default_variant", "") or "").strip(),
+                kind=kind,
+                target_collection_name=str(getattr(target, "name", "") or ""),
+                has_target=target is not None,
+                target_object_names=tuple(
+                    str(getattr(obj, "name", "")) for obj in target_objects
+                ),
+                target_identities=frozenset(rna_identity(obj) for obj in target_objects),
+                target_objects=tuple(target_objects),
             )
         )
     return VariantPlan(sets=tuple(sets))
 
 
-def _resolve_variant(declared_variant, settings) -> VariantMember:
+def _resolve_variant(declared_variant, settings, kind: str = GEOMETRY) -> VariantMember:
     name = str(getattr(declared_variant, "name", "") or "").strip()
+
+    if kind == MATERIAL:
+        material = getattr(declared_variant, "material", None)
+        return VariantMember(
+            name=name,
+            collection_name="",
+            has_collection=False,
+            object_names=(),
+            identities=frozenset(),
+            material_name=str(getattr(material, "name", "") or ""),
+            has_material=material is not None,
+        )
+
     collection = getattr(declared_variant, "collection", None)
     if collection is None:
         return VariantMember(
@@ -270,12 +352,19 @@ def validate_variant_plan(plan: VariantPlan) -> list[VariantIssue]:
     # {object identity: (set name, variant name)} of the first claim seen, so a
     # second claim can name both sides of the conflict.
     claimed: dict[int, tuple[str, str]] = {}
+    # Keyed by property as well as object: a geometry set and a material set
+    # vary different properties, so both may act on one object.
+    claimed_properties: dict[tuple[int, str], str] = {}
 
     for variant_set in plan.sets:
         _validate_set_name(variant_set, seen_set_names, issues)
         _validate_variants(variant_set, issues)
         _validate_default_selection(variant_set, issues)
-        _validate_membership(variant_set, claimed, issues)
+        if variant_set.kind == MATERIAL:
+            _validate_material_set(variant_set, issues)
+        else:
+            _validate_membership(variant_set, claimed, issues)
+        _validate_property_ownership(variant_set, claimed_properties, issues)
 
     if plan.combination_count > MAX_VARIANT_COMBINATIONS:
         issues.append(
@@ -390,6 +479,11 @@ def _validate_variants(variant_set: VariantSetPlan, issues: list[VariantIssue]) 
         else:
             seen_names.add(variant.name)
 
+        if variant_set.kind == MATERIAL:
+            # A material variant owns a material, not a collection; its own
+            # rules are checked in _validate_material_set.
+            continue
+
         if not variant.has_collection:
             issues.append(
                 VariantIssue(
@@ -469,42 +563,131 @@ def _validate_membership(
             reported_against.add(previous)
 
             previous_set, previous_variant = previous
-            if previous_set == variant_set.name:
-                issues.append(
-                    VariantIssue(
-                        severity=ERROR,
-                        code="VARIANT_MEMBER_SHARED_IN_SET",
-                        message=(
-                            f"Variants {previous_variant!r} and {variant.name!r} "
-                            f"of set {variant_set.name!r} share objects. One "
-                            "object cannot belong to two variants of the same "
-                            "set."
-                        ),
-                        variant_set=variant_set.name,
-                        variant=variant.name,
-                        details={"conflicts_with": previous_variant},
-                    )
+            if previous_set != variant_set.name:
+                # Cross-set overlap is judged by property, not by object.
+                continue
+            issues.append(
+                VariantIssue(
+                    severity=ERROR,
+                    code="VARIANT_MEMBER_SHARED_IN_SET",
+                    message=(
+                        f"Variants {previous_variant!r} and {variant.name!r} "
+                        f"of set {variant_set.name!r} share objects. One "
+                        "object cannot belong to two variants of the same "
+                        "set."
+                    ),
+                    variant_set=variant_set.name,
+                    variant=variant.name,
+                    details={"conflicts_with": previous_variant},
                 )
-            else:
-                issues.append(
-                    VariantIssue(
-                        severity=ERROR,
-                        code="VARIANT_MEMBER_SHARED_ACROSS_SETS",
-                        message=(
-                            f"Variant {variant.name!r} of set "
-                            f"{variant_set.name!r} shares objects with "
-                            f"{previous_variant!r} of set {previous_set!r}. "
-                            "Both sets would author activation for the same "
-                            "prim."
-                        ),
-                        variant_set=variant_set.name,
-                        variant=variant.name,
-                        details={
-                            "conflicts_with_set": previous_set,
-                            "conflicts_with_variant": previous_variant,
-                        },
-                    )
+            )
+
+
+def _validate_material_set(
+    variant_set: VariantSetPlan,
+    issues: list[VariantIssue],
+) -> None:
+    """A material set needs objects to rebind and a material per variant."""
+    if not variant_set.has_target:
+        issues.append(
+            VariantIssue(
+                severity=ERROR,
+                code="VARIANT_TARGET_MISSING",
+                message=(
+                    f"Material variant set {variant_set.name!r} has no target "
+                    "collection, so there is nothing for it to rebind."
+                ),
+                variant_set=variant_set.name,
+            )
+        )
+    elif not variant_set.target_identities:
+        issues.append(
+            VariantIssue(
+                severity=ERROR,
+                code="VARIANT_TARGET_EMPTY",
+                message=(
+                    f"Material variant set {variant_set.name!r} targets "
+                    f"{variant_set.target_collection_name!r}, which holds "
+                    "nothing exportable."
+                ),
+                variant_set=variant_set.name,
+                details={"collection": variant_set.target_collection_name},
+            )
+        )
+
+    seen_materials: dict[str, str] = {}
+    for variant in variant_set.variants:
+        if not variant.has_material:
+            issues.append(
+                VariantIssue(
+                    severity=ERROR,
+                    code="VARIANT_MATERIAL_MISSING",
+                    message=(
+                        f"Variant {variant.name!r} of material set "
+                        f"{variant_set.name!r} has no material assigned."
+                    ),
+                    variant_set=variant_set.name,
+                    variant=variant.name,
                 )
+            )
+            continue
+        previous = seen_materials.get(variant.material_name)
+        if previous is not None:
+            issues.append(
+                VariantIssue(
+                    severity=WARNING,
+                    code="VARIANT_MATERIAL_REPEATED",
+                    message=(
+                        f"Variants {previous!r} and {variant.name!r} of set "
+                        f"{variant_set.name!r} both bind "
+                        f"{variant.material_name!r}, so they look identical."
+                    ),
+                    variant_set=variant_set.name,
+                    variant=variant.name,
+                )
+            )
+        else:
+            seen_materials[variant.material_name] = variant.name
+
+
+def _validate_property_ownership(
+    variant_set: VariantSetPlan,
+    claimed_properties: dict[tuple[int, str], str],
+    issues: list[VariantIssue],
+) -> None:
+    """Refuse two sets varying the SAME property of the same object.
+
+    Two geometry sets would both author ``active`` and fight; two material
+    sets would both author ``material:binding``. A geometry set and a material
+    set vary different properties, so a shape set and a finish set may act on
+    one object - which is the whole point of offering shapes and finishes
+    independently.
+    """
+    varied = variant_set.varied_property
+    reported: set[str] = set()
+    for identity in sorted(variant_set.claimed_identities):
+        key = (identity, varied)
+        previous = claimed_properties.get(key)
+        if previous is None:
+            claimed_properties[key] = variant_set.name
+            continue
+        if previous == variant_set.name or previous in reported:
+            continue
+        reported.add(previous)
+        issues.append(
+            VariantIssue(
+                severity=ERROR,
+                code="VARIANT_PROPERTY_CONTESTED",
+                message=(
+                    f"Sets {previous!r} and {variant_set.name!r} both vary "
+                    f"{varied!r} on the same objects. Whichever composes "
+                    "second would win, so one of them could never take "
+                    "effect."
+                ),
+                variant_set=variant_set.name,
+                details={"conflicts_with_set": previous, "property": varied},
+            )
+        )
 
 
 # --------------------------------------------------------------------------

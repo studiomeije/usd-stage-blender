@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 pytest.importorskip("pxr")
-from pxr import Usd, UsdGeom  # noqa: E402
+from pxr import Usd, UsdGeom, UsdShade  # noqa: E402
 
 from Plugin.export.diagnostics import ExportDiagnostics  # noqa: E402
 from Plugin.export.realitykit_preflight import (  # noqa: E402
@@ -359,3 +359,183 @@ def test_no_animation_warning_without_the_clip_library():
     )
 
     assert diagnostics.to_dict()["warnings"] == []
+
+
+# --------------------------------------------------------------------------
+# Material variant sets
+# --------------------------------------------------------------------------
+
+from Plugin.export.variant_authoring import author_material_variants  # noqa: E402
+
+
+def _material_variant_set(name, variants, target, default_variant=None):
+    return SimpleNamespace(
+        name=name,
+        kind="MATERIAL",
+        variants=[
+            SimpleNamespace(name=n, material=(None if m is None else SimpleNamespace(name=m)))
+            for n, m in variants
+        ],
+        target_collection=target,
+        default_variant=default_variant or variants[0][0],
+    )
+
+
+def _bound_stage(*material_names, bind="OakMat"):
+    """A mesh bound to a material, the way Blender's exporter leaves it."""
+    stage = Usd.Stage.CreateInMemory()
+    root = UsdGeom.Xform.Define(stage, "/Root")
+    stage.SetDefaultPrim(root.GetPrim())
+    top = UsdGeom.Mesh.Define(stage, "/Root/TableTop")
+    for name in material_names:
+        UsdShade.Material.Define(stage, f"/Root/_materials/{name}")
+    if bind:
+        UsdShade.MaterialBindingAPI.Apply(top.GetPrim())
+        UsdShade.MaterialBindingAPI(top.GetPrim()).Bind(
+            UsdShade.Material.Get(stage, f"/Root/_materials/{bind}")
+        )
+    return stage
+
+
+def _finish_plan(target_objects=("TableTop",), materials=(("Oak", "OakMat"), ("Walnut", "WalnutMat"))):
+    target = _collection("Tops", objects=[_object(n) for n in target_objects])
+    return _plan_for(_material_variant_set("Finish", list(materials), target))
+
+
+def _binding(stage, path="/Root/TableTop"):
+    material = UsdShade.MaterialBindingAPI(
+        stage.GetPrimAtPath(path)
+    ).GetDirectBinding().GetMaterial()
+    return material.GetPrim().GetName() if material else None
+
+
+def test_each_finish_binds_its_own_material():
+    stage = _bound_stage("OakMat", "WalnutMat")
+    plan = _finish_plan()
+
+    assert author_material_variants(
+        stage, plan, {"/Root/TableTop": "TableTop"}, (), _settings()
+    ) == ("Finish",)
+
+    variant_set = stage.GetDefaultPrim().GetVariantSet("Finish")
+    assert sorted(variant_set.GetVariantNames()) == ["Oak", "Walnut"]
+    variant_set.SetVariantSelection("Oak")
+    assert _binding(stage) == "OakMat"
+    variant_set.SetVariantSelection("Walnut")
+    assert _binding(stage) == "WalnutMat"
+
+
+def test_the_base_binding_is_removed_so_the_variants_are_not_shadowed():
+    """Blender writes a binding on every mesh, and it beats every variant."""
+    stage = _bound_stage("OakMat", "WalnutMat")
+    assert stage.GetRootLayer().GetPrimAtPath(
+        "/Root/TableTop"
+    ).relationships.get("material:binding") is not None
+
+    author_material_variants(
+        stage, _finish_plan(), {"/Root/TableTop": "TableTop"}, (), _settings()
+    )
+
+    assert stage.GetRootLayer().GetPrimAtPath(
+        "/Root/TableTop"
+    ).relationships.get("material:binding") is None
+
+
+def test_an_authored_material_set_passes_the_shadowing_check():
+    stage = _bound_stage("OakMat", "WalnutMat")
+    author_material_variants(
+        stage, _finish_plan(), {"/Root/TableTop": "TableTop"}, (), _settings()
+    )
+
+    report = RealityKitPreflightReport()
+    _check_variant_activation_is_unopposed(stage, report)
+
+    assert [issue.code for issue in report.issues] == []
+
+
+def test_a_binding_left_outside_the_variants_is_refused():
+    stage = _bound_stage("OakMat", "WalnutMat")
+    author_material_variants(
+        stage, _finish_plan(), {"/Root/TableTop": "TableTop"}, (), _settings()
+    )
+    # Put the shadowing opinion back, as an earlier pass might.
+    UsdShade.MaterialBindingAPI(stage.GetPrimAtPath("/Root/TableTop")).Bind(
+        UsdShade.Material.Get(stage, "/Root/_materials/OakMat")
+    )
+
+    report = RealityKitPreflightReport()
+    _check_variant_activation_is_unopposed(stage, report)
+
+    assert [issue.code for issue in report.issues] == ["VARIANT_OPINION_SHADOWED"]
+    assert report.issues[0].details["varied_property"] == "material:binding"
+
+
+def test_a_finish_no_object_wears_still_gets_a_material_prim():
+    """Blender exports no prim for an unused material; this is that case."""
+    stage = _bound_stage("OakMat")           # WalnutMat never exported
+    author_material_variants(
+        stage, _finish_plan(), {"/Root/TableTop": "TableTop"}, (), _settings()
+    )
+
+    assert stage.GetPrimAtPath("/Root/_materials/WalnutMat")
+    variant_set = stage.GetDefaultPrim().GetVariantSet("Finish")
+    variant_set.SetVariantSelection("Walnut")
+    assert _binding(stage) == "WalnutMat"
+
+
+def test_a_shape_set_and_a_finish_set_compose_together():
+    """The combination the kinds exist for: four looks from two sets."""
+    stage = _bound_stage("OakMat", "WalnutMat")
+    UsdGeom.Mesh.Define(stage, "/Root/TableTopSquare")
+
+    round_c = _collection("Round", objects=[_object("TableTop")])
+    square_c = _collection("Square", objects=[_object("TableTopSquare")])
+    tops = _collection("Tops", objects=[_object("TableTop"), _object("TableTopSquare")])
+    plan = _plan_for(
+        _variant_set("Shape", [("Round", round_c), ("Square", square_c)]),
+        _material_variant_set("Finish", [("Oak", "OakMat"), ("Walnut", "WalnutMat")], tops),
+    )
+    object_map = {
+        "/Root/TableTop": "TableTop",
+        "/Root/TableTopSquare": "TableTopSquare",
+    }
+
+    author_material_variants(stage, plan, object_map, (), _settings())
+    author_variant_sets(stage, plan, object_map, (), _settings())
+
+    root = stage.GetDefaultPrim()
+    shape, finish = root.GetVariantSet("Shape"), root.GetVariantSet("Finish")
+    seen = {}
+    for shape_name in ("Round", "Square"):
+        for finish_name in ("Oak", "Walnut"):
+            shape.SetVariantSelection(shape_name)
+            finish.SetVariantSelection(finish_name)
+            active = [c.GetName() for c in root.GetChildren()
+                      if c.GetName().startswith("TableTop")]
+            assert len(active) == 1, active
+            seen[(shape_name, finish_name)] = (active[0], _binding(stage, f"/Root/{active[0]}"))
+
+    assert seen == {
+        ("Round", "Oak"): ("TableTop", "OakMat"),
+        ("Round", "Walnut"): ("TableTop", "WalnutMat"),
+        ("Square", "Oak"): ("TableTopSquare", "OakMat"),
+        ("Square", "Walnut"): ("TableTopSquare", "WalnutMat"),
+    }
+
+
+def test_material_variants_without_a_prim_map_are_refused():
+    stage = _bound_stage("OakMat", "WalnutMat")
+    with pytest.raises(VariantAuthoringError, match="no prim map"):
+        author_material_variants(stage, _finish_plan(), None, (), _settings())
+
+
+def test_a_finish_set_whose_targets_are_absent_is_skipped_in_a_selected_only_export():
+    stage = _bound_stage("OakMat", "WalnutMat")
+    diagnostics = ExportDiagnostics()
+
+    authored = author_material_variants(
+        stage, _finish_plan(), {}, (), _settings(selected_objects_only=True), diagnostics
+    )
+
+    assert authored == ()
+    assert len(diagnostics.to_dict()["warnings"]) == 1

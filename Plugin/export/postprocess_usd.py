@@ -71,6 +71,25 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
             stage,
         )
 
+        # Consumed once, here: reading it clears it, and both variant passes
+        # need the same map.
+        object_map = usd_hook.consume_captured_object_map()
+
+        # Before the rewrite, not after: the rewrite converts the materials it
+        # finds bound, variant bindings included, so a finish no object wears
+        # in Blender has to be bound by now to become MaterialX at all.
+        _run_step(
+            diagnostics,
+            "author_material_variants",
+            _author_material_variants,
+            stage,
+            settings,
+            context,
+            object_map,
+            prim_path_edits,
+            diagnostics,
+        )
+
         _run_step(diagnostics, "rewrite_materials", rewrite_materials, stage, settings, context, diagnostics)
 
         _run_step(diagnostics, "author_animation_library", author_animation_library, stage, settings, diagnostics)
@@ -147,6 +166,7 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
             stage,
             settings,
             context,
+            object_map,
             prim_path_edits,
             diagnostics,
         )
@@ -240,7 +260,30 @@ def _run_step(diagnostics, name: str, func, *args):
     return result
 
 
-def _author_variant_sets(stage, settings, context, prim_path_edits, diagnostics=None):
+def _author_material_variants(
+    stage, settings, context, object_map, prim_path_edits, diagnostics=None
+):
+    """Author the material sets, ahead of the MaterialX rewrite."""
+    plan = variants.resolve_variant_plan(context, settings)
+    if plan.is_empty:
+        return ()
+    variants.require_valid_variant_plan(plan, diagnostics)
+    authored = variant_authoring.author_material_variants(
+        stage,
+        plan,
+        object_map,
+        prim_path_edits,
+        settings,
+        diagnostics,
+    )
+    if diagnostics and authored:
+        diagnostics.set_variant_sets(_variant_sidecar_entries(plan, authored))
+    return authored
+
+
+def _author_variant_sets(
+    stage, settings, context, object_map, prim_path_edits, diagnostics=None
+):
     """Author the scene's declared variant sets, if it declares any."""
     plan = variants.resolve_variant_plan(context, settings)
     if plan.is_empty:
@@ -250,31 +293,44 @@ def _author_variant_sets(stage, settings, context, prim_path_edits, diagnostics=
     authored = variant_authoring.author_variant_sets(
         stage,
         plan,
-        usd_hook.consume_captured_object_map(),
+        object_map,
         prim_path_edits,
         settings,
         diagnostics,
     )
     if diagnostics and authored:
-        diagnostics.set_variant_sets(
-            [
-                {
-                    "name": variant_set.name,
-                    "default_variant": variant_set.default_variant,
-                    "variants": [
-                        {
-                            "name": variant.name,
-                            "collection": variant.collection_name,
-                            "objects": list(variant.object_names),
-                        }
-                        for variant in variant_set.variants
-                    ],
-                }
-                for variant_set in plan.sets
-                if variant_set.name in authored
-            ]
-        )
+        diagnostics.set_variant_sets(_variant_sidecar_entries(plan, authored))
     return authored
+
+
+def _variant_sidecar_entries(plan, authored) -> list:
+    """What each authored set holds, for the diagnostics sidecar."""
+    entries = []
+    for variant_set in plan.sets:
+        if variant_set.name not in authored:
+            continue
+        entry = {
+            "name": variant_set.name,
+            "kind": variant_set.kind,
+            "default_variant": variant_set.default_variant,
+        }
+        if variant_set.kind == variants.MATERIAL:
+            entry["targets"] = list(variant_set.target_object_names)
+            entry["variants"] = [
+                {"name": variant.name, "material": variant.material_name}
+                for variant in variant_set.variants
+            ]
+        else:
+            entry["variants"] = [
+                {
+                    "name": variant.name,
+                    "collection": variant.collection_name,
+                    "objects": list(variant.object_names),
+                }
+                for variant in variant_set.variants
+            ]
+        entries.append(entry)
+    return entries
 
 
 def _normalize_localized_scene(stage, settings, writable_layer_paths, diagnostics=None):

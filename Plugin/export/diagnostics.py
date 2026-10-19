@@ -224,8 +224,15 @@ class ExportDiagnostics:
         Makes a variant export auditable without reopening the stage: which
         sets were written, which variants each holds, and which selection
         ships by default.
+
+        Geometry and material sets are authored by separate passes, so this
+        extends rather than replaces, keeping one entry per set name.
         """
-        self.data['variant_sets'] = variant_sets
+        existing = self.data.setdefault('variant_sets', [])
+        known = {entry.get('name') for entry in existing}
+        existing.extend(
+            entry for entry in variant_sets if entry.get('name') not in known
+        )
 
     def set_prim_renames(self, renames: list):
         """Record prim identifiers normalization had to rename.

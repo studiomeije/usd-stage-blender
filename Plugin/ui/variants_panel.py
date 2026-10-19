@@ -14,6 +14,7 @@ of collections belonging to this file.
 import bpy
 from bpy.props import (
     CollectionProperty,
+    EnumProperty,
     IntProperty,
     PointerProperty,
     StringProperty,
@@ -36,6 +37,11 @@ class USDStageVariant(PropertyGroup):
         name="Collection",
         description="The objects this variant activates",
     )
+    material: PointerProperty(
+        type=bpy.types.Material,
+        name="Material",
+        description="The material this variant binds to the set's targets",
+    )
 
 
 class USDStageVariantSet(PropertyGroup):
@@ -45,6 +51,28 @@ class USDStageVariantSet(PropertyGroup):
         name="Variant Set",
         description="The variant set name, as Reality Composer Pro and RealityKit will show it",
         default="VariantSet",
+    )
+    kind: EnumProperty(
+        name="Varies",
+        description="What switching this set changes",
+        items=[
+            (
+                "GEOMETRY",
+                "Shape",
+                "Each variant activates its own collection of objects",
+            ),
+            (
+                "MATERIAL",
+                "Finish",
+                "Every variant keeps the same objects and rebinds their material",
+            ),
+        ],
+        default="GEOMETRY",
+    )
+    target_collection: PointerProperty(
+        type=bpy.types.Collection,
+        name="Applies To",
+        description="The objects a finish set rebinds",
     )
     variants: CollectionProperty(type=USDStageVariant)
     variants_index: IntProperty(default=0)
@@ -82,9 +110,14 @@ class USDSTAGE_UL_variants(UIList):
         )
         default.variant = item.name
         row.prop(item, "name", text="", emboss=False)
-        if item.collection is None:
-            # Refused at export; saying so here costs nothing and saves a
-            # failed export later.
+        # Refused at export; saying so here costs nothing and saves a failed
+        # export later.
+        if data.kind == 'MATERIAL':
+            if item.material is None:
+                row.label(text="No material", icon='ERROR')
+            else:
+                row.label(text=item.material.name, icon='MATERIAL')
+        elif item.collection is None:
             row.label(text="No collection", icon='ERROR')
         else:
             row.label(text=item.collection.name, icon='OUTLINER_COLLECTION')
@@ -163,12 +196,16 @@ class USDSTAGE_PT_export_variants(Panel):
         box = column.column(align=True)
         box.use_property_split = True
         box.use_property_decorate = False
-        box.prop(variant, "collection")
+        box.prop(variant_set, "kind")
+        if variant_set.kind == 'MATERIAL':
+            box.prop(variant_set, "target_collection")
+            box.prop(variant, "material")
+        else:
+            box.prop(variant, "collection")
 
-        preview = column.operator(
-            "usdstage.variant_preview", icon='HIDE_OFF'
-        )
-        preview.variant = variant.name
+        if variant_set.kind != 'MATERIAL':
+            preview = column.operator("usdstage.variant_preview", icon='HIDE_OFF')
+            preview.variant = variant.name
 
         if variant_set.default_variant:
             column.label(text=f"Ships as: {variant_set.default_variant}")

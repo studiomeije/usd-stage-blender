@@ -91,6 +91,8 @@ UI paths below start from the **USD Stage** tab. Where a row says "see below", t
 - A bake re-applies your selection after baking, so the bake's own selection changes cannot widen the export.
 - A variant set the selection touches brings its other variants' objects along, so an authored variant cannot switch to a prim the export never wrote. A set the selection does not touch is left out of the export and is not authored.
 
+**A variant set varies shape or finish.** A shape set switches whole collections of objects; a finish set keeps them and rebinds their material, so one object can belong to both. Two sets varying the same property of one object are refused. See [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#shape-sets-and-finish-sets).
+
 **Variant sets are scene content, not a setting.** They live on the scene and are saved with the `.blend`, so the panel and the command line export the same variants from the same file. `export_variants` only decides whether they are authored. Unlike the settings in this table, they are not carried into the next scene as last-used values: a list of this file's collections would mean nothing in another one.
 
 **Variant and variant-set names are refused, not renamed.** `allow_unicode` governs prim identifiers, not these. A variant name is what Reality Composer Pro lists and what `setVariantSelection(for:to:)` is passed, so an export will not quietly change one; it fails and says which name to fix. Creating a set from a collection is the exception: there the name is adjusted up front, where you can see it in the panel and edit it.
