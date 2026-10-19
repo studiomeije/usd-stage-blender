@@ -5,6 +5,37 @@ Notable changes to USD Stage for Blender, newest first. Dates are release dates.
 Entries describe what changed for you — what now works, what stops the export,
 and what you have to do differently. Internal refactors are not listed.
 
+## Unreleased
+
+- You can now export USD variant sets. Group each variant in its own
+  collection, then declare the set in the new **Variants** panel — **From
+  Collection** builds one from a parent collection whose children are already
+  the variants. The export authors a `variantSet` on the asset's root prim,
+  and the file ships selecting the variant you marked as the default. Objects
+  in no variant are present whatever the selection.
+- A variant you have hidden is brought into the export, and your view layer is
+  put back exactly as it was afterwards. Blender's exporter drops a collection
+  excluded from the view layer and anything disabled for renders, so until now
+  a variant-organised scene exported only whatever happened to be visible —
+  or, if you hid variants with the outliner's eye, exported all of them stacked
+  on top of each other.
+- An export stops rather than shipping a variant set that cannot switch. Two
+  variants claiming the same object, a variant whose objects are parented under
+  another variant's, a name that is not a USD identifier, or an opinion in the
+  file that would override the variants are all refused with the names
+  involved. Variant names are never renamed for you: a variant name is what
+  Reality Composer Pro lists and what your code passes to
+  `setVariantSelection(for:to:)`. Creating a set from a collection is the one
+  place a name is adjusted, where you can see and edit it in the panel.
+- `usdstage info` lists the variant sets a `.blend` declares, so you can see
+  what a file will export without exporting it, and the diagnostics report
+  records what an export authored.
+- **Reality Composer Pro's `.reality` compile keeps only the selection you
+  shipped.** `realitytool` resolves the default and discards the other
+  variants, so a `.reality` built from an `.rkassets` bundle carries none
+  unless you also define Reality Composer Pro's own variants in the editor.
+  The variant sets survive intact in `.usda`, `.usdc` and `.usdz`.
+
 ## 1.1.0 — 2026-10-17
 
 - An export where two materials have names that reduce to the same USD prim

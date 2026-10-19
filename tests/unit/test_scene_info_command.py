@@ -82,6 +82,7 @@ def test_scene_metadata_is_reported(fake_bpy):
         "unit_scale": 0.01,
         "object_count": 1,
         "material_count": 1,
+        "variant_sets": [],
     }
 
 
@@ -130,3 +131,50 @@ def test_a_scene_with_no_objects_counts_nothing(fake_bpy):
 
     assert info["object_count"] == 0
     assert info["material_count"] == 0
+
+
+def _variant_set(name, variants, default_variant):
+    return SimpleNamespace(
+        name=name,
+        default_variant=default_variant,
+        variants=[
+            SimpleNamespace(
+                name=variant_name,
+                collection=(
+                    None if collection is None else SimpleNamespace(name=collection)
+                ),
+            )
+            for variant_name, collection in variants
+        ],
+    )
+
+
+def test_declared_variant_sets_are_reported(fake_bpy):
+    scene = _scene([_object("Cube", "Red")])
+    scene.usd_stage_variant_sets = [
+        _variant_set("Seat", [("Fabric", "Fabric"), ("Leather", "Leather")], "Fabric")
+    ]
+    fake_bpy(scene)
+
+    assert scene_info.handle({})["variant_sets"] == [
+        {
+            "name": "Seat",
+            "default_variant": "Fabric",
+            "variants": [
+                {"name": "Fabric", "collection": "Fabric"},
+                {"name": "Leather", "collection": "Leather"},
+            ],
+        }
+    ]
+
+
+def test_a_variant_whose_collection_was_deleted_is_reported_not_hidden(fake_bpy):
+    """``info`` says what the file declares, not what would survive an export."""
+    scene = _scene([_object("Cube", "Red")])
+    scene.usd_stage_variant_sets = [
+        _variant_set("Seat", [("Fabric", "Fabric"), ("Leather", None)], "Fabric")
+    ]
+    fake_bpy(scene)
+
+    variants = scene_info.handle({})["variant_sets"][0]["variants"]
+    assert variants[1] == {"name": "Leather", "collection": None}

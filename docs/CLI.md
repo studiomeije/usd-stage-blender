@@ -137,11 +137,18 @@ usdstage info scene.blend
   "unit_system": "METRIC",
   "unit_scale": 1.0,
   "object_count": 4,
-  "material_count": 1
+  "material_count": 1,
+  "variant_sets": []
 }
 ```
 
 `material_count` counts materials assigned to scene objects.
+
+`variant_sets` lists the variant sets the `.blend` declares, each with its
+variants, their collections and the default selection — as declared, so a
+variant whose collection was deleted shows a `null` collection here rather
+than being hidden. It is the way to see what a file will export without
+exporting it.
 
 ### `list-objects`
 
@@ -527,6 +534,11 @@ A failed `export` or `bake-export` always writes `<output>.diagnostics.json`,
 including a failure before anything was exported, such as a bad override.
 `diagnostics_enabled`, `--diagnostics` and `--no-diagnostics` only decide
 whether a successful run keeps one.
+
+An export that authored variant sets records them under `variant_sets`: each
+set, its variants, their collections and member objects, and the selection the
+asset ships with. Prim identifiers that normalization had to rename are
+recorded under `prim_renames`.
 
 ## Output
 

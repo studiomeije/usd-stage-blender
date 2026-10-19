@@ -19,9 +19,10 @@ page.
 2. [Object selection and scope](#2-object-selection-and-scope)
 3. [Geometry decisions](#3-geometry-decisions)
 4. [Animation](#4-animation)
-5. [Staging and publication](#5-staging-and-publication)
-6. [Packaging](#6-packaging)
-7. [Preflight and validation gates](#7-preflight-and-validation-gates)
+5. [Variant sets](#5-variant-sets)
+6. [Staging and publication](#6-staging-and-publication)
+7. [Packaging](#7-packaging)
+8. [Preflight and validation gates](#8-preflight-and-validation-gates)
 
 ## Pipeline order
 
@@ -258,7 +259,79 @@ the named clips into the one aggregate animation when it imports the file, so
 the clip names do not survive. Leave it off for RealityKit runtime exports and
 split the imported animation in app code.
 
-## 5. Staging and publication
+## 5. Variant sets
+
+Blender authors no USD variant sets, and its exporter does not write
+collections as prims, so a scene organised as `Seat/Fabric` and `Seat/Leather`
+arrives in USD flat with the grouping gone. USD Stage for Blender authors the
+sets itself, from the sets you declare in the **Variants** panel.
+
+### What you declare
+
+A variant set is a name and a list of variants; each variant points at the
+collection whose objects it owns. **From Collection** builds one in a click
+from a parent collection whose children are already the variants. The sets are
+saved in the `.blend`, so the panel and the command line export the same
+variants from the same file, and `usdstage info` lists them without exporting.
+
+Objects in no variant are untouched and present whatever the selection.
+
+### What is written
+
+One `variantSet` on the asset's root prim — where the OpenUSD asset guidelines
+put it, so a selection stays reachable even when the component is instanceable
+or its payload is unloaded. Inside each variant, every member of every variant
+in that set is activated or deactivated:
+
+```usda
+def Xform "root" (
+    variants = { string Seat = "Fabric" }
+    prepend variantSets = "Seat"
+)
+{
+    variantSet "Seat" = {
+        "Fabric" { over "SeatFabric" { bool active = 1 }
+                   over "SeatLeather" { bool active = 0 } }
+        "Leather" { over "SeatFabric" { bool active = 0 }
+                    over "SeatLeather" { bool active = 1 } }
+    }
+}
+```
+
+`active` is authored **only** inside the variants. Variants sit low in USD's
+composition order, so an opinion on the same field in the local layer stack
+beats them and the set silently stops switching; the preflight refuses that
+case rather than shipping it.
+
+### Hidden variants are brought in for the export
+
+The variant you are not working on is usually hidden, and Blender's exporter
+drops an excluded collection and anything the active **Use Settings for** mode
+sees as hidden. So the export opens every member's path into the view layer
+first and puts your view layer back exactly as it was afterwards, even if the
+export fails. Only the outliner's eye never mattered: Blender exports through
+it regardless.
+
+With **Author Variant Sets** off, neither authoring nor that staging runs, and
+the export holds exactly what the viewport shows.
+
+### What variants cannot do
+
+- **They cannot be animated.** USD resolves a selection at composition time.
+- **A member cannot be in two variants of one set**, and a member cannot be
+  parented under another variant's member: deactivating the parent takes the
+  child with it, so the child's variant could never compose. Both are refused
+  before anything is written.
+- **A selected-only export** carries the other variants of any set the
+  selection touches, and leaves out a set it does not touch.
+- **Reality Composer Pro's `.reality` compile keeps only the selection you
+  shipped.** `realitytool` resolves the default selection and discards the
+  rest, so a `.reality` built from an `.rkassets` bundle carries no variants
+  unless you define Reality Composer Pro's own variants in the editor. The
+  variant sets survive in `.usd`, `.usdc` and `.usdz`, and the USDKit stage
+  APIs switch them at runtime.
+
+## 6. Staging and publication
 
 ### The attempt directory
 
@@ -366,7 +439,7 @@ Diff the composed stage rather than the file, for example by opening both with
 USD and walking the prims in sorted path order, or accept that every re-export
 shows as changed.
 
-## 6. Packaging
+## 7. Packaging
 
 `export_format` offers `USDA`, `USDC`, and `USDZ` (the default), and the format
 sets the output file's extension. USDZ stages its root as binary `.usdc`.
@@ -387,7 +460,7 @@ after validation passes; a symlinked destination is refused. If the
 packager runs and self-validates. External tools run in their own process
 group with timeouts (600 seconds to package, 300 to check).
 
-## 7. Preflight and validation gates
+## 8. Preflight and validation gates
 
 ### Before anything is written
 
