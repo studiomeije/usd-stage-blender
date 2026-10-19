@@ -264,6 +264,16 @@ class USDStageExportSettings(PropertyGroup):
         update=_on_settings_changed,
     )
 
+    export_variants: BoolProperty(
+        name="Author Variant Sets",
+        description=(
+            "Author the scene's declared variant sets. Turn off to export the "
+            "default selection flat, without variants"
+        ),
+        default=True,
+        update=_on_settings_changed,
+    )
+
     export_custom_properties: BoolProperty(
         name="Custom Properties",
         description="Export custom properties as USD attributes",
@@ -866,7 +876,7 @@ class USDSTAGE_PT_export_usd_root(Panel):
     bl_region_type = 'UI'
     bl_category = "USD Stage"
     bl_options = {'DEFAULT_CLOSED'}
-    bl_order = 3
+    bl_order = 4
 
     def draw_header(self, context):
         self.layout.label(text="", icon='SETTINGS')
@@ -933,7 +943,7 @@ class USDSTAGE_PT_export_diagnostics(Panel):
     bl_region_type = 'UI'
     bl_category = "USD Stage"
     bl_options = {'DEFAULT_CLOSED'}
-    bl_order = 4
+    bl_order = 5
 
     def draw_header(self, context):
         self.layout.label(text="", icon='STATUS_INFO')

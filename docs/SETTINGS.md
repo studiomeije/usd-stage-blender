@@ -47,6 +47,7 @@ UI paths below start from the **USD Stage** tab. Where a row says "see below", t
 | `export_animation` | Export ▸ Include ▸ Animation | both | Master switch for animation, including `author_animation_library`. |
 | `author_animation_library` | Export ▸ RCP Clip Library, shown only with Animation on | both | Needs `export_animation`. See below. |
 | `selected_objects_only` | Export ▸ Include ▸ Selection Only | both | Narrows validation and fails on an empty selection. See below. CLI flag: `--selected-only`. |
+| `export_variants` | Variants ▸ Author Variant Sets, shown once a set is declared | both | Off exports the default selection flat. The sets themselves live on the scene, not here. See below. |
 | `export_custom_properties` | Advanced USD ▸ General ▸ Custom Properties | both | Master switch for the next two keys. See below. |
 | `custom_properties_namespace` | Advanced USD ▸ General ▸ Namespace, shown only with Custom Properties on | both | Ignored when `export_custom_properties` is off. |
 | `author_blender_name` | Advanced USD ▸ General ▸ Blender Names, grayed out with Custom Properties off | both | Ignored when `export_custom_properties` is off. |
@@ -88,6 +89,11 @@ UI paths below start from the **USD Stage** tab. Where a row says "see below", t
 - An export or bake with nothing selected fails with `NO_EXPORTABLE_OBJECTS` instead of exporting the whole scene.
 - A selected skinned mesh brings its deforming armature along, when `export_armatures` is on.
 - A bake re-applies your selection after baking, so the bake's own selection changes cannot widen the export.
+- A variant set the selection touches brings its other variants' objects along, so an authored variant cannot switch to a prim the export never wrote. A set the selection does not touch is left out of the export and is not authored.
+
+**Variant sets are scene content, not a setting.** They live on the scene and are saved with the `.blend`, so the panel and the command line export the same variants from the same file. `export_variants` only decides whether they are authored. Unlike the settings in this table, they are not carried into the next scene as last-used values: a list of this file's collections would mean nothing in another one.
+
+**Variant and variant-set names are refused, not renamed.** `allow_unicode` governs prim identifiers, not these. A variant name is what Reality Composer Pro lists and what `setVariantSelection(for:to:)` is passed, so an export will not quietly change one; it fails and says which name to fix. Creating a set from a collection is the exception: there the name is adjusted up front, where you can see it in the panel and edit it.
 
 **`allow_unicode` also applies after Blender's export.** USD Stage for Blender renames any prim whose name is not a valid identifier. With `allow_unicode` on, non-ASCII letters and digits survive and other characters become `_`. With it off, every non-ASCII character becomes `_`. Reality Composer Pro imports non-ASCII names intact, Chinese included, although its hierarchy displays Chinese characters as `¿`.
 

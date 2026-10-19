@@ -37,6 +37,25 @@ ERROR = "error"
 WARNING = "warning"
 
 
+def is_valid_identifier(name: str) -> bool:
+    """Whether a variant or variant-set name can be written to USD as-is."""
+    return bool(_USD_IDENTIFIER.match(name or ""))
+
+
+def suggest_identifier(name: str, fallback: str = "Variant") -> str:
+    """A usable USD identifier derived from a Blender name.
+
+    Offered when a set or variant is *created* from a collection, where the
+    user sees the result in the panel and can edit it. Export-time naming stays
+    strict: by then a rename would change a name a consumer already depends on,
+    so it is refused instead.
+    """
+    cleaned = re.sub(r"[^A-Za-z0-9_]", "_", str(name or ""))
+    if not cleaned or not re.match(r"[A-Za-z_]", cleaned[0]):
+        cleaned = f"{fallback}_{cleaned}" if cleaned else fallback
+    return cleaned
+
+
 @dataclass(frozen=True)
 class VariantIssue:
     """One actionable finding about a declared variant set."""
