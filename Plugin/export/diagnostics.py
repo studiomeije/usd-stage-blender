@@ -218,6 +218,15 @@ class ExportDiagnostics:
         self.data['animations']['segments'] = segments
         self.data['animations']['targets'] = targets
 
+    def set_variant_sets(self, variant_sets: list):
+        """Record the variant sets this export authored.
+
+        Makes a variant export auditable without reopening the stage: which
+        sets were written, which variants each holds, and which selection
+        ships by default.
+        """
+        self.data['variant_sets'] = variant_sets
+
     def set_prim_renames(self, renames: list):
         """Record prim identifiers normalization had to rename.
 

@@ -267,6 +267,7 @@ def validate_stage(
     report = RealityKitPreflightReport(asset_path=asset_path)
 
     _check_stage_metadata(stage, report)
+    _check_variant_activation_is_unopposed(stage, report)
     prims = _preflight_prims(stage)
     variant_sites = _variant_sites(prims)
     if variant_sites:
@@ -282,6 +283,71 @@ def validate_stage(
     if diagnostics is not None:
         _record_diagnostics(diagnostics, report)
     return report
+
+
+def _check_variant_activation_is_unopposed(stage, report) -> None:
+    """Refuse an ``active`` opinion that would silently beat the variants.
+
+    Variants sit low in composition strength, so an opinion on the same field
+    in the local layer stack wins and the variant appears to do nothing -
+    Houdini warns about this; here it is fatal, because a variant set that
+    cannot switch is worse than one that was never authored.
+
+    Only authored, non-variant ``active`` opinions count. The check reads the
+    layers as raw Sdf specs rather than the composed stage: inside a variant
+    the opinion lives under a variant spec, so the two are distinguishable
+    only at this level.
+    """
+    for layer in stage.GetLayerStack(includeSessionLayers=False):
+        for prim_path in _variant_activated_paths(layer):
+            spec = layer.GetPrimAtPath(prim_path)
+            if spec is None or not spec.HasInfo("active"):
+                continue
+            report.add(
+                "error",
+                "VARIANT_OPINION_SHADOWED",
+                (
+                    f"{prim_path} carries an 'active' opinion outside its "
+                    "variants, which is stronger than the variant opinions and "
+                    "would stop the variant set switching it."
+                ),
+                prim_path=prim_path,
+                layer=getattr(layer, "identifier", None),
+            )
+
+
+def _variant_activated_paths(layer) -> set:
+    """Prim paths some variant in this layer authors ``active`` on."""
+    activated: set = set()
+
+    def visit(prim_spec) -> None:
+        for variant_set_spec in prim_spec.variantSets.values():
+            for variant_spec in variant_set_spec.variants.values():
+                for descendant in _walk_prim_specs(variant_spec.primSpec):
+                    if not descendant.HasInfo("active"):
+                        continue
+                    # Strip the variant selection from the path, leaving the
+                    # prim the opinion lands on once composed.
+                    activated.add(descendant.path.StripAllVariantSelections())
+        for child in prim_spec.nameChildren.values():
+            visit(child)
+
+    root = layer.pseudoRoot
+    for child in root.nameChildren.values():
+        visit(child)
+    return activated
+
+
+def _walk_prim_specs(prim_spec):
+    """``prim_spec`` and every prim spec beneath it, variants included."""
+    stack = [prim_spec]
+    while stack:
+        current = stack.pop()
+        yield current
+        stack.extend(current.nameChildren.values())
+        for variant_set_spec in current.variantSets.values():
+            for variant_spec in variant_set_spec.variants.values():
+                stack.append(variant_spec.primSpec)
 
 
 def _check_composed_stage(

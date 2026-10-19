@@ -15,6 +15,9 @@ from .realitykit_preflight import (
     validate_stage,
 )
 from .usd_scene import normalize_scene, _normalize_owned_double_sided_mesh_specs
+from . import usd_hook
+from . import variant_authoring
+from . import variants
 from .usd_assets import prepare_assets
 from .usd_utils import Usd, require_pxr
 
@@ -44,7 +47,10 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
             settings,
             diagnostics,
         )
-        _run_step(
+        # The renames this returns are how a prim path captured during export
+        # is translated into the one the stage now has; variant authoring is
+        # the pass that needs it.
+        prim_path_edits = _run_step(
             diagnostics,
             "normalize_scene",
             _normalize_localized_scene,
@@ -129,6 +135,22 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
             stage,
             diagnostics,
         )
+        # Authored last, so every earlier pass - localization, normalization,
+        # the material rewrite, texture staging, mesh normalization - sees a
+        # flat stage with every variant's content present and processes all of
+        # it. Variants are then layered over finished work, and the preflight
+        # that follows validates each composed selection.
+        _run_step(
+            diagnostics,
+            "author_variant_sets",
+            _author_variant_sets,
+            stage,
+            settings,
+            context,
+            prim_path_edits,
+            diagnostics,
+        )
+
         _run_step(
             diagnostics,
             "realitykit_preflight",
@@ -216,6 +238,43 @@ def _run_step(diagnostics, name: str, func, *args):
     if diagnostics:
         diagnostics.end_phase(name)
     return result
+
+
+def _author_variant_sets(stage, settings, context, prim_path_edits, diagnostics=None):
+    """Author the scene's declared variant sets, if it declares any."""
+    plan = variants.resolve_variant_plan(context, settings)
+    if plan.is_empty:
+        return ()
+
+    variants.require_valid_variant_plan(plan, diagnostics)
+    authored = variant_authoring.author_variant_sets(
+        stage,
+        plan,
+        usd_hook.consume_captured_object_map(),
+        prim_path_edits,
+        settings,
+        diagnostics,
+    )
+    if diagnostics and authored:
+        diagnostics.set_variant_sets(
+            [
+                {
+                    "name": variant_set.name,
+                    "default_variant": variant_set.default_variant,
+                    "variants": [
+                        {
+                            "name": variant.name,
+                            "collection": variant.collection_name,
+                            "objects": list(variant.object_names),
+                        }
+                        for variant in variant_set.variants
+                    ],
+                }
+                for variant_set in plan.sets
+                if variant_set.name in authored
+            ]
+        )
+    return authored
 
 
 def _normalize_localized_scene(stage, settings, writable_layer_paths, diagnostics=None):
