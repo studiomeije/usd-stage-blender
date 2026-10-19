@@ -22,6 +22,7 @@ from .object_scope import (
     is_exportable_object as _is_exportable_object,
     rna_identity as _rna_identity,
 )
+from .variants import resolve_variant_plan
 
 
 def collect_export_objects(context, settings) -> list:
@@ -94,6 +95,19 @@ def collect_export_objects(context, settings) -> list:
                             "Armature modifier with no target object."
                         )
                     add(armature)
+
+    # A variant set the selection touches brings its other members along. They
+    # are a dependency in the same sense the armature above is: leave one out
+    # and the authored variant switches to a prim this export never wrote. A
+    # set the selection does not touch is not a dependency of it, so its
+    # members stay out rather than widening the export past what was asked for.
+    variant_plan = resolve_variant_plan(context, settings)
+    if not variant_plan.is_empty:
+        selected_identities = {_rna_identity(obj) for obj in selected}
+        for variant_set in variant_plan.sets_touching(selected_identities):
+            for variant in variant_set.variants:
+                for member in variant.objects:
+                    add(member)
 
     # Preserve scene order for deterministic exports, then retain a linked
     # armature that is not directly linked into the active scene.  Selection

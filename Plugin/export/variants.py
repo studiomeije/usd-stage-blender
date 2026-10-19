@@ -72,6 +72,9 @@ class VariantMember:
     has_collection: bool
     object_names: tuple[str, ...]
     identities: frozenset[int]
+    #: The objects themselves, for the passes that must act on them rather
+    #: than reason about them: visibility staging and selection closure.
+    objects: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -111,6 +114,34 @@ class VariantPlan:
             for variant in variant_set.variants:
                 identities |= variant.identities
         return frozenset(identities)
+
+    def member_objects(self) -> list:
+        """Every member object across every set, each once, in declared order."""
+        seen: set[int] = set()
+        members: list = []
+        for variant_set in self.sets:
+            for variant in variant_set.variants:
+                for obj in variant.objects:
+                    identity = rna_identity(obj)
+                    if identity in seen:
+                        continue
+                    seen.add(identity)
+                    members.append(obj)
+        return members
+
+    def sets_touching(self, identities) -> tuple[VariantSetPlan, ...]:
+        """The sets with at least one member among ``identities``.
+
+        Selection closure asks this: a set the selection does not touch is not
+        a dependency of that selection, and pulling its members in would export
+        geometry the user did not ask for.
+        """
+        wanted = set(identities)
+        return tuple(
+            variant_set
+            for variant_set in self.sets
+            if any(variant.identities & wanted for variant in variant_set.variants)
+        )
 
 
 class VariantPlanError(RuntimeError):
@@ -178,6 +209,7 @@ def _resolve_variant(declared_variant, settings) -> VariantMember:
         has_collection=True,
         object_names=tuple(str(getattr(obj, "name", "")) for obj in exportable),
         identities=frozenset(rna_identity(obj) for obj in exportable),
+        objects=tuple(exportable),
     )
 
 
@@ -454,6 +486,122 @@ def _validate_membership(
                         },
                     )
                 )
+
+
+# --------------------------------------------------------------------------
+# Visibility staging
+# --------------------------------------------------------------------------
+
+#: Flags on a Collection or an Object that keep it out of the export. Both
+#: spellings are cleared whatever ``evaluation_mode`` says, so staging does not
+#: depend on which one the current mode happens to consult.
+_HIDE_FLAGS = ("hide_render", "hide_viewport")
+
+
+def prepare_variant_visibility(context, plan: VariantPlan) -> dict:
+    """Make every variant member exportable, recording what to put back.
+
+    An artist hides the variant they are not working on, and Blender's USD
+    exporter then leaves it out: a collection excluded from the view layer is
+    skipped, and so is anything whose ``hide_render`` or ``hide_viewport`` flag
+    the active ``evaluation_mode`` consults.  Only the outliner's eye is
+    ignored.  Every variant has to be in the export for the authoring pass to
+    switch between them, so staging opens each member's path into the view
+    layer for the length of the export.
+
+    The returned state must be passed to :func:`restore_variant_visibility`,
+    which puts every flag back exactly as it was.
+    """
+    state: dict = {"restores": [], "context": context}
+    if plan.is_empty:
+        return state
+
+    restores: list = state["restores"]
+
+    def assign(owner, attribute: str, value) -> None:
+        if owner is None:
+            return
+        try:
+            previous = getattr(owner, attribute)
+        except Exception:
+            return
+        if bool(previous) == bool(value):
+            return
+        restores.append((owner, attribute, previous))
+        try:
+            setattr(owner, attribute, value)
+        except Exception:
+            # Nothing was changed, so nothing is owed on restore.
+            restores.pop()
+
+    members = {rna_identity(obj) for obj in plan.member_objects()}
+
+    for chain in _member_layer_collection_chains(context, members):
+        # Root first: clearing a parent's exclude is what makes clearing a
+        # child's meaningful, and Blender resets descendants when a parent is
+        # re-included.
+        for layer_collection in chain:
+            assign(layer_collection, "exclude", False)
+            collection = getattr(layer_collection, "collection", None)
+            for flag in _HIDE_FLAGS:
+                assign(collection, flag, False)
+
+    for obj in plan.member_objects():
+        for flag in _HIDE_FLAGS:
+            assign(obj, flag, False)
+
+    _update_view_layer(context)
+    return state
+
+
+def restore_variant_visibility(state: dict) -> None:
+    """Put every flag staging changed back, newest change first."""
+    if not state:
+        return
+    for owner, attribute, previous in reversed(state.get("restores", [])):
+        try:
+            setattr(owner, attribute, previous)
+        except Exception:
+            continue
+    state["restores"] = []
+    _update_view_layer(state.get("context"))
+
+
+def _member_layer_collection_chains(context, members: set[int]) -> list[tuple]:
+    """Root-to-leaf chains of every layer collection holding a member object.
+
+    A collection can be linked in more than one place, so every chain that
+    reaches a member is opened rather than only the first one found.
+    """
+    view_layer = getattr(context, "view_layer", None)
+    root = getattr(view_layer, "layer_collection", None)
+    if root is None or not members:
+        return []
+
+    chains: list[tuple] = []
+
+    def walk(layer_collection, ancestors: tuple) -> None:
+        chain = ancestors + (layer_collection,)
+        collection = getattr(layer_collection, "collection", None)
+        objects = getattr(collection, "objects", None) or ()
+        if any(rna_identity(obj) in members for obj in objects):
+            chains.append(chain)
+        for child in getattr(layer_collection, "children", None) or ():
+            walk(child, chain)
+
+    walk(root, ())
+    return chains
+
+
+def _update_view_layer(context) -> None:
+    view_layer = getattr(context, "view_layer", None)
+    update = getattr(view_layer, "update", None)
+    if update is None:
+        return
+    try:
+        update()
+    except Exception:
+        pass
 
 
 def require_valid_variant_plan(plan: VariantPlan, diagnostics=None) -> VariantPlan:
