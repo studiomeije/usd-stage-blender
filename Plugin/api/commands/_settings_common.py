@@ -54,6 +54,7 @@ SETTING_GROUPS: dict[str, set[str]] = {
         "root_prim_name",
         "root_prim_kind",
         "export_colliders",
+        "payload_geometry",
         "export_animation",
         "author_animation_library",
         "selected_objects_only",

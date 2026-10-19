@@ -264,6 +264,17 @@ class USDStageExportSettings(PropertyGroup):
         update=_on_settings_changed,
     )
 
+    payload_geometry: BoolProperty(
+        name="Payload Geometry",
+        description=(
+            "Split the export into an asset interface and a payload layer, so "
+            "a consumer can reference, place and choose a variant of the asset "
+            "without loading its geometry"
+        ),
+        default=False,
+        update=_on_settings_changed,
+    )
+
     export_colliders: BoolProperty(
         name="Colliders",
         description=(
@@ -930,6 +941,7 @@ def _draw_usd_general_section(layout, settings):
     layout.prop(settings, "root_prim_name", placeholder="Scene")
     layout.prop(settings, "root_prim_kind")
     layout.prop(settings, "export_colliders")
+    layout.prop(settings, "payload_geometry")
     layout.prop(settings, "export_custom_properties")
     if settings.export_custom_properties:
         layout.prop(settings, "custom_properties_namespace")

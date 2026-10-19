@@ -234,6 +234,10 @@ class ExportDiagnostics:
             entry for entry in variant_sets if entry.get('name') not in known
         )
 
+    def set_payload_split(self, written: dict):
+        """Record the interface and payload layers a split export wrote."""
+        self.data['payload_split'] = written
+
     def set_colliders(self, prim_paths: list):
         """Record the collider components this export authored."""
         self.data['colliders'] = prim_paths
