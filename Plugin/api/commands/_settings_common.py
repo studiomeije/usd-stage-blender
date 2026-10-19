@@ -53,6 +53,7 @@ SETTING_GROUPS: dict[str, set[str]] = {
         "export_format",
         "root_prim_name",
         "root_prim_kind",
+        "export_colliders",
         "export_animation",
         "author_animation_library",
         "selected_objects_only",

@@ -264,6 +264,17 @@ class USDStageExportSettings(PropertyGroup):
         update=_on_settings_changed,
     )
 
+    export_colliders: BoolProperty(
+        name="Colliders",
+        description=(
+            "Author a RealityKit collider for every object with Blender Rigid "
+            "Body enabled, so the asset is interactive without hand-work in "
+            "Reality Composer Pro"
+        ),
+        default=True,
+        update=_on_settings_changed,
+    )
+
     root_prim_kind: EnumProperty(
         name="Asset Kind",
         description=(
@@ -918,6 +929,7 @@ class USDSTAGE_PT_export_usd_root(Panel):
 def _draw_usd_general_section(layout, settings):
     layout.prop(settings, "root_prim_name", placeholder="Scene")
     layout.prop(settings, "root_prim_kind")
+    layout.prop(settings, "export_colliders")
     layout.prop(settings, "export_custom_properties")
     if settings.export_custom_properties:
         layout.prop(settings, "custom_properties_namespace")

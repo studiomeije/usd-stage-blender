@@ -34,6 +34,12 @@ and what you have to do differently. Internal refactors are not listed.
   different things, one object can belong to a shape set and a finish set at
   once: three tops and four finishes is twelve looks from three meshes.
   Offering a finish nothing currently wears works too.
+- Objects with Blender Rigid Body enabled now export with a RealityKit
+  collider, sized from the object's own bounds, so an asset can be tapped,
+  dragged or collided with in an app without adding a collision component
+  by hand in Reality Composer Pro. Collision shapes other than Box are
+  approximated as a box and the diagnostics report says which. Turn it off
+  with Advanced USD ▸ Colliders.
 - Exports now identify themselves as an asset. The root prim carries a USD
   `kind` (Component by default), `assetInfo` naming the file a consumer
   references, and an `extentsHint` giving its bounds. Another stage can
