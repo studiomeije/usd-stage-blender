@@ -16,6 +16,7 @@ from .realitykit_preflight import (
 )
 from .usd_scene import normalize_scene, _normalize_owned_double_sided_mesh_specs
 from . import asset_metadata
+from . import colliders as colliders_module
 from . import usd_hook
 from . import variant_authoring
 from . import variants
@@ -172,6 +173,18 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
             diagnostics,
         )
 
+        _run_step(
+            diagnostics,
+            "author_colliders",
+            _author_colliders,
+            stage,
+            settings,
+            context,
+            object_map,
+            prim_path_edits,
+            diagnostics,
+        )
+
         # After the variants: a variant-bearing asset has as many sizes as it
         # has selections, and the hint describes the one it ships with.
         _run_step(
@@ -271,6 +284,18 @@ def _run_step(diagnostics, name: str, func, *args):
     if diagnostics:
         diagnostics.end_phase(name)
     return result
+
+
+def _author_colliders(
+    stage, settings, context, object_map, prim_path_edits, diagnostics=None
+):
+    """Author RealityKit collider components for Blender's rigid bodies."""
+    plan = colliders_module.resolve_collider_plan(context, settings)
+    if plan.is_empty:
+        return ()
+    return colliders_module.author_colliders(
+        stage, plan, object_map, prim_path_edits, diagnostics
+    )
 
 
 def _author_material_variants(
