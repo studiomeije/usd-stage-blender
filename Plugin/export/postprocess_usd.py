@@ -78,22 +78,30 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
         # need the same map.
         object_map = usd_hook.consume_captured_object_map()
 
-        # Before the rewrite, not after: the rewrite converts the materials it
-        # finds bound, variant bindings included, so a finish no object wears
-        # in Blender has to be bound by now to become MaterialX at all.
-        _run_step(
+        # Before the rewrite: a finish may offer a material no object in the
+        # scene wears, which Blender exports no prim for at all. Reserving
+        # them here lets the rewrite convert them like any other; binding
+        # happens later, inside the variant that offers each one.
+        reserved_materials = _run_step(
             diagnostics,
-            "author_material_variants",
-            _author_material_variants,
+            "reserve_variant_materials",
+            _reserve_variant_materials,
             stage,
             settings,
             context,
-            object_map,
-            prim_path_edits,
             diagnostics,
         )
 
-        _run_step(diagnostics, "rewrite_materials", rewrite_materials, stage, settings, context, diagnostics)
+        _run_step(
+            diagnostics,
+            "rewrite_materials",
+            rewrite_materials,
+            stage,
+            settings,
+            context,
+            diagnostics,
+            reserved_materials,
+        )
 
         _run_step(diagnostics, "author_animation_library", author_animation_library, stage, settings, diagnostics)
 
@@ -164,8 +172,8 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
         # that follows validates each composed selection.
         _run_step(
             diagnostics,
-            "author_variant_sets",
-            _author_variant_sets,
+            "author_variants",
+            _author_variants,
             stage,
             settings,
             context,
@@ -311,28 +319,16 @@ def _author_colliders(
     )
 
 
-def _author_material_variants(
-    stage, settings, context, object_map, prim_path_edits, diagnostics=None
-):
-    """Author the material sets, ahead of the MaterialX rewrite."""
+def _reserve_variant_materials(stage, settings, context, diagnostics=None):
+    """Define a Material prim for every finish, ahead of the rewrite."""
     plan = variants.resolve_variant_plan(context, settings)
     if plan.is_empty:
         return ()
     variants.require_valid_variant_plan(plan, diagnostics)
-    authored = variant_authoring.author_material_variants(
-        stage,
-        plan,
-        object_map,
-        prim_path_edits,
-        settings,
-        diagnostics,
-    )
-    if diagnostics and authored:
-        diagnostics.set_variant_sets(_variant_sidecar_entries(plan, authored))
-    return authored
+    return variant_authoring.reserve_variant_materials(stage, plan)
 
 
-def _author_variant_sets(
+def _author_variants(
     stage, settings, context, object_map, prim_path_edits, diagnostics=None
 ):
     """Author the scene's declared variant sets, if it declares any."""
@@ -341,7 +337,7 @@ def _author_variant_sets(
         return ()
 
     variants.require_valid_variant_plan(plan, diagnostics)
-    authored = variant_authoring.author_variant_sets(
+    authored = variant_authoring.author_variants(
         stage,
         plan,
         object_map,
@@ -367,6 +363,8 @@ def _variant_sidecar_entries(plan, authored) -> list:
         }
         if variant_set.kind == variants.MATERIAL:
             entry["targets"] = list(variant_set.target_object_names)
+            if variant_set.parent_set:
+                entry["nested_in"] = variant_set.parent_set
             entry["variants"] = [
                 {"name": variant.name, "material": variant.material_name}
                 for variant in variant_set.variants

@@ -345,6 +345,27 @@ Two consequences worth knowing:
   material prim for a material no face wears, so the finish set defines one
   and the MaterialX rewrite converts it like any other.
 
+### Offering a finish on some shapes only
+
+Independent sets offer every combination, including ones you do not sell. When
+a finish suits only some shapes, nest the finish set inside the shape set:
+set **Nest Inside** to the shape set, and give each finish an **Only For**
+list of the shapes that offer it. A finish with no list is offered on all of
+them.
+
+The finish set is then authored inside each shape variant rather than beside
+it, so selecting a shape changes which finishes exist:
+
+```
+Shape = Round   → Finish offers Oak
+Shape = Square  → Finish offers Oak, Walnut
+```
+
+Inside a shape variant only that shape's prims compose, so the finishes bind
+exactly what is present. Every shape must offer at least one finish, or the
+export is refused: a shape that ships with nothing to choose is a mistake, not
+a style. One level of nesting is the limit.
+
 ### What variants cannot do
 
 - **They cannot be animated.** USD resolves a selection at composition time.

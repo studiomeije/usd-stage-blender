@@ -520,3 +520,68 @@ def test_two_material_sets_on_one_object_are_refused():
     issues = validate_variant_plan(plan)
     assert "VARIANT_PROPERTY_CONTESTED" in _codes(issues)
     assert issues[0].details["property"] == "material:binding"
+
+
+# --------------------------------------------------------------------------
+# Nested finish sets
+# --------------------------------------------------------------------------
+
+def _nested_plan(parent="Shape", applies_to=("", "Square"), shape_variants=("Round", "Square")):
+    shapes = [
+        _variant(name, _collection(name, objects=[_object(f"Top{name}")]))
+        for name in shape_variants
+    ]
+    finish = _material_set(
+        "Finish",
+        [
+            _material_variant("Oak", _material("OakMat")),
+            _material_variant("Walnut", _material("WalnutMat")),
+        ],
+        _collection("Tops", objects=[_object(f"Top{shape_variants[0]}")]),
+    )
+    finish.parent_set = parent
+    for variant, applies in zip(finish.variants, applies_to):
+        variant.applies_to = applies
+    return _plan(_variant_set("Shape", shapes), finish)
+
+
+def test_a_well_formed_nested_set_is_accepted():
+    assert validate_variant_plan(_nested_plan()) == []
+
+
+def test_nesting_inside_an_unknown_set_is_refused():
+    plan = _nested_plan(parent="Nope")
+    assert "VARIANT_PARENT_UNKNOWN" in _codes(validate_variant_plan(plan))
+
+
+def test_nesting_inside_itself_is_refused():
+    plan = _nested_plan(parent="Finish")
+    assert "VARIANT_PARENT_SELF" in _codes(validate_variant_plan(plan))
+
+
+def test_applying_to_a_shape_that_does_not_exist_is_refused():
+    plan = _nested_plan(applies_to=("", "Hexagonal"))
+    assert "VARIANT_APPLIES_TO_UNKNOWN" in _codes(validate_variant_plan(plan))
+
+
+def test_a_shape_left_with_no_finish_is_refused():
+    """Every shape has to offer something to choose."""
+    plan = _nested_plan(applies_to=("Square", "Square"))
+    issues = validate_variant_plan(plan)
+    assert "VARIANT_PARENT_HAS_NO_FINISH" in _codes(issues)
+    assert any(
+        issue.details.get("parent_variant") == "Round"
+        for issue in issues
+        if issue.code == "VARIANT_PARENT_HAS_NO_FINISH"
+    )
+
+
+def test_a_nested_set_does_not_contest_a_set_on_the_root_prim():
+    """It is scoped inside one shape variant, so it collides with nothing."""
+    plan = _nested_plan()
+    assert "VARIANT_PROPERTY_CONTESTED" not in _codes(validate_variant_plan(plan))
+
+
+def test_a_finish_offered_everywhere_needs_no_applies_to():
+    plan = _nested_plan(applies_to=("", ""))
+    assert validate_variant_plan(plan) == []

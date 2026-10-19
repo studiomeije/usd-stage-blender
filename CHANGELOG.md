@@ -27,6 +27,10 @@ and what you have to do differently. Internal refactors are not listed.
   Reality Composer Pro lists and what your code passes to
   `setVariantSelection(for:to:)`. Creating a set from a collection is the one
   place a name is adjusted, where you can see and edit it in the panel.
+- A finish set can now nest inside a shape set, so a finish can be offered
+  on some shapes and not others - walnut on the square top but not the
+  round one. Set Nest Inside on the finish set and Only For on each
+  finish. Every shape has to offer at least one finish.
 - A variant set now varies either **shape** or **finish**. A shape set
   switches whole collections of objects, as before. A finish set keeps the
   objects and rebinds their material, so the same tabletop can be offered in
