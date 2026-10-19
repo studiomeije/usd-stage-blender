@@ -1,0 +1,739 @@
+{
+  "asset_metadata": {
+    "authored": {
+      "asset_info": [
+        "identifier",
+        "name"
+      ],
+      "extents_hint": true,
+      "kind": "component",
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Box"
+      ],
+      "type_names": [
+        "Cube",
+        "Xform"
+      ],
+      "variant_selections": {},
+      "variant_sets": [],
+      "variants": {}
+    },
+    "reality": {
+      "asset_types": [
+        "Material",
+        "MaterialDefinition",
+        "Mesh",
+        "Scene"
+      ],
+      "configuration_sets": [],
+      "default_configurations": [],
+      "material_count": 1,
+      "mesh_count": 1,
+      "prim_paths": [
+        "/Asset/Box"
+      ]
+    },
+    "usdz": {
+      "asset_info": [
+        "identifier",
+        "name"
+      ],
+      "extents_hint": true,
+      "kind": "component",
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Box"
+      ],
+      "type_names": [
+        "Cube",
+        "Xform"
+      ],
+      "variant_selections": {},
+      "variant_sets": [],
+      "variants": {}
+    }
+  },
+  "payload": {
+    "authored": {
+      "extents_hint": false,
+      "kind": "component",
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Box"
+      ],
+      "type_names": [
+        "Cube",
+        "Xform"
+      ],
+      "variant_selections": {},
+      "variant_sets": [],
+      "variants": {}
+    },
+    "reality": {
+      "asset_types": [
+        "Material",
+        "MaterialDefinition",
+        "Mesh",
+        "Scene"
+      ],
+      "configuration_sets": [],
+      "default_configurations": [],
+      "material_count": 2,
+      "mesh_count": 1,
+      "prim_paths": [
+        "/Asset/Box",
+        "/Geo/Box"
+      ]
+    },
+    "usdz": {
+      "extents_hint": false,
+      "kind": "component",
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Box"
+      ],
+      "type_names": [
+        "Cube",
+        "Xform"
+      ],
+      "variant_selections": {},
+      "variant_sets": [],
+      "variants": {}
+    }
+  },
+  "physics": {
+    "authored": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [
+        "PhysicsCollisionAPI",
+        "PhysicsMassAPI",
+        "PhysicsRigidBodyAPI"
+      ],
+      "prims": [
+        "Asset",
+        "Box"
+      ],
+      "type_names": [
+        "Cube",
+        "Xform"
+      ],
+      "variant_selections": {},
+      "variant_sets": [],
+      "variants": {}
+    },
+    "reality": {
+      "asset_types": [
+        "Material",
+        "MaterialDefinition",
+        "Mesh",
+        "Scene"
+      ],
+      "configuration_sets": [],
+      "default_configurations": [],
+      "material_count": 1,
+      "mesh_count": 1,
+      "prim_paths": [
+        "/Asset/Box"
+      ]
+    },
+    "usdz": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [
+        "PhysicsCollisionAPI",
+        "PhysicsMassAPI",
+        "PhysicsRigidBodyAPI"
+      ],
+      "prims": [
+        "Asset",
+        "Box"
+      ],
+      "type_names": [
+        "Cube",
+        "Xform"
+      ],
+      "variant_selections": {},
+      "variant_sets": [],
+      "variants": {}
+    }
+  },
+  "point_instancer": {
+    "authored": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Box",
+        "Prototypes",
+        "Scatter"
+      ],
+      "type_names": [
+        "Cube",
+        "PointInstancer",
+        "Xform"
+      ],
+      "variant_selections": {},
+      "variant_sets": [],
+      "variants": {}
+    },
+    "reality": {
+      "asset_types": [
+        "Material",
+        "MaterialDefinition",
+        "Mesh",
+        "Scene"
+      ],
+      "configuration_sets": [],
+      "default_configurations": [],
+      "material_count": 1,
+      "mesh_count": 1,
+      "prim_paths": [
+        "/Asset/Scatter/Prototypes/Box"
+      ]
+    },
+    "usdz": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Box",
+        "Prototypes",
+        "Scatter"
+      ],
+      "type_names": [
+        "Cube",
+        "PointInstancer",
+        "Xform"
+      ],
+      "variant_selections": {},
+      "variant_sets": [],
+      "variants": {}
+    }
+  },
+  "realitykit_component": {
+    "authored": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Box",
+        "Component"
+      ],
+      "type_names": [
+        "Cube",
+        "RealityKitComponent",
+        "Xform"
+      ],
+      "variant_selections": {},
+      "variant_sets": [],
+      "variants": {}
+    },
+    "reality": {
+      "asset_types": [
+        "CollisionShape",
+        "Material",
+        "MaterialDefinition",
+        "Mesh",
+        "Scene"
+      ],
+      "configuration_sets": [],
+      "default_configurations": [],
+      "material_count": 1,
+      "mesh_count": 1,
+      "prim_paths": [
+        "/Asset/Box"
+      ]
+    },
+    "usdz": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Box",
+        "Component"
+      ],
+      "type_names": [
+        "Cube",
+        "RealityKitComponent",
+        "Xform"
+      ],
+      "variant_selections": {},
+      "variant_sets": [],
+      "variants": {}
+    }
+  },
+  "reference": {
+    "authored": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Box"
+      ],
+      "type_names": [
+        "Cube",
+        "Xform"
+      ],
+      "variant_selections": {},
+      "variant_sets": [],
+      "variants": {}
+    },
+    "reality": {
+      "asset_types": [
+        "Material",
+        "MaterialDefinition",
+        "Mesh",
+        "Scene"
+      ],
+      "configuration_sets": [],
+      "default_configurations": [],
+      "material_count": 2,
+      "mesh_count": 1,
+      "prim_paths": [
+        "/Asset/Box",
+        "/Geo/Box"
+      ]
+    },
+    "usdz": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Box"
+      ],
+      "type_names": [
+        "Cube",
+        "Xform"
+      ],
+      "variant_selections": {},
+      "variant_sets": [],
+      "variants": {}
+    }
+  },
+  "variant_activation": {
+    "authored": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "High",
+        "Low"
+      ],
+      "type_names": [
+        "Cube",
+        "Xform"
+      ],
+      "variant_selections": {
+        "geo": "low"
+      },
+      "variant_sets": [
+        "geo"
+      ],
+      "variants": {
+        "geo": [
+          "high",
+          "low"
+        ]
+      }
+    },
+    "reality": {
+      "asset_types": [
+        "Material",
+        "MaterialDefinition",
+        "Mesh",
+        "Scene"
+      ],
+      "configuration_sets": [],
+      "default_configurations": [],
+      "material_count": 1,
+      "mesh_count": 1,
+      "prim_paths": [
+        "/Asset/Low"
+      ]
+    },
+    "usdz": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "High",
+        "Low"
+      ],
+      "type_names": [
+        "Cube",
+        "Xform"
+      ],
+      "variant_selections": {
+        "geo": "low"
+      },
+      "variant_sets": [
+        "geo"
+      ],
+      "variants": {
+        "geo": [
+          "high",
+          "low"
+        ]
+      }
+    }
+  },
+  "variant_binding": {
+    "authored": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Blue",
+        "Materials",
+        "Plinth",
+        "Red",
+        "Surface",
+        "Surface"
+      ],
+      "type_names": [
+        "Cube",
+        "Material",
+        "Shader",
+        "Xform"
+      ],
+      "variant_selections": {
+        "look": "red"
+      },
+      "variant_sets": [
+        "look"
+      ],
+      "variants": {
+        "look": [
+          "blue",
+          "red"
+        ]
+      }
+    },
+    "reality": {
+      "asset_types": [
+        "Material",
+        "MaterialDefinition",
+        "Mesh",
+        "Scene"
+      ],
+      "configuration_sets": [],
+      "default_configurations": [],
+      "material_count": 1,
+      "mesh_count": 1,
+      "prim_paths": [
+        "/Asset/Materials/Red",
+        "/Asset/Plinth"
+      ]
+    },
+    "usdz": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Blue",
+        "Materials",
+        "Plinth",
+        "Red",
+        "Surface",
+        "Surface"
+      ],
+      "type_names": [
+        "Cube",
+        "Material",
+        "Shader",
+        "Xform"
+      ],
+      "variant_selections": {
+        "look": "red"
+      },
+      "variant_sets": [
+        "look"
+      ],
+      "variants": {
+        "look": [
+          "blue",
+          "red"
+        ]
+      }
+    }
+  },
+  "variant_default_is_second": {
+    "authored": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "First",
+        "Second"
+      ],
+      "type_names": [
+        "Cube",
+        "Xform"
+      ],
+      "variant_selections": {
+        "pick": "second"
+      },
+      "variant_sets": [
+        "pick"
+      ],
+      "variants": {
+        "pick": [
+          "first",
+          "second"
+        ]
+      }
+    },
+    "reality": {
+      "asset_types": [
+        "Material",
+        "MaterialDefinition",
+        "Mesh",
+        "Scene"
+      ],
+      "configuration_sets": [],
+      "default_configurations": [],
+      "material_count": 1,
+      "mesh_count": 1,
+      "prim_paths": [
+        "/Asset/Second"
+      ]
+    },
+    "usdz": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "First",
+        "Second"
+      ],
+      "type_names": [
+        "Cube",
+        "Xform"
+      ],
+      "variant_selections": {
+        "pick": "second"
+      },
+      "variant_sets": [
+        "pick"
+      ],
+      "variants": {
+        "pick": [
+          "first",
+          "second"
+        ]
+      }
+    }
+  },
+  "variant_nested": {
+    "authored": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Materials",
+        "Oak",
+        "Surface",
+        "Surface",
+        "Top",
+        "Walnut"
+      ],
+      "type_names": [
+        "Cube",
+        "Material",
+        "Shader",
+        "Xform"
+      ],
+      "variant_selections": {
+        "finish": "oak",
+        "shape": "round"
+      },
+      "variant_sets": [
+        "finish",
+        "shape"
+      ],
+      "variants": {
+        "finish": [
+          "oak"
+        ],
+        "shape": [
+          "round",
+          "square"
+        ]
+      }
+    },
+    "reality": {
+      "asset_types": [
+        "Material",
+        "MaterialDefinition",
+        "Mesh",
+        "Scene"
+      ],
+      "configuration_sets": [],
+      "default_configurations": [],
+      "material_count": 1,
+      "mesh_count": 1,
+      "prim_paths": [
+        "/Asset/Materials/Oak",
+        "/Asset/Top"
+      ]
+    },
+    "usdz": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Materials",
+        "Oak",
+        "Surface",
+        "Surface",
+        "Top",
+        "Walnut"
+      ],
+      "type_names": [
+        "Cube",
+        "Material",
+        "Shader",
+        "Xform"
+      ],
+      "variant_selections": {
+        "finish": "oak",
+        "shape": "round"
+      },
+      "variant_sets": [
+        "finish",
+        "shape"
+      ],
+      "variants": {
+        "finish": [
+          "oak"
+        ],
+        "shape": [
+          "round",
+          "square"
+        ]
+      }
+    }
+  },
+  "variant_two_sets": {
+    "authored": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Ball",
+        "Blue",
+        "Box",
+        "Materials",
+        "Red",
+        "Surface",
+        "Surface"
+      ],
+      "type_names": [
+        "Cube",
+        "Material",
+        "Shader",
+        "Sphere",
+        "Xform"
+      ],
+      "variant_selections": {
+        "geo": "boxy",
+        "look": "red"
+      },
+      "variant_sets": [
+        "geo",
+        "look"
+      ],
+      "variants": {
+        "geo": [
+          "boxy",
+          "round"
+        ],
+        "look": [
+          "blue",
+          "red"
+        ]
+      }
+    },
+    "reality": {
+      "asset_types": [
+        "Material",
+        "MaterialDefinition",
+        "Mesh",
+        "Scene"
+      ],
+      "configuration_sets": [],
+      "default_configurations": [],
+      "material_count": 1,
+      "mesh_count": 1,
+      "prim_paths": [
+        "/Asset/Box",
+        "/Asset/Materials/Red"
+      ]
+    },
+    "usdz": {
+      "extents_hint": false,
+      "opened": true,
+      "physics_apis": [],
+      "prims": [
+        "Asset",
+        "Ball",
+        "Blue",
+        "Box",
+        "Materials",
+        "Red",
+        "Surface",
+        "Surface"
+      ],
+      "type_names": [
+        "Cube",
+        "Material",
+        "Shader",
+        "Sphere",
+        "Xform"
+      ],
+      "variant_selections": {
+        "geo": "boxy",
+        "look": "red"
+      },
+      "variant_sets": [
+        "geo",
+        "look"
+      ],
+      "variants": {
+        "geo": [
+          "boxy",
+          "round"
+        ],
+        "look": [
+          "blue",
+          "red"
+        ]
+      }
+    }
+  }
+}
