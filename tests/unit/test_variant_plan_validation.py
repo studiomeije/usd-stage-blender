@@ -243,7 +243,7 @@ def test_one_variant_collection_nested_in_another_is_refused_as_shared_membershi
     assert "VARIANT_MEMBER_SHARED_IN_SET" in _codes(validate_variant_plan(plan))
 
 
-def test_one_object_claimed_by_two_sets_is_refused():
+def test_two_geometry_sets_varying_one_object_are_refused():
     shared = _object("SeatShell")
     first = _collection("Fabric", objects=[shared])
     second = _collection("Leather", objects=[_object("SeatLeather")])
@@ -253,7 +253,8 @@ def test_one_object_claimed_by_two_sets_is_refused():
         _variant_set("Seat", [_variant("Fabric", first), _variant("Leather", second)]),
         _variant_set("Legs", [_variant("Oak", third), _variant("Steel", fourth)]),
     )
-    assert "VARIANT_MEMBER_SHARED_ACROSS_SETS" in _codes(validate_variant_plan(plan))
+    # Both would author 'active' on the same prim, so one could never win.
+    assert "VARIANT_PROPERTY_CONTESTED" in _codes(validate_variant_plan(plan))
 
 
 def test_a_shared_pair_is_reported_once_however_many_objects_overlap():
@@ -381,3 +382,141 @@ def test_require_reports_warnings_without_stopping_the_export():
     assert require_valid_variant_plan(plan, diagnostics) is plan
     assert diagnostics.errors == []
     assert len(diagnostics.warnings) == 1
+
+
+# --------------------------------------------------------------------------
+# Material variant sets
+# --------------------------------------------------------------------------
+
+def _material(name: str):
+    return SimpleNamespace(name=name)
+
+
+def _material_variant(name: str, material):
+    return SimpleNamespace(name=name, material=material)
+
+
+def _material_set(name, variants, target, default_variant=None):
+    return SimpleNamespace(
+        name=name,
+        kind="MATERIAL",
+        variants=list(variants),
+        target_collection=target,
+        default_variant=default_variant or variants[0].name,
+    )
+
+
+def _finish_set(target=None):
+    target = target or _collection("Tops", objects=[_object("TableTop")])
+    return _material_set(
+        "Finish",
+        [
+            _material_variant("Oak", _material("OakMat")),
+            _material_variant("Walnut", _material("WalnutMat")),
+        ],
+        target,
+    )
+
+
+def test_a_material_set_resolves_its_targets_and_materials():
+    plan = _plan(_finish_set())
+    variant_set = plan.sets[0]
+
+    assert variant_set.kind == "MATERIAL"
+    assert variant_set.varied_property == "material:binding"
+    assert variant_set.target_object_names == ("TableTop",)
+    assert [v.material_name for v in variant_set.variants] == ["OakMat", "WalnutMat"]
+    assert validate_variant_plan(plan) == []
+
+
+def test_a_material_set_is_not_asked_for_collections():
+    """Its variants own a material; the collection rules must not fire."""
+    issues = validate_variant_plan(_plan(_finish_set()))
+
+    assert "VARIANT_COLLECTION_MISSING" not in _codes(issues)
+    assert "VARIANT_EMPTY" not in _codes(issues)
+
+
+def test_a_material_set_without_a_target_is_refused():
+    plan = _plan(
+        _material_set(
+            "Finish",
+            [
+                _material_variant("Oak", _material("OakMat")),
+                _material_variant("Walnut", _material("WalnutMat")),
+            ],
+            None,
+        )
+    )
+    assert "VARIANT_TARGET_MISSING" in _codes(validate_variant_plan(plan))
+
+
+def test_a_material_set_targeting_nothing_exportable_is_refused():
+    plan = _plan(_finish_set(target=_collection("Tops", objects=[])))
+    assert "VARIANT_TARGET_EMPTY" in _codes(validate_variant_plan(plan))
+
+
+def test_a_variant_without_a_material_is_refused():
+    plan = _plan(
+        _material_set(
+            "Finish",
+            [
+                _material_variant("Oak", _material("OakMat")),
+                _material_variant("Walnut", None),
+            ],
+            _collection("Tops", objects=[_object("TableTop")]),
+        )
+    )
+    assert "VARIANT_MATERIAL_MISSING" in _codes(validate_variant_plan(plan))
+
+
+def test_two_variants_binding_one_material_warn_without_refusing():
+    shared = _material("OakMat")
+    plan = _plan(
+        _material_set(
+            "Finish",
+            [_material_variant("Oak", shared), _material_variant("AlsoOak", shared)],
+            _collection("Tops", objects=[_object("TableTop")]),
+        )
+    )
+    issues = validate_variant_plan(plan)
+    assert _codes(issues, ERROR) == []
+    assert "VARIANT_MATERIAL_REPEATED" in _codes(issues, WARNING)
+
+
+# --------------------------------------------------------------------------
+# Shapes and finishes together — the point of the kinds
+# --------------------------------------------------------------------------
+
+def test_a_shape_set_and_a_finish_set_may_share_objects():
+    """They vary different properties, so neither shadows the other."""
+    top = _object("TableTop")
+    round_c = _collection("Round", objects=[top])
+    square_c = _collection("Square", objects=[_object("TableTopSquare")])
+    tops = _collection("Tops", objects=[top])
+
+    plan = _plan(
+        _variant_set("Shape", [_variant("Round", round_c), _variant("Square", square_c)]),
+        _finish_set(target=tops),
+    )
+
+    assert validate_variant_plan(plan) == []
+    assert plan.combination_count == 4
+
+
+def test_two_material_sets_on_one_object_are_refused():
+    top = _object("TableTop")
+    plan = _plan(
+        _finish_set(target=_collection("Tops", objects=[top])),
+        _material_set(
+            "Trim",
+            [
+                _material_variant("Brass", _material("BrassMat")),
+                _material_variant("Chrome", _material("ChromeMat")),
+            ],
+            _collection("TopsAgain", objects=[top]),
+        ),
+    )
+    issues = validate_variant_plan(plan)
+    assert "VARIANT_PROPERTY_CONTESTED" in _codes(issues)
+    assert issues[0].details["property"] == "material:binding"

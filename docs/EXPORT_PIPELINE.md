@@ -315,6 +315,36 @@ it regardless.
 With **Author Variant Sets** off, neither authoring nor that staging runs, and
 the export holds exactly what the viewport shows.
 
+### Shape sets and finish sets
+
+A variant set varies one of two things, chosen per set:
+
+| | **Shape** | **Finish** |
+|---|---|---|
+| Each variant owns | a collection | a material |
+| The set also needs | — | the collection it applies to |
+| What it authors | `active` on the member prims | `material:binding` on the targets |
+
+A finish set leaves every object present and rebinds it, so the same objects
+can belong to a shape set *and* a finish set: the two vary different USD
+properties and neither shadows the other. That is how one file offers three
+tops and four finishes as twelve looks without twelve copies of the geometry.
+
+What is refused is two sets varying the **same** property of one object — two
+shape sets both authoring `active`, or two finish sets both rebinding. The
+rule is about the property, not the object.
+
+Two consequences worth knowing:
+
+- Blender writes a `material:binding` on every mesh, and a local opinion beats
+  every variant. Authoring a finish set therefore **removes** that binding, so
+  the variants are the only thing saying what the object wears. Every
+  selection supplies one, and the preflight refuses a stray binding left
+  outside.
+- A finish you do not currently use is still exportable. Blender writes no
+  material prim for a material no face wears, so the finish set defines one
+  and the MaterialX rewrite converts it like any other.
+
 ### What variants cannot do
 
 - **They cannot be animated.** USD resolves a selection at composition time.
@@ -322,6 +352,8 @@ the export holds exactly what the viewport shows.
   parented under another variant's member: deactivating the parent takes the
   child with it, so the child's variant could never compose. Both are refused
   before anything is written.
+- **A finish set over a multi-material mesh** sets every GeomSubset to one
+  material, and warns that it did.
 - **A selected-only export** carries the other variants of any set the
   selection touches, and leaves out a set it does not touch.
 - **Reality Composer Pro's `.reality` compile keeps only the selection you

@@ -27,6 +27,13 @@ and what you have to do differently. Internal refactors are not listed.
   Reality Composer Pro lists and what your code passes to
   `setVariantSelection(for:to:)`. Creating a set from a collection is the one
   place a name is adjusted, where you can see and edit it in the panel.
+- A variant set now varies either **shape** or **finish**. A shape set
+  switches whole collections of objects, as before. A finish set keeps the
+  objects and rebinds their material, so the same tabletop can be offered in
+  oak or walnut without a second copy of the mesh. Because the two vary
+  different things, one object can belong to a shape set and a finish set at
+  once: three tops and four finishes is twelve looks from three meshes.
+  Offering a finish nothing currently wears works too.
 - `usdstage info` lists the variant sets a `.blend` declares, so you can see
   what a file will export without exporting it, and the diagnostics report
   records what an export authored.

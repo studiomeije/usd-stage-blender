@@ -286,56 +286,70 @@ def validate_stage(
 
 
 def _check_variant_activation_is_unopposed(stage, report) -> None:
-    """Refuse an ``active`` opinion that would silently beat the variants.
+    """Refuse an opinion that would silently beat the variants.
 
     Variants sit low in composition strength, so an opinion on the same field
     in the local layer stack wins and the variant appears to do nothing -
     Houdini warns about this; here it is fatal, because a variant set that
     cannot switch is worse than one that was never authored.
 
-    Only authored, non-variant ``active`` opinions count. The check reads the
-    layers as raw Sdf specs rather than the composed stage: inside a variant
-    the opinion lives under a variant spec, so the two are distinguishable
-    only at this level.
+    Both properties variants vary are checked: ``active``, which a geometry
+    set switches, and ``material:binding``, which a material set rebinds. The
+    binding matters most in practice, because Blender writes one on every mesh
+    by default; authoring a material variant means removing that first.
+
+    Only authored, non-variant opinions count. The check reads the layers as
+    raw Sdf specs rather than the composed stage: inside a variant the opinion
+    lives under a variant spec, so the two are distinguishable only here.
     """
     for layer in stage.GetLayerStack(includeSessionLayers=False):
-        for prim_path in _variant_activated_paths(layer):
+        for prim_path, varied in sorted(_variant_varied_properties(layer)):
             spec = layer.GetPrimAtPath(prim_path)
-            if spec is None or not spec.HasInfo("active"):
+            if spec is None or not _has_base_opinion(spec, varied):
                 continue
             report.add(
                 "error",
                 "VARIANT_OPINION_SHADOWED",
                 (
-                    f"{prim_path} carries an 'active' opinion outside its "
+                    f"{prim_path} carries a {varied!r} opinion outside its "
                     "variants, which is stronger than the variant opinions and "
                     "would stop the variant set switching it."
                 ),
                 prim_path=prim_path,
                 layer=getattr(layer, "identifier", None),
+                varied_property=varied,
             )
 
 
-def _variant_activated_paths(layer) -> set:
-    """Prim paths some variant in this layer authors ``active`` on."""
-    activated: set = set()
+def _has_base_opinion(spec, varied: str) -> bool:
+    """Whether this non-variant prim spec authors the varied property."""
+    if varied == "active":
+        return bool(spec.HasInfo("active"))
+    return spec.relationships.get(varied) is not None
+
+
+def _variant_varied_properties(layer) -> set:
+    """``(prim path, property)`` pairs some variant in this layer authors."""
+    varied: set = set()
 
     def visit(prim_spec) -> None:
         for variant_set_spec in prim_spec.variantSets.values():
             for variant_spec in variant_set_spec.variants.values():
                 for descendant in _walk_prim_specs(variant_spec.primSpec):
-                    if not descendant.HasInfo("active"):
-                        continue
                     # Strip the variant selection from the path, leaving the
                     # prim the opinion lands on once composed.
-                    activated.add(descendant.path.StripAllVariantSelections())
+                    path = descendant.path.StripAllVariantSelections()
+                    if descendant.HasInfo("active"):
+                        varied.add((path, "active"))
+                    if descendant.relationships.get("material:binding") is not None:
+                        varied.add((path, "material:binding"))
         for child in prim_spec.nameChildren.values():
             visit(child)
 
     root = layer.pseudoRoot
     for child in root.nameChildren.values():
         visit(child)
-    return activated
+    return varied
 
 
 def _walk_prim_specs(prim_spec):

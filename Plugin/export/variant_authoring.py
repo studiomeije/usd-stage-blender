@@ -17,9 +17,9 @@ Two properties make that safe, and both are deliberate:
 
 from __future__ import annotations
 
-from .usd_utils import Sdf, require_pxr
+from .usd_utils import Sdf, UsdShade, require_pxr
 from .usd_scene import remap_prim_path
-from .variants import VariantPlan, VariantSetPlan
+from .variants import MATERIAL, VariantPlan, VariantSetPlan, suggest_identifier
 
 
 class VariantAuthoringError(RuntimeError):
@@ -41,7 +41,7 @@ def author_variant_sets(
     they place each member exactly. Returns the set names authored, which may
     be fewer than declared when a selected-only export left a whole set out.
     """
-    if plan.is_empty:
+    if plan.is_empty or all(s.kind == MATERIAL for s in plan.sets):
         return ()
     require_pxr()
 
@@ -68,6 +68,9 @@ def author_variant_sets(
 
     authored: list[str] = []
     for variant_set in plan.sets:
+        if variant_set.kind == MATERIAL:
+            # Authored earlier, before the MaterialX rewrite.
+            continue
         resolved = _resolve_set(variant_set, prim_paths, selected_only, diagnostics)
         if resolved is None:
             continue
@@ -78,6 +81,173 @@ def author_variant_sets(
     if diagnostics and authored:
         _warn_about_animated_members(plan, animated, authored, diagnostics)
     return tuple(authored)
+
+
+def author_material_variants(
+    stage,
+    plan: VariantPlan,
+    object_map: dict | None,
+    path_edits=(),
+    settings=None,
+    diagnostics=None,
+) -> tuple[str, ...]:
+    """Author the material sets: each variant rebinds the set's targets.
+
+    This runs *before* the MaterialX rewrite, unlike geometry variants, and
+    for two reasons. The rewrite collects the materials it must convert from
+    what meshes bind - including bindings inside inactive variants, which it
+    already knows how to read - so a finish that no object wears in Blender
+    reaches MaterialX only if its binding exists by then. And the rewrite
+    authors in place, so converting a material after it is bound keeps every
+    binding valid.
+
+    Nothing is deactivated here, so the passes that follow still see every
+    prim.
+    """
+    material_sets = [s for s in plan.sets if s.kind == MATERIAL]
+    if not material_sets:
+        return ()
+    require_pxr()
+
+    root = stage.GetDefaultPrim()
+    if not root:
+        raise VariantAuthoringError(
+            "Material variant sets are authored on the asset's root prim, and "
+            "this stage has no default prim."
+        )
+    if object_map is None:
+        raise VariantAuthoringError(
+            "Material variant sets cannot be authored: this export recorded no "
+            "prim map, so there is no exact way to say which prim each target "
+            "became."
+        )
+
+    prim_paths = _member_prim_paths(stage, object_map, path_edits)
+    selected_only = bool(getattr(settings, "selected_objects_only", False))
+    scope = _materials_scope(stage, root)
+
+    authored: list[str] = []
+    for variant_set in material_sets:
+        targets = [
+            prim_paths[name]
+            for name in variant_set.target_object_names
+            if name in prim_paths
+        ]
+        if not targets:
+            if selected_only:
+                if diagnostics:
+                    diagnostics.add_warning(
+                        f"Material variant set {variant_set.name!r} is not "
+                        "authored: none of its targets are in this "
+                        "selected-only export."
+                    )
+                continue
+            raise VariantAuthoringError(
+                f"Material variant set {variant_set.name!r} targets objects "
+                "that are not on the exported stage."
+            )
+
+        # Bind where Blender binds. An object becomes an Xform with its mesh
+        # beneath it, and the binding sits on the mesh - so binding the Xform
+        # would be a weaker inherited opinion that the mesh's own overrides,
+        # and the material rewrite, which collects what meshes bind, would
+        # never see the new material either.
+        bound_paths: list[str] = []
+        for path in targets:
+            found = _binding_prims(stage, path)
+            if len(found) > 1 and diagnostics:
+                diagnostics.add_warning(
+                    f"Material variant set {variant_set.name!r}: {path} binds "
+                    f"{len(found)} materials (GeomSubsets), and every variant "
+                    "sets them all to one material."
+                )
+            bound_paths.extend(found)
+
+        usd_set = root.GetVariantSets().AddVariantSet(variant_set.name)
+        for variant in variant_set.variants:
+            material = _material_prim(stage, scope, variant.material_name)
+            usd_set.AddVariant(variant.name)
+            usd_set.SetVariantSelection(variant.name)
+            with usd_set.GetVariantEditContext():
+                for path in bound_paths:
+                    prim = stage.GetPrimAtPath(path)
+                    if not prim:
+                        raise VariantAuthoringError(
+                            f"Target prim disappeared while authoring "
+                            f"{variant_set.name!r}: {path}"
+                        )
+                    UsdShade.MaterialBindingAPI.Apply(prim)
+                    UsdShade.MaterialBindingAPI(prim).Bind(material)
+        usd_set.SetVariantSelection(variant_set.default_variant)
+
+        # Blender authored a binding on each of those prims in the root layer,
+        # and a local opinion beats every variant. Remove it so the variants
+        # are the only thing saying what the object wears; each selection
+        # supplies one.
+        for path in bound_paths:
+            _clear_base_binding(stage, path)
+
+        authored.append(variant_set.name)
+
+    return tuple(authored)
+
+
+def _binding_prims(stage, object_path: str) -> list[str]:
+    """The prims under an object that actually carry a material binding.
+
+    Usually one mesh; a multi-material mesh has one per GeomSubset. An object
+    with no material at all falls back to its own prim, where a binding still
+    reaches the geometry beneath it.
+    """
+    prim = stage.GetPrimAtPath(object_path)
+    if not prim:
+        return []
+
+    found: list[str] = []
+    stack = [prim]
+    while stack:
+        current = stack.pop()
+        relationship = UsdShade.MaterialBindingAPI(current).GetDirectBindingRel()
+        if relationship and relationship.HasAuthoredTargets():
+            found.append(str(current.GetPath()))
+        stack.extend(current.GetAllChildren())
+    return sorted(found) or [str(prim.GetPath())]
+
+
+def _materials_scope(stage, root):
+    """Where this export keeps its Material prims."""
+    for prim in stage.TraverseAll():
+        if prim.IsA(UsdShade.Material):
+            return prim.GetPath().GetParentPath()
+    return root.GetPath().AppendChild("_materials")
+
+
+def _material_prim(stage, scope, material_name: str):
+    """The Material prim for a Blender material, created if the export lacks one.
+
+    Blender writes no material prim for a material no face wears, which is
+    exactly the case a finish variant exists to offer. Defining an empty one
+    here is enough: the MaterialX rewrite that follows finds it through this
+    binding and authors the real graph into it, resolving the Blender material
+    by the prim's name.
+    """
+    identifier = suggest_identifier(material_name, "Material")
+    for prim in stage.TraverseAll():
+        if not prim.IsA(UsdShade.Material):
+            continue
+        if prim.GetName() == identifier:
+            return UsdShade.Material(prim)
+    return UsdShade.Material.Define(stage, scope.AppendChild(identifier))
+
+
+def _clear_base_binding(stage, path: str) -> None:
+    """Drop a non-variant ``material:binding`` opinion from the root layer."""
+    spec = stage.GetRootLayer().GetPrimAtPath(path)
+    if spec is None:
+        return
+    relationship = spec.relationships.get("material:binding")
+    if relationship is not None:
+        spec.RemoveProperty(relationship)
 
 
 def _member_prim_paths(stage, object_map: dict | None, path_edits) -> dict[str, str]:

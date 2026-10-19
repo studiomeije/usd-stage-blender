@@ -170,6 +170,7 @@ def test_the_diagnostics_sidecar_records_what_was_authored(exported):
     assert payload["variant_sets"] == [
         {
             "name": "Seat",
+            "kind": "GEOMETRY",
             "default_variant": "Fabric",
             "variants": [
                 {"name": "Fabric", "collection": "Fabric", "objects": ["SeatFabric"]},
