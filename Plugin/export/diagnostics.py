@@ -234,6 +234,10 @@ class ExportDiagnostics:
             entry for entry in variant_sets if entry.get('name') not in known
         )
 
+    def set_asset_metadata(self, authored: dict):
+        """Record the asset metadata the export authored on the root prim."""
+        self.data['asset_metadata'] = authored
+
     def set_prim_renames(self, renames: list):
         """Record prim identifiers normalization had to rename.
 

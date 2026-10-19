@@ -44,6 +44,7 @@ UI paths below start from the **USD Stage** tab. Where a row says "see below", t
 | `filepath` | Export ▸ Output Path | both | The extension always follows `export_format`. A `//` or other relative path is refused until the `.blend` is saved. On the CLI, pass `-o/--output`. |
 | `export_format` | Export ▸ Format | both | Only `USDZ` packages the result and consults `usdzip_path`. |
 | `root_prim_name` | Advanced USD ▸ General ▸ Root Prim | both | A missing leading `/` is added. Empty means `Scene`. |
+| `root_prim_kind` | Advanced USD ▸ General ▸ Asset Kind | both | The USD model kind on the root prim. `None` authors no kind, asset info or bounds hint. See below. |
 | `export_animation` | Export ▸ Include ▸ Animation | both | Master switch for animation, including `author_animation_library`. |
 | `author_animation_library` | Export ▸ RCP Clip Library, shown only with Animation on | both | Needs `export_animation`. See below. |
 | `selected_objects_only` | Export ▸ Include ▸ Selection Only | both | Narrows validation and fails on an empty selection. See below. CLI flag: `--selected-only`. |
@@ -90,6 +91,8 @@ UI paths below start from the **USD Stage** tab. Where a row says "see below", t
 - A selected skinned mesh brings its deforming armature along, when `export_armatures` is on.
 - A bake re-applies your selection after baking, so the bake's own selection changes cannot widen the export.
 - A variant set the selection touches brings its other variants' objects along, so an authored variant cannot switch to a prim the export never wrote. A set the selection does not touch is left out of the export and is not authored.
+
+**`root_prim_kind` governs three pieces of metadata, not one.** With any kind but `None`, the export also writes `assetInfo` (the name and the file a consumer references) and an `extentsHint` (the asset's bounds, so a consumer can lay it out without loading its geometry). `None` leaves all three unwritten, for a pipeline that assigns model hierarchy itself. On a variant asset the hint describes the selection the file ships with, since every other selection has a different size.
 
 **A variant set varies shape or finish.** A shape set switches whole collections of objects; a finish set keeps them and rebinds their material, so one object can belong to both. Two sets varying the same property of one object are refused. See [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#shape-sets-and-finish-sets).
 

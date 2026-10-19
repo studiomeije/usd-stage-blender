@@ -15,6 +15,7 @@ from .realitykit_preflight import (
     validate_stage,
 )
 from .usd_scene import normalize_scene, _normalize_owned_double_sided_mesh_specs
+from . import asset_metadata
 from . import usd_hook
 from . import variant_authoring
 from . import variants
@@ -168,6 +169,18 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
             context,
             object_map,
             prim_path_edits,
+            diagnostics,
+        )
+
+        # After the variants: a variant-bearing asset has as many sizes as it
+        # has selections, and the hint describes the one it ships with.
+        _run_step(
+            diagnostics,
+            "author_asset_metadata",
+            asset_metadata.author_asset_metadata,
+            stage,
+            usd_path,
+            settings,
             diagnostics,
         )
 
