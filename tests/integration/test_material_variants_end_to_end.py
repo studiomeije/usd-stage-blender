@@ -92,6 +92,11 @@ for variant_name, mat in (("Oak", oak), ("Walnut", walnut)):
     variant.material = mat
 finish_set.default_variant = "Oak"
 
+# Walnut is offered on the square top only, so the finishes nest inside the
+# shape set rather than standing beside it.
+finish_set.parent_set = "Shape"
+finish_set.variants[1].applies_to = "Square"
+
 bpy.context.view_layer.layer_collection.children["Shape"].children["Square"].exclude = True
 bpy.ops.wm.save_as_mainfile(filepath=out, compress=True)
 print("SAVED")
@@ -156,13 +161,15 @@ def test_every_shape_and_finish_combination_composes(exported):
 
     seen = {
         (shape, finish): _state(exported["stage"], shape, finish)
-        for shape in ("Round", "Square")
-        for finish in ("Oak", "Walnut")
+        for shape, finish in (
+            ("Round", "Oak"),
+            ("Square", "Oak"),
+            ("Square", "Walnut"),
+        )
     }
 
     assert seen == {
         ("Round", "Oak"): ("TopRound", "OakMat"),
-        ("Round", "Walnut"): ("TopRound", "WalnutMat"),
         ("Square", "Oak"): ("TopSquare", "OakMat"),
         ("Square", "Walnut"): ("TopSquare", "WalnutMat"),
     }
@@ -210,3 +217,36 @@ def test_the_export_reports_both_sets(exported):
 
     assert kinds == {"Shape": "GEOMETRY", "Finish": "MATERIAL"}
     assert payload["errors"] == []
+
+
+def _finishes(stage_path: Path, shape: str) -> list[str]:
+    from pxr import Usd
+
+    stage = Usd.Stage.Open(str(stage_path))
+    root = stage.GetDefaultPrim()
+    root.GetVariantSet("Shape").SetVariantSelection(shape)
+    return sorted(root.GetVariantSet("Finish").GetVariantNames())
+
+
+def test_each_shape_offers_only_the_finishes_declared_for_it(exported):
+    pytest.importorskip("pxr")
+
+    assert _finishes(exported["stage"], "Round") == ["Oak"]
+    assert _finishes(exported["stage"], "Square") == ["Oak", "Walnut"]
+
+
+def test_the_nested_set_is_declared_inside_the_shape_variants(exported):
+    text = exported["stage"].read_text()
+    root_block = text.split('variantSet "Shape"')[0]
+
+    assert 'prepend variantSets = "Shape"' in root_block
+    assert 'variantSets = "Finish"' not in root_block, (
+        "Finish is declared beside Shape rather than inside it"
+    )
+
+
+def test_the_sidecar_records_which_set_it_nests_in(exported):
+    payload = json.loads(exported["diagnostics"].read_text())
+    finish = next(e for e in payload["variant_sets"] if e["name"] == "Finish")
+
+    assert finish["nested_in"] == "Shape"

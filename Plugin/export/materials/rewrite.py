@@ -21,8 +21,30 @@ from .helpers import _get_blender_data_name
 from .mapping import require_realitykit_mapping_contract
 
 
-def rewrite_materials(stage, settings, context, diagnostics=None) -> None:
-    """Rewrite materials to MaterialX graphs (Pass 2)."""
+def _materials_to_rewrite(stage, extra_material_prims, diagnostics):
+    """Every Material this export must convert, each once.
+
+    What meshes bind, plus any the caller names outright.
+    """
+    materials = {
+        str(prim.GetPath()): prim
+        for prim in _bound_material_prims(stage, diagnostics)
+    }
+    for prim in extra_material_prims or ():
+        if prim and prim.IsValid():
+            materials.setdefault(str(prim.GetPath()), prim)
+    return list(materials.values())
+
+
+def rewrite_materials(
+    stage, settings, context, diagnostics=None, extra_material_prims=()
+) -> None:
+    """Rewrite materials to MaterialX graphs (Pass 2).
+
+    ``extra_material_prims`` are converted whether or not anything binds them.
+    A variant finish is bound later, inside the variant that offers it, so
+    without this the material it names would never be converted.
+    """
     manifest = load_manifest()
     builder = MaterialXGraphBuilder(
         manifest,
@@ -51,7 +73,9 @@ def rewrite_materials(stage, settings, context, diagnostics=None) -> None:
 
     failures = []
     rewrite_targets = []
-    for material_prim in _bound_material_prims(stage, diagnostics):
+    for material_prim in _materials_to_rewrite(
+        stage, extra_material_prims, diagnostics
+    ):
         material_name = material_prim.GetName()
         blender_name = _get_blender_data_name(material_prim) or material_name
         material_key = str(material_prim.GetPath())

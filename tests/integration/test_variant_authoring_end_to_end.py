@@ -27,7 +27,7 @@ repo, out = sys.argv[-2], sys.argv[-1]
 sys.path.insert(0, repo)
 from pxr import Usd
 from Plugin.export import usd_hook
-from Plugin.export.variant_authoring import author_variant_sets
+from Plugin.export.variant_authoring import author_variants
 from Plugin.export.variants import (
     prepare_variant_visibility, resolve_variant_plan, restore_variant_visibility,
 )
@@ -88,7 +88,7 @@ object_map = usd_hook.consume_captured_object_map()
 print("OBJECT_MAP", object_map)
 
 stage = Usd.Stage.Open(out)
-authored = author_variant_sets(stage, plan, object_map, (), settings)
+authored = author_variants(stage, plan, object_map, (), settings)
 stage.GetRootLayer().Save()
 print("AUTHORED", authored)
 '''

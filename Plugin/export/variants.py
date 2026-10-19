@@ -108,6 +108,12 @@ class VariantMember:
     #: Material variants only: the Blender material this variant binds.
     material_name: str = ""
     has_material: bool = False
+    #: Nested finishes only: the parent variants that offer this finish.
+    #: Empty means every one of them.
+    applies_to: tuple[str, ...] = ()
+
+    def applies_to_parent(self, parent_variant: str) -> bool:
+        return not self.applies_to or parent_variant in self.applies_to
 
 
 @dataclass(frozen=True)
@@ -124,6 +130,20 @@ class VariantSetPlan:
     target_object_names: tuple[str, ...] = ()
     target_identities: frozenset[int] = frozenset()
     target_objects: tuple = ()
+    #: Material sets only: the shape set this one is authored inside, so a
+    #: finish can be offered on some shapes and not others. Empty means the
+    #: set stands on its own.
+    parent_set: str = ""
+
+    def default_for(self, parent_variant: str, offered) -> str:
+        """The selection a nested set ships with under one parent variant.
+
+        The declared default when that parent offers it, and the first finish
+        it does offer otherwise - a selection naming a variant that does not
+        exist there would not compose.
+        """
+        names = [variant.name for variant in offered]
+        return self.default_variant if self.default_variant in names else names[0]
 
     @property
     def varied_property(self) -> str:
@@ -173,6 +193,12 @@ class VariantPlan:
             for variant in variant_set.variants:
                 identities |= variant.identities
         return frozenset(identities)
+
+    def set_named(self, name: str):
+        """The declared set with this name, or None."""
+        if not name:
+            return None
+        return next((s for s in self.sets if s.name == name), None)
 
     def member_objects(self) -> list:
         """Every object a set acts on, each once, in declared order.
@@ -272,6 +298,7 @@ def resolve_variant_plan(context, settings) -> VariantPlan:
                 ),
                 target_identities=frozenset(rna_identity(obj) for obj in target_objects),
                 target_objects=tuple(target_objects),
+                parent_set=str(getattr(entry, "parent_set", "") or "").strip(),
             )
         )
     return VariantPlan(sets=tuple(sets))
@@ -290,6 +317,11 @@ def _resolve_variant(declared_variant, settings, kind: str = GEOMETRY) -> Varian
             identities=frozenset(),
             material_name=str(getattr(material, "name", "") or ""),
             has_material=material is not None,
+            applies_to=tuple(
+                part.strip()
+                for part in str(getattr(declared_variant, "applies_to", "") or "").split(",")
+                if part.strip()
+            ),
         )
 
     collection = getattr(declared_variant, "collection", None)
@@ -362,6 +394,7 @@ def validate_variant_plan(plan: VariantPlan) -> list[VariantIssue]:
         _validate_default_selection(variant_set, issues)
         if variant_set.kind == MATERIAL:
             _validate_material_set(variant_set, issues)
+            _validate_nesting(variant_set, plan, issues)
         else:
             _validate_membership(variant_set, claimed, issues)
         _validate_property_ownership(variant_set, claimed_properties, issues)
@@ -650,6 +683,114 @@ def _validate_material_set(
             seen_materials[variant.material_name] = variant.name
 
 
+def _validate_nesting(
+    variant_set: VariantSetPlan,
+    plan: VariantPlan,
+    issues: list[VariantIssue],
+) -> None:
+    """A nested finish set has to name a shape set, and real variants of it."""
+    if not variant_set.parent_set:
+        return
+
+    parent = plan.set_named(variant_set.parent_set)
+    if parent is None:
+        issues.append(
+            VariantIssue(
+                severity=ERROR,
+                code="VARIANT_PARENT_UNKNOWN",
+                message=(
+                    f"Variant set {variant_set.name!r} nests inside "
+                    f"{variant_set.parent_set!r}, which is not a declared set."
+                ),
+                variant_set=variant_set.name,
+            )
+        )
+        return
+
+    if parent.name == variant_set.name:
+        issues.append(
+            VariantIssue(
+                severity=ERROR,
+                code="VARIANT_PARENT_SELF",
+                message=f"Variant set {variant_set.name!r} nests inside itself.",
+                variant_set=variant_set.name,
+            )
+        )
+        return
+
+    if parent.kind == MATERIAL:
+        issues.append(
+            VariantIssue(
+                severity=ERROR,
+                code="VARIANT_PARENT_NOT_A_SHAPE",
+                message=(
+                    f"Variant set {variant_set.name!r} nests inside "
+                    f"{parent.name!r}, which is a finish set. A finish nests "
+                    "inside a shape, so that different shapes can offer "
+                    "different finishes."
+                ),
+                variant_set=variant_set.name,
+            )
+        )
+        return
+
+    if parent.parent_set:
+        issues.append(
+            VariantIssue(
+                severity=ERROR,
+                code="VARIANT_NESTING_TOO_DEEP",
+                message=(
+                    f"Variant set {parent.name!r} is itself nested, so "
+                    f"{variant_set.name!r} cannot nest inside it. One level "
+                    "is the limit."
+                ),
+                variant_set=variant_set.name,
+            )
+        )
+        return
+
+    parent_names = {variant.name for variant in parent.variants}
+    for variant in variant_set.variants:
+        unknown = sorted(set(variant.applies_to) - parent_names)
+        if unknown:
+            issues.append(
+                VariantIssue(
+                    severity=ERROR,
+                    code="VARIANT_APPLIES_TO_UNKNOWN",
+                    message=(
+                        f"Variant {variant.name!r} of set "
+                        f"{variant_set.name!r} applies to "
+                        f"{', '.join(repr(name) for name in unknown)}, which "
+                        f"{'is' if len(unknown) == 1 else 'are'} not "
+                        f"{parent.name!r} variant"
+                        f"{'' if len(unknown) == 1 else 's'}."
+                    ),
+                    variant_set=variant_set.name,
+                    variant=variant.name,
+                )
+            )
+
+    for parent_variant in parent.variants:
+        offered = [
+            variant for variant in variant_set.variants
+            if variant.applies_to_parent(parent_variant.name)
+        ]
+        if not offered:
+            issues.append(
+                VariantIssue(
+                    severity=ERROR,
+                    code="VARIANT_PARENT_HAS_NO_FINISH",
+                    message=(
+                        f"No variant of {variant_set.name!r} applies to "
+                        f"{parent_variant.name!r}, so that shape would ship "
+                        "with no finish to choose."
+                    ),
+                    variant_set=variant_set.name,
+                    details={"parent_variant": parent_variant.name},
+                )
+            )
+
+
 def _validate_property_ownership(
     variant_set: VariantSetPlan,
     claimed_properties: dict[tuple[int, str], str],
@@ -663,6 +804,10 @@ def _validate_property_ownership(
     one object - which is the whole point of offering shapes and finishes
     independently.
     """
+    if variant_set.parent_set:
+        # Scoped inside one shape variant at a time, so it cannot collide with
+        # a set authored on the root prim.
+        return
     varied = variant_set.varied_property
     reported: set[str] = set()
     for identity in sorted(variant_set.claimed_identities):

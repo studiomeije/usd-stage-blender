@@ -42,6 +42,13 @@ class USDStageVariant(PropertyGroup):
         name="Material",
         description="The material this variant binds to the set's targets",
     )
+    applies_to: StringProperty(
+        name="Only For",
+        description=(
+            "Comma-separated shape variants that offer this finish. Leave "
+            "empty to offer it on every shape"
+        ),
+    )
 
 
 class USDStageVariantSet(PropertyGroup):
@@ -73,6 +80,14 @@ class USDStageVariantSet(PropertyGroup):
         type=bpy.types.Collection,
         name="Applies To",
         description="The objects a finish set rebinds",
+    )
+    parent_set: StringProperty(
+        name="Nest Inside",
+        description=(
+            "A shape set to author this finish set inside, so each shape can "
+            "offer different finishes. Leave empty to offer every finish on "
+            "every shape"
+        ),
     )
     variants: CollectionProperty(type=USDStageVariant)
     variants_index: IntProperty(default=0)
@@ -199,7 +214,13 @@ class USDSTAGE_PT_export_variants(Panel):
         box.prop(variant_set, "kind")
         if variant_set.kind == 'MATERIAL':
             box.prop(variant_set, "target_collection")
+            box.prop_search(
+                variant_set, "parent_set", scene, "usd_stage_variant_sets",
+                text="Nest Inside",
+            )
             box.prop(variant, "material")
+            if variant_set.parent_set:
+                box.prop(variant, "applies_to")
         else:
             box.prop(variant, "collection")
 

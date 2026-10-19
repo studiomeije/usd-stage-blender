@@ -17,7 +17,8 @@ from Plugin.export.realitykit_preflight import (  # noqa: E402
 from Plugin.export.usd_scene import normalize_scene  # noqa: E402
 from Plugin.export.variant_authoring import (  # noqa: E402
     VariantAuthoringError,
-    author_variant_sets,
+    author_variants,
+    reserve_variant_materials,
 )
 from Plugin.export.variants import resolve_variant_plan  # noqa: E402
 
@@ -89,6 +90,16 @@ def _active_children(stage):
     return sorted(child.GetName() for child in stage.GetDefaultPrim().GetChildren())
 
 
+
+def _reserve_and_author(stage, plan, object_map, path_edits=(), settings=None,
+                        diagnostics=None):
+    """What the pipeline does: reserve the finishes, then author everything."""
+    reserve_variant_materials(stage, plan)
+    return author_variants(
+        stage, plan, object_map, path_edits, settings or _settings(), diagnostics
+    )
+
+
 # --------------------------------------------------------------------------
 # Authoring
 # --------------------------------------------------------------------------
@@ -96,7 +107,7 @@ def _active_children(stage):
 def test_each_selection_activates_only_its_own_members():
     stage, plan, object_map = _seat_fixture()
 
-    assert author_variant_sets(stage, plan, object_map, (), _settings()) == ("Seat",)
+    assert author_variants(stage, plan, object_map, (), _settings()) == ("Seat",)
 
     variant_set = stage.GetDefaultPrim().GetVariantSet("Seat")
     assert sorted(variant_set.GetVariantNames()) == ["Fabric", "Leather"]
@@ -117,7 +128,7 @@ def test_the_declared_default_is_the_shipped_selection():
     )
     stage = _stage_with("SeatFabric", "SeatLeather")
 
-    author_variant_sets(
+    author_variants(
         stage,
         plan,
         {"/Root/SeatFabric": "SeatFabric", "/Root/SeatLeather": "SeatLeather"},
@@ -133,7 +144,7 @@ def test_active_is_authored_only_inside_the_variants():
     """The whole design rests on nothing stronger opposing the variants."""
     stage, plan, object_map = _seat_fixture()
 
-    author_variant_sets(stage, plan, object_map, (), _settings())
+    author_variants(stage, plan, object_map, (), _settings())
 
     layer = stage.GetRootLayer()
     for name in ("SeatFabric", "SeatLeather"):
@@ -148,7 +159,7 @@ def test_active_is_authored_only_inside_the_variants():
 def test_the_authored_stage_passes_the_shadowing_check():
     """A false positive here would refuse every variant export we write."""
     stage, plan, object_map = _seat_fixture()
-    author_variant_sets(stage, plan, object_map, (), _settings())
+    author_variants(stage, plan, object_map, (), _settings())
 
     report = RealityKitPreflightReport()
     _check_variant_activation_is_unopposed(stage, report)
@@ -169,7 +180,7 @@ def test_two_sets_are_authored_on_the_same_root_prim():
     object_map = {f"/Root/{name}": name for name in
                   ("SeatFabric", "SeatLeather", "LegOak", "LegSteel")}
 
-    authored = author_variant_sets(stage, plan, object_map, (), _settings())
+    authored = author_variants(stage, plan, object_map, (), _settings())
 
     assert sorted(authored) == ["Legs", "Seat"]
     root = stage.GetDefaultPrim()
@@ -197,7 +208,7 @@ def test_a_member_renamed_by_normalization_still_resolves():
     leather = _collection("Leather", objects=[_object("Chaise_Café")])
     plan = _plan_for(_variant_set("Seat", [("Fabric", fabric), ("Leather", leather)]))
 
-    author_variant_sets(stage, plan, object_map, path_edits, _settings())
+    author_variants(stage, plan, object_map, path_edits, _settings())
 
     variant_set = stage.GetDefaultPrim().GetVariantSet("Seat")
     variant_set.SetVariantSelection("Leather")
@@ -216,14 +227,14 @@ def test_a_stage_without_a_default_prim_is_refused():
     plan = _plan_for(_variant_set("Seat", [("Fabric", fabric), ("Leather", leather)]))
 
     with pytest.raises(VariantAuthoringError, match="no default prim"):
-        author_variant_sets(stage, plan, {}, (), _settings())
+        author_variants(stage, plan, {}, (), _settings())
 
 
 def test_an_export_without_a_prim_map_is_refused_rather_than_guessed():
     stage, plan, _object_map = _seat_fixture()
 
     with pytest.raises(VariantAuthoringError, match="no prim map"):
-        author_variant_sets(stage, plan, None, (), _settings())
+        author_variants(stage, plan, None, (), _settings())
 
 
 def test_one_empty_variant_beside_a_populated_one_is_refused():
@@ -231,14 +242,14 @@ def test_one_empty_variant_beside_a_populated_one_is_refused():
     object_map.pop("/Root/SeatLeather")
 
     with pytest.raises(VariantAuthoringError, match="activates nothing"):
-        author_variant_sets(stage, plan, object_map, (), _settings())
+        author_variants(stage, plan, object_map, (), _settings())
 
 
 def test_a_wholly_missing_set_is_refused_in_a_full_export():
     stage, plan, _object_map = _seat_fixture()
 
     with pytest.raises(VariantAuthoringError, match="no members"):
-        author_variant_sets(stage, plan, {}, (), _settings())
+        author_variants(stage, plan, {}, (), _settings())
 
 
 def test_a_wholly_missing_set_is_skipped_in_a_selected_only_export():
@@ -246,7 +257,7 @@ def test_a_wholly_missing_set_is_skipped_in_a_selected_only_export():
     stage, plan, _object_map = _seat_fixture()
     diagnostics = ExportDiagnostics()
 
-    authored = author_variant_sets(
+    authored = author_variants(
         stage, plan, {}, (), _settings(selected_objects_only=True), diagnostics
     )
 
@@ -269,7 +280,7 @@ def test_a_member_parented_under_another_variants_member_is_refused():
     object_map = {"/Root/Seat": "Seat", "/Root/Seat/Cushion": "Cushion"}
 
     with pytest.raises(VariantAuthoringError, match="is a parent of"):
-        author_variant_sets(stage, plan, object_map, (), _settings())
+        author_variants(stage, plan, object_map, (), _settings())
 
 
 def test_a_member_that_produced_no_prim_is_warned_about():
@@ -281,7 +292,7 @@ def test_a_member_that_produced_no_prim_is_warned_about():
     stage = _stage_with("SeatFabric", "SeatLeather")
     diagnostics = ExportDiagnostics()
 
-    author_variant_sets(
+    author_variants(
         stage,
         plan,
         {"/Root/SeatFabric": "SeatFabric", "/Root/SeatLeather": "SeatLeather"},
@@ -300,7 +311,7 @@ def test_a_member_that_produced_no_prim_is_warned_about():
 
 def test_an_active_opinion_outside_the_variants_is_refused():
     stage, plan, object_map = _seat_fixture()
-    author_variant_sets(stage, plan, object_map, (), _settings())
+    author_variants(stage, plan, object_map, (), _settings())
     # Exactly the trap: a local-layer opinion on the field the variants vary.
     stage.GetPrimAtPath("/Root/SeatLeather").SetActive(True)
 
@@ -330,7 +341,7 @@ def test_an_animation_inside_a_deactivated_member_is_warned_about():
     stage.DefinePrim("/Root/SeatLeather/Anim", "SkelAnimation")
     diagnostics = ExportDiagnostics()
 
-    author_variant_sets(
+    author_variants(
         stage,
         plan,
         object_map,
@@ -349,7 +360,7 @@ def test_no_animation_warning_without_the_clip_library():
     stage.DefinePrim("/Root/SeatLeather/Anim", "SkelAnimation")
     diagnostics = ExportDiagnostics()
 
-    author_variant_sets(
+    author_variants(
         stage,
         plan,
         object_map,
@@ -365,7 +376,6 @@ def test_no_animation_warning_without_the_clip_library():
 # Material variant sets
 # --------------------------------------------------------------------------
 
-from Plugin.export.variant_authoring import author_material_variants  # noqa: E402
 
 
 def _material_variant_set(name, variants, target, default_variant=None):
@@ -413,8 +423,7 @@ def test_each_finish_binds_its_own_material():
     stage = _bound_stage("OakMat", "WalnutMat")
     plan = _finish_plan()
 
-    assert author_material_variants(
-        stage, plan, {"/Root/TableTop": "TableTop"}, (), _settings()
+    assert _reserve_and_author(stage, plan, {"/Root/TableTop": "TableTop"}, (), _settings()
     ) == ("Finish",)
 
     variant_set = stage.GetDefaultPrim().GetVariantSet("Finish")
@@ -432,8 +441,7 @@ def test_the_base_binding_is_removed_so_the_variants_are_not_shadowed():
         "/Root/TableTop"
     ).relationships.get("material:binding") is not None
 
-    author_material_variants(
-        stage, _finish_plan(), {"/Root/TableTop": "TableTop"}, (), _settings()
+    _reserve_and_author(stage, _finish_plan(), {"/Root/TableTop": "TableTop"}, (), _settings()
     )
 
     assert stage.GetRootLayer().GetPrimAtPath(
@@ -443,8 +451,7 @@ def test_the_base_binding_is_removed_so_the_variants_are_not_shadowed():
 
 def test_an_authored_material_set_passes_the_shadowing_check():
     stage = _bound_stage("OakMat", "WalnutMat")
-    author_material_variants(
-        stage, _finish_plan(), {"/Root/TableTop": "TableTop"}, (), _settings()
+    _reserve_and_author(stage, _finish_plan(), {"/Root/TableTop": "TableTop"}, (), _settings()
     )
 
     report = RealityKitPreflightReport()
@@ -455,8 +462,7 @@ def test_an_authored_material_set_passes_the_shadowing_check():
 
 def test_a_binding_left_outside_the_variants_is_refused():
     stage = _bound_stage("OakMat", "WalnutMat")
-    author_material_variants(
-        stage, _finish_plan(), {"/Root/TableTop": "TableTop"}, (), _settings()
+    _reserve_and_author(stage, _finish_plan(), {"/Root/TableTop": "TableTop"}, (), _settings()
     )
     # Put the shadowing opinion back, as an earlier pass might.
     UsdShade.MaterialBindingAPI(stage.GetPrimAtPath("/Root/TableTop")).Bind(
@@ -473,8 +479,7 @@ def test_a_binding_left_outside_the_variants_is_refused():
 def test_a_finish_no_object_wears_still_gets_a_material_prim():
     """Blender exports no prim for an unused material; this is that case."""
     stage = _bound_stage("OakMat")           # WalnutMat never exported
-    author_material_variants(
-        stage, _finish_plan(), {"/Root/TableTop": "TableTop"}, (), _settings()
+    _reserve_and_author(stage, _finish_plan(), {"/Root/TableTop": "TableTop"}, (), _settings()
     )
 
     assert stage.GetPrimAtPath("/Root/_materials/WalnutMat")
@@ -500,8 +505,8 @@ def test_a_shape_set_and_a_finish_set_compose_together():
         "/Root/TableTopSquare": "TableTopSquare",
     }
 
-    author_material_variants(stage, plan, object_map, (), _settings())
-    author_variant_sets(stage, plan, object_map, (), _settings())
+    _reserve_and_author(stage, plan, object_map, (), _settings())
+    author_variants(stage, plan, object_map, (), _settings())
 
     root = stage.GetDefaultPrim()
     shape, finish = root.GetVariantSet("Shape"), root.GetVariantSet("Finish")
@@ -526,16 +531,119 @@ def test_a_shape_set_and_a_finish_set_compose_together():
 def test_material_variants_without_a_prim_map_are_refused():
     stage = _bound_stage("OakMat", "WalnutMat")
     with pytest.raises(VariantAuthoringError, match="no prim map"):
-        author_material_variants(stage, _finish_plan(), None, (), _settings())
+        _reserve_and_author(stage, _finish_plan(), None, (), _settings())
 
 
 def test_a_finish_set_whose_targets_are_absent_is_skipped_in_a_selected_only_export():
     stage = _bound_stage("OakMat", "WalnutMat")
     diagnostics = ExportDiagnostics()
 
-    authored = author_material_variants(
-        stage, _finish_plan(), {}, (), _settings(selected_objects_only=True), diagnostics
+    authored = _reserve_and_author(stage, _finish_plan(), {}, (), _settings(selected_objects_only=True), diagnostics
     )
 
     assert authored == ()
     assert len(diagnostics.to_dict()["warnings"]) == 1
+
+
+# --------------------------------------------------------------------------
+# Nested finish sets — a finish offered on some shapes and not others
+# --------------------------------------------------------------------------
+
+def _nested_fixture():
+    """Round offers Oak only; Square offers Oak and Walnut."""
+    stage = _bound_stage("OakMat", "WalnutMat")
+    UsdGeom.Mesh.Define(stage, "/Root/TableTopSquare")
+    UsdShade.MaterialBindingAPI.Apply(stage.GetPrimAtPath("/Root/TableTopSquare"))
+    UsdShade.MaterialBindingAPI(stage.GetPrimAtPath("/Root/TableTopSquare")).Bind(
+        UsdShade.Material.Get(stage, "/Root/_materials/OakMat")
+    )
+
+    round_c = _collection("Round", objects=[_object("TableTop")])
+    square_c = _collection("Square", objects=[_object("TableTopSquare")])
+    tops = _collection("Tops", objects=[_object("TableTop"), _object("TableTopSquare")])
+
+    finish = _material_variant_set(
+        "Finish", [("Oak", "OakMat"), ("Walnut", "WalnutMat")], tops
+    )
+    finish.parent_set = "Shape"
+    finish.variants[1].applies_to = "Square"   # walnut only on the square top
+
+    plan = _plan_for(
+        _variant_set("Shape", [("Round", round_c), ("Square", square_c)]),
+        finish,
+    )
+    object_map = {
+        "/Root/TableTop": "TableTop",
+        "/Root/TableTopSquare": "TableTopSquare",
+    }
+    return stage, plan, object_map
+
+
+def _finish_names(stage, shape_name):
+    root = stage.GetDefaultPrim()
+    root.GetVariantSet("Shape").SetVariantSelection(shape_name)
+    return sorted(root.GetVariantSet("Finish").GetVariantNames())
+
+
+def test_each_shape_offers_only_its_own_finishes():
+    stage, plan, object_map = _nested_fixture()
+
+    _reserve_and_author(stage, plan, object_map)
+
+    assert _finish_names(stage, "Round") == ["Oak"]
+    assert _finish_names(stage, "Square") == ["Oak", "Walnut"]
+
+
+def test_a_nested_finish_still_rebinds_the_shape_that_is_present():
+    stage, plan, object_map = _nested_fixture()
+
+    _reserve_and_author(stage, plan, object_map)
+
+    root = stage.GetDefaultPrim()
+    root.GetVariantSet("Shape").SetVariantSelection("Square")
+    root.GetVariantSet("Finish").SetVariantSelection("Walnut")
+    assert _binding(stage, "/Root/TableTopSquare") == "WalnutMat"
+
+    root.GetVariantSet("Finish").SetVariantSelection("Oak")
+    assert _binding(stage, "/Root/TableTopSquare") == "OakMat"
+
+
+def test_a_shape_that_offers_one_finish_ships_with_it():
+    stage, plan, object_map = _nested_fixture()
+
+    _reserve_and_author(stage, plan, object_map)
+
+    root = stage.GetDefaultPrim()
+    root.GetVariantSet("Shape").SetVariantSelection("Round")
+    assert root.GetVariantSet("Finish").GetVariantSelection() == "Oak"
+    assert _binding(stage, "/Root/TableTop") == "OakMat"
+
+
+def test_a_nested_set_leaves_no_binding_outside_its_variants():
+    stage, plan, object_map = _nested_fixture()
+
+    _reserve_and_author(stage, plan, object_map)
+
+    for path in ("/Root/TableTop", "/Root/TableTopSquare"):
+        spec = stage.GetRootLayer().GetPrimAtPath(path)
+        assert spec.relationships.get("material:binding") is None, path
+
+
+def test_a_nested_set_is_declared_inside_the_shape_variants():
+    """What makes it nested is where it is declared, not what composes.
+
+    A nested Finish still shows up on the composed root prim - scoped by the
+    shape selected - but the root prim *spec* declares only Shape, and each
+    Shape variant declares its own Finish.
+    """
+    stage, plan, object_map = _nested_fixture()
+
+    _reserve_and_author(stage, plan, object_map)
+
+    root_spec = stage.GetRootLayer().GetPrimAtPath("/Root")
+    assert list(root_spec.variantSets.keys()) == ["Shape"]
+
+    shape = root_spec.variantSets["Shape"]
+    for name in ("Round", "Square"):
+        nested = shape.variants[name].primSpec.variantSets
+        assert list(nested.keys()) == ["Finish"], name
