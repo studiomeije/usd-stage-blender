@@ -150,8 +150,21 @@ class USDSTAGE_OT_variant_set_remove(Operator):
     def execute(self, context):
         sets = _variant_sets(context)
         index = context.scene.usd_stage_variant_sets_index
+        removed = sets[index].name
         sets.remove(index)
+        # A set that nested inside this one would otherwise keep pointing at a
+        # name that no longer exists, and only find out at export.
+        orphaned = 0
+        for variant_set in sets:
+            if variant_set.parent_set == removed:
+                variant_set.parent_set = ""
+                orphaned += 1
         context.scene.usd_stage_variant_sets_index = max(0, min(index, len(sets) - 1))
+        if orphaned:
+            self.report(
+                {'INFO'},
+                f"{orphaned} set(s) no longer nest inside '{removed}'",
+            )
         return {'FINISHED'}
 
 

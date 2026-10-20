@@ -24,6 +24,72 @@ from bpy.types import Panel, PropertyGroup, UIList
 from .panel import _is_job_running
 
 
+def _nesting_problem(scene, variant_set) -> str:
+    """Why this set's Nest Inside is unusable, or an empty string."""
+    parent = next(
+        (other for other in scene.usd_stage_variant_sets
+         if other.name == variant_set.parent_set),
+        None,
+    )
+    if parent is None:
+        return f"No set named '{variant_set.parent_set}'"
+    if parent == variant_set:
+        return "A set cannot nest inside itself"
+    if parent.kind == 'MATERIAL':
+        return "Finishes nest inside a shape set, not another finish"
+    if parent.parent_set:
+        return f"'{parent.name}' is itself nested"
+    return ""
+
+
+def _unknown_shapes(scene, variant_set, variant) -> list:
+    """Names in Only For that are not variants of the parent set."""
+    parent = next(
+        (other for other in scene.usd_stage_variant_sets
+         if other.name == variant_set.parent_set),
+        None,
+    )
+    if parent is None:
+        return []
+    known = {child.name for child in parent.variants}
+    return [
+        name for name in (part.strip() for part in variant.applies_to.split(","))
+        if name and name not in known
+    ]
+
+
+def _ships_as(scene, variant_set) -> list:
+    """What each shape actually ships with, which nesting can change.
+
+    A nested finish the chosen default does not offer falls back to the first
+    one that shape does offer, so the single default can be misleading.
+    """
+    if not variant_set.parent_set:
+        return [f"Ships as: {variant_set.default_variant}"]
+    parent = next(
+        (other for other in scene.usd_stage_variant_sets
+         if other.name == variant_set.parent_set),
+        None,
+    )
+    if parent is None:
+        return [f"Ships as: {variant_set.default_variant}"]
+
+    lines = []
+    for shape in parent.variants:
+        offered = [
+            variant.name for variant in variant_set.variants
+            if not variant.applies_to.strip()
+            or shape.name in [p.strip() for p in variant.applies_to.split(",")]
+        ]
+        if not offered:
+            lines.append(f"{shape.name}: nothing offered")
+        elif variant_set.default_variant in offered:
+            lines.append(f"{shape.name}: {variant_set.default_variant}")
+        else:
+            lines.append(f"{shape.name}: {offered[0]}")
+    return lines
+
+
 class USDStageVariant(PropertyGroup):
     """One variant: a name, and the collection whose objects it owns."""
 
@@ -218,9 +284,18 @@ class USDSTAGE_PT_export_variants(Panel):
                 variant_set, "parent_set", scene, "usd_stage_variant_sets",
                 text="Nest Inside",
             )
+            if variant_set.parent_set:
+                problem = _nesting_problem(scene, variant_set)
+                if problem:
+                    box.label(text=problem, icon='ERROR')
             box.prop(variant, "material")
             if variant_set.parent_set:
                 box.prop(variant, "applies_to")
+                unknown = _unknown_shapes(scene, variant_set, variant)
+                if unknown:
+                    box.label(
+                        text=f"Not a shape: {', '.join(unknown)}", icon='ERROR'
+                    )
         else:
             box.prop(variant, "collection")
 
@@ -228,10 +303,11 @@ class USDSTAGE_PT_export_variants(Panel):
             preview = column.operator("usdstage.variant_preview", icon='HIDE_OFF')
             preview.variant = variant.name
 
-        if variant_set.default_variant:
-            column.label(text=f"Ships as: {variant_set.default_variant}")
-        else:
+        if not variant_set.default_variant:
             column.label(text="No default selection chosen", icon='ERROR')
+        else:
+            for line in _ships_as(scene, variant_set):
+                column.label(text=line)
 
 
 _CLASSES = (

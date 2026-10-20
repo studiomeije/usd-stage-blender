@@ -717,11 +717,12 @@ def _validate_property_ownership(
     set vary different properties, so a shape set and a finish set may act on
     one object - which is the whole point of offering shapes and finishes
     independently.
+
+    Nesting does not exempt a set. A nested finish never contests its own
+    parent, because the parent varies ``active`` and it varies the binding,
+    but two finish sets still contest each other whether either is nested:
+    both would author the binding and whichever composed second would win.
     """
-    if variant_set.parent_set:
-        # Scoped inside one shape variant at a time, so it cannot collide with
-        # a set authored on the root prim.
-        return
     varied = variant_set.varied_property
     reported: set[str] = set()
     for identity in sorted(variant_set.claimed_identities):
