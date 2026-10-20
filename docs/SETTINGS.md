@@ -100,7 +100,7 @@ UI paths below start from the **USD Stage** tab. Where a row says "see below", t
 
 **`root_prim_kind` governs three pieces of metadata, not one.** With any kind but `None`, the export also writes `assetInfo` (the name and the file a consumer references) and an `extentsHint` (the asset's bounds, so a consumer can lay it out without loading its geometry). `None` leaves all three unwritten, for a pipeline that assigns model hierarchy itself. On a variant asset the hint describes the selection the file ships with, since every other selection has a different size.
 
-**A finish set can nest inside a shape set.** Set its Nest Inside to a shape set and each finish's Only For to the shapes that offer it, and the finishes are authored inside each shape variant - so a finish can be offered on one shape and not another. Every shape must offer at least one. See [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#offering-a-finish-on-some-shapes-only).
+**A finish set can nest inside a shape set.** Set its Nest Inside to a shape set and use each finish's Offered On toggles to pick the shapes that offer it, and the finishes are authored inside each shape variant - so a finish can be offered on one shape and not another. Every shape must offer at least one. See [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#offering-a-finish-on-some-shapes-only).
 
 **A variant set varies shape or finish.** A shape set switches whole collections of objects; a finish set keeps them and rebinds their material, so one object can belong to both. Two sets varying the same property of one object are refused. See [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#shape-sets-and-finish-sets).
 

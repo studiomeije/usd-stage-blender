@@ -42,20 +42,48 @@ def _nesting_problem(scene, variant_set) -> str:
     return ""
 
 
-def _unknown_shapes(scene, variant_set, variant) -> list:
-    """Names in Only For that are not variants of the parent set."""
+def _draw_offered_on(layout, scene, variant_set, variant) -> None:
+    """One toggle per shape, so the finish's shapes are picked, not typed.
+
+    Stored as the same comma-separated list the export reads; empty still
+    means every shape, so a shape added later is offered rather than quietly
+    left out.
+    """
     parent = next(
         (other for other in scene.usd_stage_variant_sets
          if other.name == variant_set.parent_set),
         None,
     )
-    if parent is None:
-        return []
-    known = {child.name for child in parent.variants}
-    return [
-        name for name in (part.strip() for part in variant.applies_to.split(","))
-        if name and name not in known
-    ]
+    if parent is None or not parent.variants:
+        return
+
+    chosen = [name.strip() for name in variant.applies_to.split(",") if name.strip()]
+
+    # Split by hand rather than through use_property_split, which only labels
+    # a property row and these are operator buttons.
+    row = layout.row()
+    row.use_property_split = False
+    split = row.split(factor=0.4)
+    label = split.row()
+    label.alignment = 'RIGHT'
+    label.label(text="Offered On")
+    toggles = split.row(align=True)
+    for shape in parent.variants:
+        offered = not chosen or shape.name in chosen
+        toggle = toggles.operator(
+            "usdstage.variant_toggle_shape",
+            text=shape.name,
+            depress=offered,
+        )
+        toggle.shape = shape.name
+
+    # A name left behind by a renamed shape still has to be visible.
+    known = {shape.name for shape in parent.variants}
+    stale = [name for name in chosen if name not in known]
+    if stale:
+        warning = layout.row()
+        warning.use_property_split = False
+        warning.label(text=f"No longer a shape: {', '.join(stale)}", icon='ERROR')
 
 
 def _ships_as(scene, variant_set) -> list:
@@ -109,10 +137,10 @@ class USDStageVariant(PropertyGroup):
         description="The material this variant binds to the set's targets",
     )
     applies_to: StringProperty(
-        name="Only For",
+        name="Offered On",
         description=(
-            "Comma-separated shape variants that offer this finish. Leave "
-            "empty to offer it on every shape"
+            "The shapes that offer this finish, set with the Offered On "
+            "toggles. Empty means every shape"
         ),
     )
 
@@ -284,18 +312,15 @@ class USDSTAGE_PT_export_variants(Panel):
                 variant_set, "parent_set", scene, "usd_stage_variant_sets",
                 text="Nest Inside",
             )
-            if variant_set.parent_set:
-                problem = _nesting_problem(scene, variant_set)
-                if problem:
-                    box.label(text=problem, icon='ERROR')
+            problem = (
+                _nesting_problem(scene, variant_set)
+                if variant_set.parent_set else ""
+            )
+            if problem:
+                box.label(text=problem, icon='ERROR')
             box.prop(variant, "material")
-            if variant_set.parent_set:
-                box.prop(variant, "applies_to")
-                unknown = _unknown_shapes(scene, variant_set, variant)
-                if unknown:
-                    box.label(
-                        text=f"Not a shape: {', '.join(unknown)}", icon='ERROR'
-                    )
+            if variant_set.parent_set and not problem:
+                _draw_offered_on(box, scene, variant_set, variant)
         else:
             box.prop(variant, "collection")
 

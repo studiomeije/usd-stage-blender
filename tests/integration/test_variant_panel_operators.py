@@ -100,6 +100,31 @@ result["default_after_first_add"] = empty_set.default_variant
 bpy.ops.usdstage.variant_set_default(variant="Variant_2", set_index=0)
 result["default_after_set"] = empty_set.default_variant
 
+# The Offered On toggles: narrowing, widening, and the refusal to leave a
+# finish offered on nothing.
+finish = scene.usd_stage_variant_sets.add()
+finish.name = "Finish"
+finish.kind = 'MATERIAL'
+finish.parent_set = "VariantSet"
+for name in ("Oak", "Walnut"):
+    finish.variants.add().name = name
+finish.default_variant = "Oak"
+names = lambda: [s.name for s in scene.usd_stage_variant_sets]
+scene.usd_stage_variant_sets_index = names().index("Finish")
+finish.variants_index = 1
+
+bpy.ops.usdstage.variant_toggle_shape(shape="Variant")
+result["offered_after_narrowing"] = finish.variants[1].applies_to
+bpy.ops.usdstage.variant_toggle_shape(shape="Variant")
+result["offered_after_widening"] = finish.variants[1].applies_to
+
+bpy.ops.usdstage.variant_toggle_shape(shape="Variant")
+result["last_shape_refused"] = bpy.ops.usdstage.variant_toggle_shape(
+    shape="Variant_2"
+) == {'CANCELLED'}
+result["offered_after_refusal"] = finish.variants[1].applies_to
+scene.usd_stage_variant_sets.remove(names().index("Finish"))
+
 # Removing a shape set must not leave a finish set nesting in a ghost.
 nested = scene.usd_stage_variant_sets.add()
 nested.name = "Finish"
@@ -117,7 +142,7 @@ result["operators_exist"] = sorted(
     name for name in (
         "variant_set_add_from_collection", "variant_set_add_empty",
         "variant_set_remove", "variant_add", "variant_remove",
-        "variant_set_default", "variant_preview",
+        "variant_set_default", "variant_preview", "variant_toggle_shape",
     )
     if hasattr(bpy.ops.usdstage, name)
 )
@@ -196,7 +221,7 @@ def test_every_operator_the_panel_draws_resolves(panel_probe):
     assert panel_probe["operators_exist"] == sorted((
         "variant_set_add_from_collection", "variant_set_add_empty",
         "variant_set_remove", "variant_add", "variant_remove",
-        "variant_set_default", "variant_preview",
+        "variant_set_default", "variant_preview", "variant_toggle_shape",
     ))
 
 
@@ -208,3 +233,16 @@ def test_removing_a_set_clears_what_nested_inside_it(panel_probe):
     """Otherwise the finish points at a name that no longer exists."""
     assert panel_probe["sets_after_removal"] == ["Finish"]
     assert panel_probe["parent_after_removal"] == ""
+
+
+def test_the_offered_on_toggles_narrow_and_widen_a_finish(panel_probe):
+    """Picking shapes by toggle is why no name can be mistyped."""
+    assert panel_probe["offered_after_narrowing"] == "Variant_2"
+    # Toggling the last one back stores empty, so a shape added later is
+    # offered the finish rather than quietly left out.
+    assert panel_probe["offered_after_widening"] == ""
+
+
+def test_a_finish_cannot_be_offered_on_nothing(panel_probe):
+    assert panel_probe["last_shape_refused"]
+    assert panel_probe["offered_after_refusal"] == "Variant_2"

@@ -29,8 +29,11 @@ and what you have to do differently. Internal refactors are not listed.
   place a name is adjusted, where you can see and edit it in the panel.
 - A finish set can now nest inside a shape set, so a finish can be offered
   on some shapes and not others - walnut on the square top but not the
-  round one. Set Nest Inside on the finish set and Only For on each
-  finish. Every shape has to offer at least one finish.
+  round one. Set Nest Inside on the finish set, then use each finish's
+  Offered On toggles - one per shape - to pick the shapes that offer it. A
+  finish you leave offered everywhere is offered on a shape you add later
+  too, and you cannot turn the last shape off: a finish offered on nothing
+  is refused where you make the mistake, not at export.
 - A variant set now varies either **shape** or **finish**. A shape set
   switches whole collections of objects, as before. A finish set keeps the
   objects and rebinds their material, so the same tabletop can be offered in
