@@ -349,9 +349,9 @@ Two consequences worth knowing:
 
 Independent sets offer every combination, including ones you do not sell. When
 a finish suits only some shapes, nest the finish set inside the shape set:
-set **Nest Inside** to the shape set, and give each finish an **Only For**
-list of the shapes that offer it. A finish with no list is offered on all of
-them.
+set **Nest Inside** to the shape set, and use each finish's **Offered On**
+toggles - one per shape - to say which shapes offer it. A finish offered on
+every shape needs no narrowing, and a shape added later is offered it too.
 
 The finish set is then authored inside each shape variant rather than beside
 it, so selecting a shape changes which finishes exist:

@@ -238,6 +238,59 @@ class USDSTAGE_OT_variant_set_default(Operator):
         return {'FINISHED'}
 
 
+class USDSTAGE_OT_variant_toggle_shape(Operator):
+    """Offer this finish on a shape, or stop offering it there"""
+
+    bl_idname = "usdstage.variant_toggle_shape"
+    bl_label = "Toggle Shape"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    shape: StringProperty()
+
+    def execute(self, context):
+        variant_set = _active_set(context)
+        if variant_set is None:
+            return {'CANCELLED'}
+        index = variant_set.variants_index
+        if not 0 <= index < len(variant_set.variants):
+            return {'CANCELLED'}
+        variant = variant_set.variants[index]
+
+        parent = next(
+            (other for other in _variant_sets(context)
+             if other.name == variant_set.parent_set),
+            None,
+        )
+        if parent is None:
+            self.report({'ERROR'}, "This set does not nest inside a shape set")
+            return {'CANCELLED'}
+
+        shapes = [child.name for child in parent.variants]
+        # An empty list means every shape, so start from that when narrowing.
+        offered = [
+            name.strip() for name in variant.applies_to.split(",") if name.strip()
+        ] or list(shapes)
+
+        if self.shape in offered:
+            if len(offered) == 1:
+                self.report(
+                    {'WARNING'},
+                    f"'{variant.name}' has to be offered on at least one shape",
+                )
+                return {'CANCELLED'}
+            offered.remove(self.shape)
+        else:
+            offered.append(self.shape)
+
+        ordered = [name for name in shapes if name in offered]
+        # Offered everywhere is stored as empty, so adding a shape later keeps
+        # offering it rather than quietly excluding the new one.
+        variant.applies_to = (
+            "" if len(ordered) == len(shapes) else ",".join(ordered)
+        )
+        return {'FINISHED'}
+
+
 class USDSTAGE_OT_variant_preview(Operator):
     """Show this variant in the viewport, hiding the others in its set"""
 
@@ -278,6 +331,7 @@ _CLASSES = (
     USDSTAGE_OT_variant_add,
     USDSTAGE_OT_variant_remove,
     USDSTAGE_OT_variant_set_default,
+    USDSTAGE_OT_variant_toggle_shape,
     USDSTAGE_OT_variant_preview,
 )
 
