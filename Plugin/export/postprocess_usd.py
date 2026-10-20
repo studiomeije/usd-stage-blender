@@ -16,7 +16,7 @@ from .realitykit_preflight import (
 )
 from .usd_scene import normalize_scene, _normalize_owned_double_sided_mesh_specs
 from . import asset_metadata
-from . import colliders as colliders_module
+from . import colliders
 from . import payload
 from . import usd_hook
 from . import variant_authoring
@@ -172,8 +172,8 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
         # that follows validates each composed selection.
         _run_step(
             diagnostics,
-            "author_variants",
-            _author_variants,
+            "author_colliders",
+            _author_colliders,
             stage,
             settings,
             context,
@@ -184,8 +184,8 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
 
         _run_step(
             diagnostics,
-            "author_colliders",
-            _author_colliders,
+            "author_variants",
+            _author_variants,
             stage,
             settings,
             context,
@@ -310,11 +310,18 @@ def _run_step(diagnostics, name: str, func, *args):
 def _author_colliders(
     stage, settings, context, object_map, prim_path_edits, diagnostics=None
 ):
-    """Author RealityKit collider components for Blender's rigid bodies."""
-    members = colliders_module.resolve_collider_plan(context, settings)
+    """Author RealityKit collider components for Blender's rigid bodies.
+
+    Before the variants, not after: a collider is a child of the object's
+    prim, so authoring it while everything is still composed gives every
+    variant member one, and deactivating a member later takes its collider
+    with it. Afterwards, a member outside the default selection has no prim
+    to measure and would silently go without.
+    """
+    members = colliders.resolve_collider_plan(context, settings)
     if not members:
         return ()
-    return colliders_module.author_colliders(
+    return colliders.author_colliders(
         stage, members, object_map, prim_path_edits, diagnostics
     )
 
@@ -336,7 +343,7 @@ def _author_variants(
     if plan.is_empty:
         return ()
 
-    variants.require_valid_variant_plan(plan, diagnostics)
+    # Already validated by reserve_variant_materials, which runs first.
     authored = variant_authoring.author_variants(
         stage,
         plan,

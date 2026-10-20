@@ -602,3 +602,35 @@ def test_an_unnested_finish_set_still_multiplies():
         _finish_set(target=_collection("Tops", objects=[_object("TableTop")])),
     )
     assert plan.combination_count == 4
+
+
+def test_two_nested_finish_sets_on_one_object_are_refused():
+    """Nesting does not exempt a set: both would author the binding."""
+    top = _object("TableTop")
+    shapes = _variant_set(
+        "Shape",
+        [
+            _variant("Round", _collection("Round", objects=[top])),
+            _variant("Square", _collection("Square", objects=[_object("TopSquare")])),
+        ],
+    )
+    finish = _finish_set(target=_collection("Tops", objects=[top]))
+    finish.parent_set = "Shape"
+    trim = _material_set(
+        "Trim",
+        [
+            _material_variant("Brass", _material("BrassMat")),
+            _material_variant("Chrome", _material("ChromeMat")),
+        ],
+        _collection("TopsAgain", objects=[top]),
+    )
+    trim.parent_set = "Shape"
+
+    issues = validate_variant_plan(_plan(shapes, finish, trim))
+
+    assert "VARIANT_PROPERTY_CONTESTED" in _codes(issues)
+
+
+def test_a_nested_finish_never_contests_its_own_parent():
+    """Its parent varies activation; it varies the binding."""
+    assert "VARIANT_PROPERTY_CONTESTED" not in _codes(validate_variant_plan(_nested_plan()))

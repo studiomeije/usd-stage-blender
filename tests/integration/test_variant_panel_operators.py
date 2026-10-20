@@ -100,6 +100,18 @@ result["default_after_first_add"] = empty_set.default_variant
 bpy.ops.usdstage.variant_set_default(variant="Variant_2", set_index=0)
 result["default_after_set"] = empty_set.default_variant
 
+# Removing a shape set must not leave a finish set nesting in a ghost.
+nested = scene.usd_stage_variant_sets.add()
+nested.name = "Finish"
+nested.kind = 'MATERIAL'
+nested.parent_set = "VariantSet"
+scene.usd_stage_variant_sets_index = [
+    s.name for s in scene.usd_stage_variant_sets
+].index("VariantSet")
+bpy.ops.usdstage.variant_set_remove()
+result["parent_after_removal"] = scene.usd_stage_variant_sets[0].parent_set
+result["sets_after_removal"] = [s.name for s in scene.usd_stage_variant_sets]
+
 # Every operator the panel references, resolvable by idname.
 result["operators_exist"] = sorted(
     name for name in (
@@ -190,3 +202,9 @@ def test_every_operator_the_panel_draws_resolves(panel_probe):
 
 def test_unregistering_removes_the_scene_property(panel_probe):
     assert panel_probe["unregistered_cleanly"]
+
+
+def test_removing_a_set_clears_what_nested_inside_it(panel_probe):
+    """Otherwise the finish points at a name that no longer exists."""
+    assert panel_probe["sets_after_removal"] == ["Finish"]
+    assert panel_probe["parent_after_removal"] == ""

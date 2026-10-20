@@ -197,3 +197,26 @@ def test_what_was_authored_reaches_the_sidecar():
     author_colliders(stage, plan, {"/Root/Table": "Table"}, (), diagnostics)
 
     assert diagnostics.to_dict()["colliders"] == ["/Root/Table/Collider"]
+
+
+def test_a_collider_is_sized_before_any_variant_can_hide_its_object():
+    """The pipeline authors colliders first, so every variant member gets one.
+
+    Authored after the variants, a member outside the default selection has
+    no composed prim, and would silently go without.
+    """
+    stage = _stage()
+    UsdGeom.Xform.Define(stage, "/Root/Spare")
+    spare = UsdGeom.Cube.Define(stage, "/Root/Spare/Mesh")
+    spare.GetSizeAttr().Set(1.0)
+    spare.GetExtentAttr().Set([(-0.5,) * 3, (0.5,) * 3])
+    plan = resolve_collider_plan(_context(_object("Table"), _object("Spare")), _settings())
+
+    authored = author_colliders(
+        stage, plan, {"/Root/Table": "Table", "/Root/Spare": "Spare"}
+    )
+
+    assert sorted(authored) == ["/Root/Spare/Collider", "/Root/Table/Collider"]
+    # And a collider rides with its object when a variant deactivates it.
+    stage.GetPrimAtPath("/Root/Spare").SetActive(False)
+    assert not stage.GetPrimAtPath("/Root/Spare/Collider")

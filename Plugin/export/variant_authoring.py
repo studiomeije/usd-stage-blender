@@ -54,7 +54,7 @@ def reserve_variant_materials(stage, plan: VariantPlan) -> tuple:
     if not root:
         return ()
 
-    scope = _materials_scope(stage, root)
+    materials = _Materials(stage, root)
     reserved = {}
     for variant_set in plan.sets:
         if variant_set.kind != MATERIAL:
@@ -62,25 +62,42 @@ def reserve_variant_materials(stage, plan: VariantPlan) -> tuple:
         for variant in variant_set.variants:
             if not variant.has_material:
                 continue
-            material = _material_prim(stage, scope, variant.material_name)
+            material = materials.get(variant.material_name)
             reserved.setdefault(str(material.GetPath()), material.GetPrim())
     return tuple(reserved.values())
 
 
-def _materials_scope(stage, root):
-    """Where this export keeps its Material prims."""
-    for prim in stage.TraverseAll():
-        if prim.IsA(UsdShade.Material):
-            return prim.GetPath().GetParentPath()
-    return root.GetPath().AppendChild("_materials")
+class _Materials:
+    """The stage's Material prims by name, found once rather than per lookup.
 
+    A nested finish set asks for the same materials again under every shape
+    variant, and each ask was walking the whole stage.
+    """
 
-def _material_prim(stage, scope, material_name: str):
-    identifier = suggest_identifier(material_name, "Material")
-    for prim in stage.TraverseAll():
-        if prim.IsA(UsdShade.Material) and prim.GetName() == identifier:
-            return UsdShade.Material(prim)
-    return UsdShade.Material.Define(stage, scope.AppendChild(identifier))
+    def __init__(self, stage, root):
+        self._stage = stage
+        self._by_name = {}
+        self._scope = None
+        for prim in stage.TraverseAll():
+            if not prim.IsA(UsdShade.Material):
+                continue
+            self._by_name.setdefault(prim.GetName(), prim)
+            if self._scope is None:
+                self._scope = prim.GetPath().GetParentPath()
+        if self._scope is None:
+            self._scope = root.GetPath().AppendChild("_materials")
+
+    def get(self, material_name: str):
+        """The Material for a Blender material, defined if the export lacks one."""
+        identifier = suggest_identifier(material_name, "Material")
+        existing = self._by_name.get(identifier)
+        if existing is not None:
+            return UsdShade.Material(existing)
+        material = UsdShade.Material.Define(
+            self._stage, self._scope.AppendChild(identifier)
+        )
+        self._by_name[identifier] = material.GetPrim()
+        return material
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +137,7 @@ def author_variants(
     paths = _prim_paths(stage, object_map, path_edits)
     selected_only = bool(getattr(settings, "selected_objects_only", False))
     animated = _animated_members(stage, paths, settings)
-    scope = _materials_scope(stage, root)
+    materials = _Materials(stage, root)
 
     authored: list[str] = []
     for variant_set in plan.sets:
@@ -156,10 +173,10 @@ def author_variants(
                 f"{variant_set.parent_set!r}, which is not authored."
             )
         if parent is None or parent.name not in authored:
-            _author_finish_set(stage, root, variant_set, targets, scope, diagnostics)
+            _author_finish_set(stage, root, variant_set, targets, materials, diagnostics)
         else:
             _author_nested_finish_set(
-                stage, root, variant_set, parent, targets, scope, diagnostics
+                stage, root, variant_set, parent, targets, materials, diagnostics
             )
         authored.append(variant_set.name)
 
@@ -184,12 +201,12 @@ def _author_shape_set(stage, root, variant_set: VariantSetPlan, resolved) -> Non
 
 
 def _author_finish_set(
-    stage, root, variant_set: VariantSetPlan, targets, scope, diagnostics
+    stage, root, variant_set: VariantSetPlan, targets, materials, diagnostics
 ) -> None:
     bound = _binding_paths(stage, targets, variant_set.name, diagnostics)
     usd_set = root.GetVariantSets().AddVariantSet(variant_set.name)
     for variant in variant_set.variants:
-        material = _material_prim(stage, scope, variant.material_name)
+        material = materials.get(variant.material_name)
         usd_set.AddVariant(variant.name)
         usd_set.SetVariantSelection(variant.name)
         with usd_set.GetVariantEditContext():
@@ -200,7 +217,7 @@ def _author_finish_set(
 
 def _author_nested_finish_set(
     stage, root, variant_set: VariantSetPlan, parent: VariantSetPlan,
-    targets, scope, diagnostics,
+    targets, materials, diagnostics,
 ) -> None:
     """Author the finish set inside each shape variant that offers it.
 
@@ -222,7 +239,7 @@ def _author_nested_finish_set(
             bound = _binding_paths(stage, present, variant_set.name, diagnostics)
             nested = root.GetVariantSets().AddVariantSet(variant_set.name)
             for variant in offered:
-                material = _material_prim(stage, scope, variant.material_name)
+                material = materials.get(variant.material_name)
                 nested.AddVariant(variant.name)
                 nested.SetVariantSelection(variant.name)
                 with nested.GetVariantEditContext():
