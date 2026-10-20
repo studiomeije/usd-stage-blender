@@ -34,28 +34,24 @@ A gap is not automatically work worth doing. The last section ranks them.
 
 ## How the measurements were made
 
-Two mechanisms, because they answer different questions.
+Every **measured** row comes from `scripts/check_apple_conformance.py`, which
+authors a minimal asset per feature, packages it with `usdzip`, compiles it
+with `realitytool`, and reads the artifacts back. Run it to re-check this page
+against a newer Xcode:
 
-`scripts/check_apple_conformance.py` authors a minimal asset per feature,
-packages it with `usdzip`, compiles it with `realitytool`, and reads
-`assetMap.json` out of the `.reality`, which is stored uncompressed and names
-every compiled asset by the prim path it came from. That settles features
-that become assets: meshes, materials, skeletons, collision shapes.
+```bash
+python3 scripts/check_apple_conformance.py
+```
 
-A component does not become an asset. A light or an anchoring component lives
-inside the `Scene` asset, so a light that imported and a light that was
-dropped produce the same asset list. The remaining members of a `.reality` are
-compressed with a method neither Python's `zipfile` nor `ditto` can read, but
-the zip directory still records each member's uncompressed size. Comparing the
-`Scene` asset's size against a control asset - the same scene without the
-feature prim - says whether the feature reached the compiled scene at all.
-
-That comparison is decisive for a `RealityKitComponent` child prim and only
-suggestive for a typed prim. A component prim is consumed as a component or
-ignored: a recognised one grows the scene, and an unrecognised `info:id` grows
-it by nothing. A typed prim such as a `UsdLux` light is also an `Xformable`,
-so it can arrive as a bare entity carrying a transform and no light at all,
-which looks the same from the outside as arriving with its light.
+Two mechanisms sit behind those rows, because they answer different questions,
+and [APPLE_CONFORMANCE.md](APPLE_CONFORMANCE.md#reading-a-component) covers
+both in full. `assetMap.json` settles whatever becomes an asset: meshes,
+materials, skeletons, collision shapes. A component becomes no asset, so for
+those the compiled scene's size is compared against a control asset - decisive
+for a `RealityKitComponent` child prim, which is consumed as a component or
+ignored and never becomes an entity of its own, and only suggestive for a
+typed prim such as a `UsdLux` light, which is also an `Xformable` and so can
+arrive as a bare entity carrying no light.
 
 ## Geometry and the scene graph
 
@@ -67,12 +63,12 @@ which looks the same from the outside as arriving with its light.
 | Normals | assumed | Yes | |
 | Vertex colours | assumed | Yes | Written as `displayColor` for the materials that read one. |
 | `GeomSubset` with `familyName = "materialBind"` | measured | Yes | A multi-material mesh. Compiles to one mesh asset carrying both materials. |
-| `subdivisionScheme = catmullClark` | measured | Yes | `realitytool` tessellates at compile: a single quad's mesh asset grew from 2 KB to 10 KB. **Best Match** writes the base cage, **Tessellate** subdivides in Blender. |
+| `subdivisionScheme = catmullClark` | measured | Yes | `realitytool` tessellates at compile: one quad's mesh asset grew from 2,188 to 9,969 bytes. **Best Match** writes the base cage, **Tessellate** subdivides in Blender. |
 | `extent` on meshes | assumed | Yes | |
 | `visibility = invisible` | measured | No | An invisible prim still compiles into the scene; nothing prunes it. Blender's hidden objects are excluded before export instead. |
-| `purpose = guide`/`proxy` | measured | No | A `guide` prim compiles in like any other, so purpose is not a culling mechanism on this platform. |
+| `purpose = guide` | measured | No | **Dropped at compile**: of three cubes, the plain and the invisible one each compiled to an asset and the `guide` one did not. |
 | `doubleSided` | observed | Refused | Always written single-sided; Reality Composer Pro's viewport honours the flag and a RealityKit app does not, so relying on it looks right in the editor and wrong on device. |
-| `instanceable` references over a shared prototype | measured | Yes | Composes, and the prototype's mesh is written once. See the caveat below. |
+| `instanceable` references over a shared prototype | measured | Yes | Composes, and the prototype's mesh is written once - as long as the prototype sits under a `Scope`. See the caveat below. |
 | `UsdGeomPointInstancer` | measured | Refused | Survives into the USDZ; what the renderer draws is unsettled. |
 | `BasisCurves`, `NurbsCurves`, `NurbsPatch`, `Points`, `TetMesh` | assumed | Refused | No RealityKit geometry. Convert to meshes. |
 | `Volume`, `OpenVDBAsset`, `ParticleField` | assumed | Refused | No volume rendering. |
@@ -84,6 +80,11 @@ therefore cannot prove instancing survives as instancing - only that it does
 not cost more. What *is* proved, in `tests/integration/test_variants_with_instancing.py`,
 is that the USD side is correct: activation and material bindings land on
 instance roots, above the proxies where USD forbids authoring.
+
+One shape of it does fail, and silently. The same three references over a
+prototype held in a **class** prim compile to no mesh asset at all, while
+`realitytool` still reports success. The exporter writes `Scope` prototypes,
+so this is a trap for hand-written USD rather than for our output.
 
 ## Composition
 

@@ -10,6 +10,13 @@ minimal asset per feature, packages it with `usdzip`, compiles it with
 `.reality` by unzipping it and reading `assetMap.json`, which is stored
 uncompressed and names every compiled asset by the prim path it came from.
 
+A component is not an asset, so the asset map cannot see one. The rest of a
+`.reality`'s members are compressed with a method neither Python nor `ditto`
+can read, but the zip directory still records each member's uncompressed size,
+so the compiled scene's size against a control asset's says whether a feature
+reached the scene at all. [Reading a component](#reading-a-component) explains
+what that comparison can and cannot settle.
+
 ```bash
 python3 scripts/check_apple_conformance.py
 ```
@@ -46,6 +53,22 @@ Measured on Apple USD Tools 0.25.11 and `realitytool` for `xros 27.0`.
 | `UsdPhysics` collider, rigid body, mass | Kept | **Dropped** |
 | `RealityKitComponent` prim | Kept | **Becomes a `CollisionShape`** |
 | `UsdGeomPointInstancer` | Kept | One mesh asset; see below |
+| `GeomSubset` material bindings | Kept | Both materials arrive on one mesh |
+| `subdivisionScheme = catmullClark` | Kept | **Tessellated at compile**: one quad's mesh grew from 2,188 to 9,969 bytes |
+| `UsdSkel` skeleton, skinning, joint animation | Kept | A `Skeleton` asset, with `AnimationLibraryAsset` and `Timeline` |
+| `UsdSkelBlendShape` | Kept | A `BlendFactor` asset |
+| Time samples on an `xformOp` | Kept | `AnimationLibraryAsset` and `Timeline` |
+| `visibility = invisible` | Kept | Compiled in; nothing prunes it |
+| `purpose = guide` | Kept | **Dropped**: no asset is compiled for the prim |
+| `userProperties` | Kept | **Dropped**: the compiled scene is byte-identical to the control |
+| `UsdLux` distant, sphere and dome lights | Kept | Reach the scene; what they arrive as is unsettled |
+| `UsdGeomCamera` | Kept | Reaches the scene; same limit |
+| `RealityKit.DirectionalLight`, `.SpotLight` components | Kept | Read |
+| `RealityKit.ImageBasedLight` and `.ImageBasedLightReceiver` | Kept | Read |
+| `RealityKit.Anchoring` component | Kept | Read |
+| An `info:id` the platform does not know | Kept | **Dropped in silence** |
+| `instanceable` references over a Scope prototype | Composes | One shared mesh asset |
+| `instanceable` references over a **class** prototype | Composes | **No mesh asset at all** |
 
 ## What the results mean
 
@@ -82,6 +105,61 @@ complaint, and arrive as nothing.
 which copies the second layer into the package, and the geometry reaches the
 compiled `.reality`. A payloaded asset's `kind` is readable while its payload
 is unloaded, which is the point of putting it on the root prim.
+
+### Reading a component
+
+A light, an anchoring component and a collider are not alike. A collider
+compiles to a `CollisionShape`, which the asset map names; a light does not
+compile to an asset at all, so a light that imported and a light that was
+dropped leave the same asset list.
+
+What tells them apart is the compiled scene's size against `control_cube`, a
+probe that is one cube and nothing else. For a `RealityKitComponent` child
+prim the comparison is decisive, because such a prim is consumed as a
+component or ignored and never becomes an entity of its own. The control for
+that reading is the `unknown_component_id` probe, a plausible `info:id` that is
+not a real one:
+
+| Probe | Compiled scene | Against the control |
+|---|---|---|
+| `control_cube` | 541 bytes | - |
+| `unknown_component_id` | 541 bytes | **+0** |
+| `RealityKit.ImageBasedLight` + receiver | 709 bytes | +168 |
+| `RealityKit.DirectionalLight` | 733 bytes | +192 |
+| `RealityKit.SpotLight` | 759 bytes | +218 |
+| `RealityKit.Anchoring` | 809 bytes | +268 |
+
+So the ids are real, the components are read, and **an `info:id` the platform
+does not know is dropped without a word** - which is the shape a typo in our
+own authoring would take: a clean export, a clean compile, and no component.
+
+For a typed prim the same comparison is only suggestive. A `UsdLux` light and
+a `UsdGeomCamera` each grow the scene - 678, 759 and 694 bytes for the
+distant, sphere and dome lights, 719 for the camera - but every one of them is
+also an `Xformable`, so it can arrive as a bare entity carrying a transform
+and no light. Growth proves arrival, not what arrived. Settling it needs a
+RealityKit build that reports the components on an imported entity, which is
+outside what reading a file can do.
+
+**A prototype in a class prim loses its geometry.** Three `instanceable`
+references over a prototype under an ordinary `Scope` compile to one shared
+mesh asset. The same three over a prototype held in a *class* prim compile to
+**no mesh asset at all**, while still reporting success. The exporter writes
+Scope prototypes, so this is a warning about hand-written USD rather than
+about our output.
+
+**Mesh assets cannot measure instancing.** `realitytool` deduplicates
+identical meshes: three separate cubes, three plain references and three
+`instanceable` references all compile to exactly one mesh asset. Counting
+assets therefore shows only that instancing costs no more, never that it
+survived as instancing. What the USD side does is covered by
+`tests/integration/test_variants_with_instancing.py`.
+
+**One field is not stable.** Two full runs of `xform_time_samples` disagreed
+about whether the animated Xform's own prim path appears in the asset map
+beside the mesh's, with every other field identical. The suite records that
+probe without that field rather than failing at random over it; the constant
+`UNSTABLE_FIELDS` names it.
 
 **Point instancing needs a closer look.** The instancer prim survives into the
 USDZ, and the compiled `.reality` holds one mesh asset. That is consistent
