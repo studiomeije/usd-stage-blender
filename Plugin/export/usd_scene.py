@@ -30,7 +30,7 @@ def normalize_scene(
     *,
     writable_layer_paths: Iterable[str] | None = None,
     diagnostics=None,
-) -> None:
+) -> tuple[tuple[object, object], ...]:
     """Normalize scene metadata and prim names for Reality Composer Pro.
 
     Prim namespace edits are performed on the contributing local layers with
@@ -39,6 +39,13 @@ def normalize_scene(
     and time samples.  Composed relationship and shader-connection targets are
     subsequently retargeted because ``Sdf.Layer.Apply`` intentionally does not
     update paths stored in other specs.
+
+    Returns the ordered ``(old path, new path)`` edits this pass applied, so a
+    later pass can translate a path captured before normalization.  The prim
+    map the USDHook records during export is exactly such a path: a Blender
+    object whose name is not a USD identifier is written under one path and
+    renamed here, and anything still holding the original would be resolving a
+    path that no longer exists.  Feed them to :func:`remap_prim_path`.
     """
     # Ensure defaultPrim references a root prim.  ``root_prim_name`` accepts a
     # leading slash in the UI, but defaultPrim itself must name a root prim.
@@ -53,7 +60,7 @@ def normalize_scene(
     # contract. This metadata is not an artist-configurable export option.
     stage.SetMetadata("upAxis", REALITYKIT_UP_AXIS)
 
-    _rename_invalid_prims(
+    path_edits = _rename_invalid_prims(
         stage,
         allow_unicode=bool(getattr(settings, "allow_unicode", True)),
         writable_layer_paths=writable_layer_paths,
@@ -68,6 +75,11 @@ def normalize_scene(
         stage=stage,
         diagnostics=diagnostics,
     )
+    if path_edits and diagnostics:
+        diagnostics.set_prim_renames(
+            [(str(old_path), str(new_path)) for old_path, new_path in path_edits]
+        )
+    return tuple(path_edits)
 
 
 def _normalize_owned_double_sided_mesh_specs(
@@ -485,6 +497,20 @@ def _restore_path_references(
                 raise RuntimeError(
                     f"Failed to retarget connection {owner_path}.{reference.property_name}"
                 )
+
+
+def remap_prim_path(path: str, path_edits: Iterable[tuple[object, object]]) -> str:
+    """Translate a path captured before normalization into its current one.
+
+    Takes and returns plain strings so a caller holding a prim path recorded by
+    the USDHook does not have to build an ``Sdf.Path`` to ask.  With no edits
+    the path is returned untouched, which is the usual case: nothing is renamed
+    unless an identifier was invalid.
+    """
+    path_edits = list(path_edits)
+    if not path_edits:
+        return path
+    return str(_remap_path(Sdf.Path(path), path_edits))
 
 
 def _remap_path(path, path_edits: Iterable[tuple[object, object]]):

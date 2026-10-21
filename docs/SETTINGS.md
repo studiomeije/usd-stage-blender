@@ -44,9 +44,13 @@ UI paths below start from the **USD Stage** tab. Where a row says "see below", t
 | `filepath` | Export ▸ Output Path | both | The extension always follows `export_format`. A `//` or other relative path is refused until the `.blend` is saved. On the CLI, pass `-o/--output`. |
 | `export_format` | Export ▸ Format | both | Only `USDZ` packages the result and consults `usdzip_path`. |
 | `root_prim_name` | Advanced USD ▸ General ▸ Root Prim | both | A missing leading `/` is added. Empty means `Scene`. |
+| `root_prim_kind` | Advanced USD ▸ General ▸ Asset Kind | both | The USD model kind on the root prim. `None` authors no kind, asset info or bounds hint. See below. |
+| `export_colliders` | Advanced USD ▸ General ▸ Colliders | both | Authors a RealityKit collider for every object with Blender Rigid Body enabled. See below. |
+| `payload_geometry` | Advanced USD ▸ General ▸ Payload Geometry | both | Splits the export into an asset interface and a payload layer under `assets/`. Off by default. See below. |
 | `export_animation` | Export ▸ Include ▸ Animation | both | Master switch for animation, including `author_animation_library`. |
 | `author_animation_library` | Export ▸ RCP Clip Library, shown only with Animation on | both | Needs `export_animation`. See below. |
 | `selected_objects_only` | Export ▸ Include ▸ Selection Only | both | Narrows validation and fails on an empty selection. See below. CLI flag: `--selected-only`. |
+| `export_variants` | Variants ▸ Author Variant Sets, shown once a set is declared | both | Off skips variant authoring and the visibility staging with it, so the export holds only what the viewport shows. The sets themselves live on the scene, not here. See below. |
 | `export_custom_properties` | Advanced USD ▸ General ▸ Custom Properties | both | Master switch for the next two keys. See below. |
 | `custom_properties_namespace` | Advanced USD ▸ General ▸ Namespace, shown only with Custom Properties on | both | Ignored when `export_custom_properties` is off. |
 | `author_blender_name` | Advanced USD ▸ General ▸ Blender Names, grayed out with Custom Properties off | both | Ignored when `export_custom_properties` is off. |
@@ -88,6 +92,21 @@ UI paths below start from the **USD Stage** tab. Where a row says "see below", t
 - An export or bake with nothing selected fails with `NO_EXPORTABLE_OBJECTS` instead of exporting the whole scene.
 - A selected skinned mesh brings its deforming armature along, when `export_armatures` is on.
 - A bake re-applies your selection after baking, so the bake's own selection changes cannot widen the export.
+- A variant set the selection touches brings its other variants' objects along, so an authored variant cannot switch to a prim the export never wrote. A set the selection does not touch is left out of the export and is not authored.
+
+**`payload_geometry` changes the shape of the output, not its contents.** On, the export writes two files: the interface, holding the root prim with its kind, asset info, bounds hint and variant sets plus a payload arc; and `assets/<name>_payload.<ext>`, holding the geometry and materials. A consumer can then reference the asset, read what it is, size it and choose a variant with the geometry still on disk. Composed, the two are identical to a flat export, and a USDZ carries both layers. The variant sets stay in the interface alone: two layers authoring one selection would fight over it.
+
+**Colliders come from Blender's own Rigid Body, and are always boxes.** Enable Rigid Body on an object and the export writes a RealityKit collider sized from that object's bounds, so the asset is interactive without hand-work in Reality Composer Pro. Any other Blender collision shape is approximated by that box and the diagnostics report says which objects were approximated: Box is the one shape whose RealityKit spelling is verified. The component written is RealityKit's own, not `UsdPhysics`, which [never reaches RealityKit](APPLE_CONFORMANCE.md).
+
+**`root_prim_kind` governs three pieces of metadata, not one.** With any kind but `None`, the export also writes `assetInfo` (the name and the file a consumer references) and an `extentsHint` (the asset's bounds, so a consumer can lay it out without loading its geometry). `None` leaves all three unwritten, for a pipeline that assigns model hierarchy itself. On a variant asset the hint describes the selection the file ships with, since every other selection has a different size.
+
+**A finish set can nest inside a shape set.** Set its Nest Inside to a shape set and use each finish's Offered On toggles to pick the shapes that offer it, and the finishes are authored inside each shape variant - so a finish can be offered on one shape and not another. Every shape must offer at least one. See [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#offering-a-finish-on-some-shapes-only).
+
+**A variant set varies shape or finish.** A shape set switches whole collections of objects; a finish set keeps them and rebinds their material, so one object can belong to both. Two sets varying the same property of one object are refused. See [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#shape-sets-and-finish-sets).
+
+**Variant sets are scene content, not a setting.** They live on the scene and are saved with the `.blend`, so the panel and the command line export the same variants from the same file. `export_variants` only decides whether they are authored. Unlike the settings in this table, they are not carried into the next scene as last-used values: a list of this file's collections would mean nothing in another one.
+
+**Variant and variant-set names are refused, not renamed.** `allow_unicode` governs prim identifiers, not these. A variant name is what Reality Composer Pro lists and what `setVariantSelection(for:to:)` is passed, so an export will not quietly change one; it fails and says which name to fix. Creating a set from a collection is the exception: there the name is adjusted up front, where you can see it in the panel and edit it.
 
 **`allow_unicode` also applies after Blender's export.** USD Stage for Blender renames any prim whose name is not a valid identifier. With `allow_unicode` on, non-ASCII letters and digits survive and other characters become `_`. With it off, every non-ASCII character becomes `_`. Reality Composer Pro imports non-ASCII names intact, Chinese included, although its hierarchy displays Chinese characters as `¿`.
 

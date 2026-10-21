@@ -15,6 +15,12 @@ from .realitykit_preflight import (
     validate_stage,
 )
 from .usd_scene import normalize_scene, _normalize_owned_double_sided_mesh_specs
+from . import asset_metadata
+from . import colliders
+from . import payload
+from . import usd_hook
+from . import variant_authoring
+from . import variants
 from .usd_assets import prepare_assets
 from .usd_utils import Usd, require_pxr
 
@@ -44,7 +50,10 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
             settings,
             diagnostics,
         )
-        _run_step(
+        # The renames this returns are how a prim path captured during export
+        # is translated into the one the stage now has; variant authoring is
+        # the pass that needs it.
+        prim_path_edits = _run_step(
             diagnostics,
             "normalize_scene",
             _normalize_localized_scene,
@@ -65,7 +74,34 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
             stage,
         )
 
-        _run_step(diagnostics, "rewrite_materials", rewrite_materials, stage, settings, context, diagnostics)
+        # Consumed once, here: reading it clears it, and both variant passes
+        # need the same map.
+        object_map = usd_hook.consume_captured_object_map()
+
+        # Before the rewrite: a finish may offer a material no object in the
+        # scene wears, which Blender exports no prim for at all. Reserving
+        # them here lets the rewrite convert them like any other; binding
+        # happens later, inside the variant that offers each one.
+        reserved_materials = _run_step(
+            diagnostics,
+            "reserve_variant_materials",
+            _reserve_variant_materials,
+            stage,
+            settings,
+            context,
+            diagnostics,
+        )
+
+        _run_step(
+            diagnostics,
+            "rewrite_materials",
+            rewrite_materials,
+            stage,
+            settings,
+            context,
+            diagnostics,
+            reserved_materials,
+        )
 
         _run_step(diagnostics, "author_animation_library", author_animation_library, stage, settings, diagnostics)
 
@@ -129,10 +165,63 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
             stage,
             diagnostics,
         )
+        # Authored last, so every earlier pass - localization, normalization,
+        # the material rewrite, texture staging, mesh normalization - sees a
+        # flat stage with every variant's content present and processes all of
+        # it. Variants are then layered over finished work, and the preflight
+        # that follows validates each composed selection.
+        _run_step(
+            diagnostics,
+            "author_colliders",
+            _author_colliders,
+            stage,
+            settings,
+            context,
+            object_map,
+            prim_path_edits,
+            diagnostics,
+        )
+
+        _run_step(
+            diagnostics,
+            "author_variants",
+            _author_variants,
+            stage,
+            settings,
+            context,
+            object_map,
+            prim_path_edits,
+            diagnostics,
+        )
+
+        # After the variants: a variant-bearing asset has as many sizes as it
+        # has selections, and the hint describes the one it ships with.
+        _run_step(
+            diagnostics,
+            "author_asset_metadata",
+            asset_metadata.author_asset_metadata,
+            stage,
+            usd_path,
+            settings,
+            diagnostics,
+        )
+
         _run_step(
             diagnostics,
             "realitykit_preflight",
             _require_realitykit_preflight,
+            stage,
+            usd_path,
+            settings,
+            diagnostics,
+        )
+
+        # Last, after the preflight has judged the whole composed asset: the
+        # split only moves where things live, not what they are.
+        _run_step(
+            diagnostics,
+            "split_asset_payload",
+            payload.split_asset_payload,
             stage,
             usd_path,
             settings,
@@ -216,6 +305,88 @@ def _run_step(diagnostics, name: str, func, *args):
     if diagnostics:
         diagnostics.end_phase(name)
     return result
+
+
+def _author_colliders(
+    stage, settings, context, object_map, prim_path_edits, diagnostics=None
+):
+    """Author RealityKit collider components for Blender's rigid bodies.
+
+    Before the variants, not after: a collider is a child of the object's
+    prim, so authoring it while everything is still composed gives every
+    variant member one, and deactivating a member later takes its collider
+    with it. Afterwards, a member outside the default selection has no prim
+    to measure and would silently go without.
+    """
+    members = colliders.resolve_collider_plan(context, settings)
+    if not members:
+        return ()
+    return colliders.author_colliders(
+        stage, members, object_map, prim_path_edits, diagnostics
+    )
+
+
+def _reserve_variant_materials(stage, settings, context, diagnostics=None):
+    """Define a Material prim for every finish, ahead of the rewrite."""
+    plan = variants.resolve_variant_plan(context, settings)
+    if plan.is_empty:
+        return ()
+    variants.require_valid_variant_plan(plan, diagnostics)
+    return variant_authoring.reserve_variant_materials(stage, plan)
+
+
+def _author_variants(
+    stage, settings, context, object_map, prim_path_edits, diagnostics=None
+):
+    """Author the scene's declared variant sets, if it declares any."""
+    plan = variants.resolve_variant_plan(context, settings)
+    if plan.is_empty:
+        return ()
+
+    # Already validated by reserve_variant_materials, which runs first.
+    authored = variant_authoring.author_variants(
+        stage,
+        plan,
+        object_map,
+        prim_path_edits,
+        settings,
+        diagnostics,
+    )
+    if diagnostics and authored:
+        diagnostics.set_variant_sets(_variant_sidecar_entries(plan, authored))
+    return authored
+
+
+def _variant_sidecar_entries(plan, authored) -> list:
+    """What each authored set holds, for the diagnostics sidecar."""
+    entries = []
+    for variant_set in plan.sets:
+        if variant_set.name not in authored:
+            continue
+        entry = {
+            "name": variant_set.name,
+            "kind": variant_set.kind,
+            "default_variant": variant_set.default_variant,
+        }
+        if variant_set.kind == variants.MATERIAL:
+            entry["targets"] = list(variant_set.target_object_names)
+            if variant_set.parent_set:
+                entry["nested_in"] = variant_set.parent_set
+            entry["variants"] = [
+                {"name": variant.name, "material": variant.material_name}
+                for variant in variant_set.variants
+            ]
+        else:
+            entry["variants"] = [
+                {
+                    "name": variant.name,
+                    "collection": variant.collection_name,
+                    "objects": list(variant.object_names),
+                }
+                for variant in variant_set.variants
+            ]
+        entries.append(entry)
+    return entries
 
 
 def _normalize_localized_scene(stage, settings, writable_layer_paths, diagnostics=None):

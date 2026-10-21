@@ -1680,6 +1680,85 @@ def scene_unicode_names() -> None:
     save("t38_unicode_names")
 
 
+def _register_addon() -> None:
+    """Make the variant property groups available while building.
+
+    The builder runs with --factory-startup, so the add-on is off and
+    ``scene.usd_stage_variant_sets`` does not exist. Declaring a variant set
+    needs it registered, and registering it here is also what proves the
+    declaration survives a save and reload at all.
+    """
+    import sys
+
+    repo = str(Path(__file__).resolve().parents[1])
+    if repo not in sys.path:
+        sys.path.insert(0, repo)
+    import Plugin
+
+    if not hasattr(bpy.types.Scene, "usd_stage_variant_sets"):
+        Plugin.register()
+
+
+def scene_seat_variants() -> None:
+    """A variant set switching geometry and material together.
+
+    A grey plinth that belongs to no variant, and above it either a tall red
+    box (Fabric) or a blue sphere (Leather). Shape and colour both change, so
+    the wrong variant is obvious at a glance rather than a judgement about a
+    tint, and the plinth going missing says the variants deactivated more than
+    they own.
+
+    Leather is excluded from the view layer, the way an artist hides the
+    variant they are not working on: Blender's exporter drops an excluded
+    collection, so an export that ships both variants proves the staging pass
+    ran.
+    """
+    fresh()
+    _register_addon()
+    scene = bpy.context.scene
+
+    plinth = cube("Plinth", location=(0.0, 0.0, 0.05), size=1.2)
+    plinth.scale = (1.0, 1.0, 0.08)
+    _t, bsdf, _m = material(plinth, "PlinthGrey")
+    bsdf.inputs["Base Color"].default_value = (0.42, 0.42, 0.44, 1.0)
+
+    seat = bpy.data.collections.new("Seat")
+    scene.collection.children.link(seat)
+
+    members = {}
+    for name, builder, colour in (
+        ("Fabric", lambda: cube("SeatFabric", location=(0.0, 0.0, 0.75), size=0.9),
+         (0.75, 0.08, 0.08, 1.0)),
+        ("Leather", lambda: sphere("SeatLeather", location=(0.0, 0.0, 0.8), radius=0.5),
+         (0.07, 0.15, 0.78, 1.0)),
+    ):
+        collection = bpy.data.collections.new(name)
+        seat.children.link(collection)
+        obj = builder()
+        for existing in obj.users_collection:
+            existing.objects.unlink(obj)
+        collection.objects.link(obj)
+        _t, bsdf, _m = material(obj, f"Seat{name}")
+        bsdf.inputs["Base Color"].default_value = colour
+        bsdf.inputs["Roughness"].default_value = 0.35
+        members[name] = collection
+
+    variant_set = scene.usd_stage_variant_sets.add()
+    variant_set.name = "Seat"
+    for name, collection in members.items():
+        variant = variant_set.variants.add()
+        variant.name = name
+        variant.collection = collection
+    variant_set.default_variant = "Fabric"
+
+    # Hidden the way an artist hides the variant they are not using.
+    layer = bpy.context.view_layer.layer_collection.children["Seat"]
+    layer.children["Leather"].exclude = True
+
+    sun()
+    save("t39_seat_variants")
+
+
 SCENES = (
     scene_orientation,
     scene_uv_layout,
@@ -1716,6 +1795,8 @@ SCENES = (
     scene_bump,
     scene_collection_instances,
     scene_unicode_names,
+    # Last: it registers the add-on, which the scenes above build without.
+    scene_seat_variants,
 )
 
 
