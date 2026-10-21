@@ -63,7 +63,9 @@ Measured on Apple USD Tools 0.25.11 and `realitytool` for `xros 27.0`.
 | `userProperties` | Kept | **Dropped**: the compiled scene is byte-identical to the control |
 | `UsdLux` distant, sphere and dome lights | Kept | Reach the scene; what they arrive as is unsettled |
 | `UsdGeomCamera` | Kept | Reaches the scene; same limit |
-| `RealityKit.DirectionalLight`, `.SpotLight` components | Kept | Read |
+| `RealityKit.DirectionalLight`, `.SpotLight`, `.PointLight` components | Kept | Read |
+| The same ids under the components' Swift names (`.PointLightComponent`) | Kept | **Dropped in silence** |
+| A collider `shapeType` other than `Box`, or an invented one | Kept | A `CollisionShape` either way; the shape is unverifiable here |
 | `RealityKit.ImageBasedLight` and `.ImageBasedLightReceiver` | Kept | Read |
 | `RealityKit.Anchoring` component | Kept | Read |
 | An `info:id` the platform does not know | Kept | **Dropped in silence** |
@@ -113,25 +115,43 @@ compiles to a `CollisionShape`, which the asset map names; a light does not
 compile to an asset at all, so a light that imported and a light that was
 dropped leave the same asset list.
 
-What tells them apart is the compiled scene's size against `control_cube`, a
-probe that is one cube and nothing else. For a `RealityKitComponent` child
-prim the comparison is decisive, because such a prim is consumed as a
-component or ignored and never becomes an entity of its own. The control for
-that reading is the `unknown_component_id` probe, a plausible `info:id` that is
-not a real one:
+What tells them apart is the compiled scene's size against a control asset
+that differs by the feature alone. There are two controls, because an empty
+Xform is an entity and an entity costs bytes: a component hung on an Xform of
+its own is read against `control_xform`, and one applied to a prim that
+already exists against `control_cube`. Reading the first kind against
+`control_cube` would credit the component with the Xform's bytes.
 
-| Probe | Compiled scene | Against the control |
+The control for the reading itself is an `info:id` that is not a real one:
+
+| Probe | Compiled scene | Against its control |
 |---|---|---|
 | `control_cube` | 541 bytes | - |
-| `unknown_component_id` | 541 bytes | **+0** |
-| `RealityKit.ImageBasedLight` + receiver | 709 bytes | +168 |
-| `RealityKit.DirectionalLight` | 733 bytes | +192 |
-| `RealityKit.SpotLight` | 759 bytes | +218 |
-| `RealityKit.Anchoring` | 809 bytes | +268 |
+| `control_xform` | 680 bytes | - |
+| `unknown_component_id` | 541 bytes | **+0** vs `control_cube` |
+| `rk_point_light_suffixed_id` | 680 bytes | **+0** vs `control_xform` |
+| `RealityKit.DirectionalLight` | 733 bytes | +53 vs `control_xform` |
+| `RealityKit.PointLight` | 747 bytes | +67 vs `control_xform` |
+| `RealityKit.SpotLight` | 759 bytes | +79 vs `control_xform` |
+| `RealityKit.ImageBasedLight` + receiver | 709 bytes | +168 vs `control_cube` |
+| `RealityKit.Anchoring` | 809 bytes | +268 vs `control_cube` |
 
 So the ids are real, the components are read, and **an `info:id` the platform
 does not know is dropped without a word** - which is the shape a typo in our
 own authoring would take: a clean export, a clean compile, and no component.
+
+**The ids do not follow the components' Swift names.** The OS component set
+lists `PointLightComponent`, and the id it answers to is
+`RealityKit.PointLight`: the suffixed spelling measures +0, exactly like an
+invented one. `RealityKit.AreaLight` and `RealityKit.Light` measure +0 too.
+An id has to be measured, not derived.
+
+**A collider's `shapeType` is not validated at compile.** `Box`, `Sphere`,
+`Capsule`, `Cylinder`, `Convex`, `Mesh` and the invented token `Nonsense` all
+produce the same `CollisionShape` asset and the same 586-byte scene. So the
+compile says a collider arrived and nothing about its shape, and `Box` is the
+one spelling backed by what Reality Composer Pro shows rather than by a clean
+exit code.
 
 For a typed prim the same comparison is only suggestive. A `UsdLux` light and
 a `UsdGeomCamera` each grow the scene - 678, 759 and 694 bytes for the

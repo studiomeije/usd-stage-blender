@@ -303,6 +303,19 @@ def probe_control_cube(path: Path):
     stage.GetRootLayer().Save()
 
 
+def probe_control_xform(path: Path):
+    """The control for a component hung on an Xform of its own.
+
+    An empty Xform is an entity, and an entity costs bytes. Reading a light
+    component against control_cube would charge it for the Xform it sits on
+    and call the sum the component.
+    """
+    stage, _ = _stage(path)
+    _cube(stage, "/Asset/Box", 1.0)
+    stage.DefinePrim("/Asset/Lamp", "Xform")
+    stage.GetRootLayer().Save()
+
+
 def probe_lux_distant_light(path: Path):
     """A UsdLux DistantLight beside the geometry."""
     stage, _ = _stage(path)
@@ -363,6 +376,72 @@ def probe_rk_spot_light(path: Path):
         stage, "/Asset/Spot", "SpotLight", "RealityKit.SpotLight",
         intensity=(Sdf.ValueTypeNames.Float, 2000.0),
     )
+    stage.GetRootLayer().Save()
+
+
+def probe_rk_point_light(path: Path):
+    """A point light, the lamp a Blender scene most often holds.
+
+    Worth its own probe because the id does not follow the component's Swift
+    name: the OS has PointLightComponent, and the id it answers to is
+    RealityKit.PointLight. The suffixed spelling is not read.
+    """
+    stage, _ = _stage(path)
+    _cube(stage, "/Asset/Box", 1.0)
+    stage.DefinePrim("/Asset/Lamp", "Xform")
+    _component(
+        stage, "/Asset/Lamp", "PointLight", "RealityKit.PointLight",
+        intensity=(Sdf.ValueTypeNames.Float, 1000.0),
+    )
+    stage.GetRootLayer().Save()
+
+
+def probe_rk_point_light_suffixed_id(path: Path):
+    """The same light under the component's Swift name, which is not read."""
+    stage, _ = _stage(path)
+    _cube(stage, "/Asset/Box", 1.0)
+    stage.DefinePrim("/Asset/Lamp", "Xform")
+    _component(
+        stage, "/Asset/Lamp", "PointLight", "RealityKit.PointLightComponent",
+        intensity=(Sdf.ValueTypeNames.Float, 1000.0),
+    )
+    stage.GetRootLayer().Save()
+
+
+def _collider(stage, shape_type: str):
+    collider = _component(
+        stage, "/Asset/Box", "Collider", "RealityKit.Collider",
+        group=(Sdf.ValueTypeNames.UInt, 1),
+        mask=(Sdf.ValueTypeNames.UInt, 4294967295),
+        type=(Sdf.ValueTypeNames.Token, "Default"),
+    )
+    shape = stage.DefinePrim(f"{collider.GetPath()}/Shape", "RealityKitStruct")
+    shape.CreateAttribute(
+        "shapeType", Sdf.ValueTypeNames.Token, custom=False
+    ).Set(shape_type)
+    shape.CreateAttribute(
+        "extent", Sdf.ValueTypeNames.Float3, custom=False
+    ).Set(Gf.Vec3f(1, 1, 1))
+
+
+def probe_collider_shape_sphere(path: Path):
+    """A collider shape other than the Box we author."""
+    stage, _ = _stage(path)
+    _cube(stage, "/Asset/Box", 1.0)
+    _collider(stage, "Sphere")
+    stage.GetRootLayer().Save()
+
+
+def probe_collider_shape_unknown(path: Path):
+    """A shapeType that does not exist, to see whether the compile notices.
+
+    It does not, which is why the Box spelling rests on what Reality Composer
+    Pro shows and not on a clean compile: every token, real or invented,
+    produces the same CollisionShape asset and the same compiled scene.
+    """
+    stage, _ = _stage(path)
+    _cube(stage, "/Asset/Box", 1.0)
+    _collider(stage, "Nonsense")
     stage.GetRootLayer().Save()
 
 
@@ -615,13 +694,18 @@ PROBES = {
     "realitykit_component": probe_realitykit_component,
     "point_instancer": probe_point_instancer,
     "control_cube": probe_control_cube,
+    "control_xform": probe_control_xform,
     "lux_distant_light": probe_lux_distant_light,
     "lux_sphere_light": probe_lux_sphere_light,
     "lux_dome_light": probe_lux_dome_light,
     "usd_camera": probe_usd_camera,
     "rk_directional_light": probe_rk_directional_light,
     "rk_spot_light": probe_rk_spot_light,
+    "rk_point_light": probe_rk_point_light,
+    "rk_point_light_suffixed_id": probe_rk_point_light_suffixed_id,
     "rk_image_based_light": probe_rk_image_based_light,
+    "collider_shape_sphere": probe_collider_shape_sphere,
+    "collider_shape_unknown": probe_collider_shape_unknown,
     "rk_anchoring": probe_rk_anchoring,
     "unknown_component_id": probe_unknown_component_id,
     "geom_subset": probe_geom_subset,
@@ -637,20 +721,25 @@ PROBES = {
     "separate_identical_meshes": probe_separate_identical_meshes,
 }
 
-# Probes read by comparing their compiled scene against control_cube's. The
-# comparison is decisive for a component prim and suggestive for a typed prim;
-# see the module docstring.
+# Probes read by comparing their compiled scene against a control's, with the
+# control each one is read against. They must differ by the feature alone: a
+# component sitting on an Xform of its own is read against control_xform,
+# because otherwise the empty entity's bytes are credited to the component.
+# The comparison is decisive for a component prim and suggestive for a typed
+# prim; see the module docstring.
 SCENE_SIZE_PROBES = {
-    "rk_directional_light": "component",
-    "rk_spot_light": "component",
-    "rk_image_based_light": "component",
-    "rk_anchoring": "component",
-    "unknown_component_id": "component",
-    "user_properties": "property",
-    "lux_distant_light": "typed prim",
-    "lux_sphere_light": "typed prim",
-    "lux_dome_light": "typed prim",
-    "usd_camera": "typed prim",
+    "rk_directional_light": ("component", "control_xform"),
+    "rk_spot_light": ("component", "control_xform"),
+    "rk_point_light": ("component", "control_xform"),
+    "rk_point_light_suffixed_id": ("component", "control_xform"),
+    "rk_image_based_light": ("component", "control_cube"),
+    "rk_anchoring": ("component", "control_cube"),
+    "unknown_component_id": ("component", "control_cube"),
+    "user_properties": ("property", "control_cube"),
+    "lux_distant_light": ("typed prim", "control_cube"),
+    "lux_sphere_light": ("typed prim", "control_cube"),
+    "lux_dome_light": ("typed prim", "control_cube"),
+    "usd_camera": ("typed prim", "control_cube"),
 }
 
 
@@ -820,14 +909,14 @@ def measure(name: str, build, workdir: Path) -> dict:
 # Reporting
 # ---------------------------------------------------------------------------
 
-def summarise(name: str, measured: dict, control: dict | None = None) -> str:
+def summarise(name: str, measured: dict, every: dict | None = None) -> str:
     """One line saying what became of this feature."""
     authored, usdz, reality = (
         measured["authored"], measured["usdz"], measured["reality"]
     )
 
     if name in SCENE_SIZE_PROBES:
-        return _summarise_scene_size(name, reality, control)
+        return _summarise_scene_size(name, reality, every or {})
 
     if name.startswith("variant"):
         kept = usdz.get("variant_sets", [])
@@ -894,10 +983,17 @@ def summarise(name: str, measured: dict, control: dict | None = None) -> str:
         ]
         return f"reality: compiled {sorted(arrived)} of Guide, Hidden, Shown"
 
-    if name == "control_cube":
+    if name in {"control_cube", "control_xform"}:
         return (
             f"reality: scene {reality.get('scene_bytes', 'n/a')} bytes "
-            f"(the baseline every scene-size probe is read against)"
+            f"(a baseline, not a feature)"
+        )
+
+    if name in {"collider_shape_sphere", "collider_shape_unknown"}:
+        compiled = "CollisionShape" in reality.get("asset_types", [])
+        return (
+            f"reality: {'CollisionShape' if compiled else 'NO SHAPE'}, "
+            f"scene {reality.get('scene_bytes', 'n/a')} bytes"
         )
 
     if name in {
@@ -912,14 +1008,18 @@ def summarise(name: str, measured: dict, control: dict | None = None) -> str:
     return "measured"
 
 
-def _summarise_scene_size(name: str, reality: dict, control: dict | None) -> str:
+def _summarise_scene_size(name: str, reality: dict, every: dict) -> str:
     """Whether the feature reached the compiled scene, and how well that is known."""
-    kind = SCENE_SIZE_PROBES[name]
+    kind, control_name = SCENE_SIZE_PROBES[name]
     if "failed" in reality:
         return "compile failed"
     measured_bytes = reality.get("scene_bytes")
-    if control is None or "failed" in control:
-        return f"reality: scene {measured_bytes} bytes (no control measured)"
+    control = every.get(control_name, {}).get("reality")
+    if not control or "failed" in control:
+        return (
+            f"reality: scene {measured_bytes} bytes "
+            f"({control_name} not measured)"
+        )
 
     delta = measured_bytes - control.get("scene_bytes", 0)
     if delta == 0:
@@ -928,7 +1028,10 @@ def _summarise_scene_size(name: str, reality: dict, control: dict | None) -> str
         verdict = "arrived, as what is unknown"
     else:
         verdict = "read"
-    return f"reality: scene {measured_bytes} bytes ({delta:+d}) -> {verdict}"
+    return (
+        f"reality: scene {measured_bytes} bytes ({delta:+d} vs {control_name})"
+        f" -> {verdict}"
+    )
 
 
 def main() -> int:
@@ -951,9 +1054,10 @@ def main() -> int:
             return 1
         probes = {args.only: PROBES[args.only]}
         # A scene-size probe says nothing without the baseline to read it
-        # against, so the control comes along whether or not it was asked for.
+        # against, so its control comes along whether or not it was asked for.
         if args.only in SCENE_SIZE_PROBES:
-            probes["control_cube"] = PROBES["control_cube"]
+            control_name = SCENE_SIZE_PROBES[args.only][1]
+            probes[control_name] = PROBES[control_name]
 
     measured: dict = {}
     with tempfile.TemporaryDirectory(prefix="apple-conformance-") as temporary:
@@ -964,9 +1068,8 @@ def main() -> int:
     width = max(len(name) for name in probes)
     print(f"Apple toolchain conformance  ({PLATFORM} {DEPLOYMENT_TARGET})")
     print("=" * (width + 62))
-    control = measured.get("control_cube", {}).get("reality")
     for name in probes:
-        print(f"{name:{width}}  {summarise(name, measured[name], control)}")
+        print(f"{name:{width}}  {summarise(name, measured[name], measured)}")
     if args.verbose:
         print()
         print(json.dumps(measured, indent=2, sort_keys=True))

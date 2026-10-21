@@ -151,21 +151,25 @@ thinnest.
 |---|---|---|---|
 | `UsdLux` `DistantLight`, `SphereLight`, `DomeLight` | measured, inconclusive | Refused | Each one grew the compiled scene (541 → 678, 759, 694 bytes), so the prim is not discarded. Whether it arrives as a light or as an empty entity cannot be told from the artifact. |
 | `UsdGeomCamera` | measured, inconclusive | Refused | Same: the scene grew to 719 bytes, which proves arrival and not a camera. |
-| `RealityKit.DirectionalLight` component | measured | No | Grew the scene by 192 bytes. A recognised component. |
-| `RealityKit.SpotLight` component | measured | No | Grew the scene by 218 bytes. |
-| `RealityKit.ImageBasedLight` and `...Receiver` | measured | No | Grew the scene by 168 bytes. |
+| `RealityKit.DirectionalLight` component | measured | No | +53 bytes against a matched control. A recognised component. |
+| `RealityKit.PointLight` component | measured | No | +67 bytes. Note the id: `RealityKit.PointLightComponent`, the component's own Swift name, measures +0 and is not read. |
+| `RealityKit.SpotLight` component | measured | No | +79 bytes. |
+| `RealityKit.ImageBasedLight` and `...Receiver` | measured | No | +168 bytes. |
 | `RealityKit.VirtualEnvironmentProbe` | observed | No | In the OS component set. |
 | World material / environment lighting | assumed | No | Use the **Lighting & Shadows** bake mode to keep the look. |
 
 **Why a component prim's growth is decisive.** A `RealityKitComponent` child
 prim is either consumed as a component or ignored: it never becomes an entity
-of its own. The control is `info:id = "RealityKit.MeshSorting"`, a plausible
-id that is not a real one - it grew the compiled scene by **exactly zero
-bytes**. The four ids above each grew it. So the ids are real, the components
-are read, and an `info:id` the platform does not know is dropped in silence.
+of its own. Two probes are plausible ids that are not real ones -
+`RealityKit.MeshSorting`, and `RealityKit.PointLightComponent`, which is the
+component's own Swift name - and both grew the compiled scene by **exactly
+zero bytes**, while every real id grew it. Each is read against a control
+differing by the feature alone, since an empty Xform is itself an entity worth
+about 139 bytes.
 
-That last part is the warning for us: a mistyped component id produces a
-clean export, a clean compile, and no component.
+Two warnings follow. A mistyped component id produces a clean export, a clean
+compile, and no component. And an id cannot be derived from the component's
+name: it has to be measured.
 
 ## RealityKit components
 
@@ -197,7 +201,7 @@ which lists **97 components** with the `.reality` file version each appears in
 |---|---|---|---|
 | `RealityKitComponent` collider | measured | Opt-in | **Colliders**, on by default. Box shape, sized from the object's bounds. |
 | `UsdPhysics` `CollisionAPI`, `RigidBodyAPI`, `MassAPI` | measured | No | Validates, packages, compiles - and arrives as nothing. Apple's USD build ships no `usdPhysics` plugin at all, so the schema is not even registered. |
-| Capsule, sphere, convex, mesh collider shapes | observed | No | Reality Composer Pro's inspector offers box, capsule and sphere. Only Box's USD spelling is verified here. |
+| Capsule, sphere, convex, mesh collider shapes | measured, inconclusive | No | Every `shapeType` compiles to the same `CollisionShape` asset, the invented token `Nonsense` included, so the compile cannot tell one shape from another. Reality Composer Pro's inspector offers box, capsule and sphere; `Box` is the only spelling backed by seeing it. |
 | Joints, character controller, force effects | observed | No | In the component set; nothing in Blender maps cleanly. |
 
 ## Audio, video and text
@@ -220,36 +224,51 @@ which lists **97 components** with the `.reality` file version each appears in
 
 ## The gaps, ranked
 
-Ordered by what closing them would buy, not by how hard they are.
+One rule decides whether a gap is ours to close: **author a component only
+where the Blender scene already holds the data, as something the artist
+deliberately made.** Translating what someone authored is an exporter's job.
+Deciding how an app will use the asset is not, however cheap the prim would be
+to write.
 
-1. **`InputTargetComponent` beside the collider.** We already decide which
-   objects get a collider; an asset whose colliders cannot be tapped is half a
-   feature, and the component is a two-line prim. Measure the `info:id` first.
-2. **`PhysicsBodyComponent` from the Blender rigid body.** We read the rigid
-   body and author only its shape, while Blender holds mass, friction,
-   restitution and whether the body is passive. The data is already in hand.
-3. **Lights.** The honest statement today is that we refuse `UsdLux` on
-   evidence that does not support refusing it, and that the component path
-   (`RealityKit.DirectionalLight`, `RealityKit.SpotLight`) is real and
-   unused. Settling it needs a probe that counts what a RealityKit build
-   actually draws, not another artifact read.
-4. **More collider shapes.** Blender's collision shape already says sphere,
-   capsule, cylinder, convex hull or mesh, and we approximate all of them with
-   a box. Reality Composer Pro offers three of them.
-5. **`GroundingShadowComponent`.** One toggle, and the usual answer to "my
-   object looks like it is floating".
-6. **Capsule and sphere `shapeType` spellings.** Needed by 4, and cheap to
-   measure with the existing harness.
-7. **`AccessibilityComponent`.** Blender's exporter already has the two fields
-   and we pass empty strings.
-8. **Cameras.** Same evidential hole as lights, and less often wanted in an
-   asset than a light rig is.
+So interaction components are out of scope whatever the platform supports -
+`InputTargetComponent`, `HoverEffectComponent`, `ManipulationComponent`,
+`GestureComponent`, `BillboardComponent`, `GroundingShadowComponent`,
+`AnchoringComponent`. Nothing in a Blender scene says "this is tappable" or
+"anchor me to a horizontal plane", so writing one would be inventing intent
+and then shipping it as the artist's. Those belong in Reality Composer Pro or
+in app code.
 
-Deliberately not pursued: `PointInstancer`, volumes, curves and particle
-fields, all of which the preflight refuses because there is no RealityKit
-geometry behind them; `UsdPhysics`, which is not a registered schema in
-Apple's USD build; and `RealityKitCustomComponent`, which belongs to the app
-project rather than to an exporter.
+What remains, in order:
+
+1. **Collider shapes.** Blender's rigid body already says sphere, capsule,
+   cylinder, convex hull or mesh, and we substitute a box for all of them and
+   warn. Honouring the field is strictly closer to what the artist set.
+   Nothing can be proved about it from a file, though - every `shapeType`
+   compiles identically, invented ones included - so this needs seeing in
+   Reality Composer Pro before it ships.
+2. **Lights.** A Blender lamp carries type, colour, energy, radius and cone
+   angle: authored data, and currently thrown away. The component spelling is
+   the one with evidence behind it (`RealityKit.DirectionalLight`,
+   `.PointLight`, `.SpotLight` are all read), while `UsdLux` is only known to
+   reach the scene, not to arrive as a light. Each id has to be measured
+   rather than guessed, and the mapping from Blender's units to RealityKit's
+   intensities is the real work.
+3. **`PhysicsBodyComponent`.** Blender's rigid body holds mass, friction,
+   restitution and whether the body is active or passive, so the data test
+   passes. But a physics body changes what the asset *does* on load - it
+   starts falling - which is closer to app behaviour than to authored
+   content. If it ships it should be a setting, off by default, and it is the
+   one item here worth arguing about.
+4. **`AccessibilityComponent`.** Blender's own USD exporter takes a label and
+   a description and we pass empty strings. The data is the artist's to write
+   and there is already a field for it.
+
+Deliberately not pursued, for the reasons above or because there is nothing
+behind them: every interaction and placement component; `PointInstancer`,
+volumes, curves and particle fields, which the preflight refuses because no
+RealityKit geometry exists for them; `UsdPhysics`, which is not even a
+registered schema in Apple's USD build; and `RealityKitCustomComponent`,
+which belongs to the app project.
 
 ## What this page cannot tell you
 
