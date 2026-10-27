@@ -30,6 +30,7 @@ marker = sys.argv[sys.argv.index("--") + 3]
 sys.path.insert(0, str(repo_root))
 
 from Plugin.export.materials.extract import core  # noqa: E402
+from Plugin.export.materials.extract import images  # noqa: E402
 
 
 def write_png(path, rgba, name):
@@ -66,10 +67,10 @@ image.pixels[:] = (0.0, 0.0, 1.0, 1.0)
 image.update()
 first_was_dirty = bool(image.is_dirty)
 source_pixel_before = tuple(float(value) for value in image.pixels[:4])
-first_session = core.begin_image_staging_session()
+first_session = images.begin_image_staging_session()
 first_path = Path(core._resolve_image_path(image))
 first_pixel = read_pixel(first_path, "FirstSnapshot")
-first_cleanup_ok = core.cleanup_image_staging_session()
+first_cleanup_ok = images.cleanup_image_staging_session()
 first_removed = not first_path.exists() and not first_session.exists()
 
 # The same Blender datablock is reloaded from a newly written green file. A
@@ -78,10 +79,10 @@ write_png(source, (0.0, 1.0, 0.0, 1.0), "DiskGreen")
 image.reload()
 same_pointer = image.as_pointer() == pointer
 second_was_clean = not bool(image.is_dirty)
-second_session = core.begin_image_staging_session()
+second_session = images.begin_image_staging_session()
 second_path = Path(core._resolve_image_path(image))
 second_pixel = read_pixel(second_path, "SecondSnapshot")
-second_cleanup_ok = core.cleanup_image_staging_session()
+second_cleanup_ok = images.cleanup_image_staging_session()
 second_removed = not second_path.exists() and not second_session.exists()
 
 results = {
@@ -95,7 +96,7 @@ results = {
         "second_export_used_current_pixels": second_pixel[1] > second_pixel[0] and second_pixel[1] > second_pixel[2],
         "second_export_did_not_reuse_path": second_path != first_path,
         "second_export_cleanup": second_cleanup_ok and second_removed,
-        "cache_cleared": not core._STAGED_IMAGE_CACHE and core._STAGED_IMAGE_DIR is None,
+        "cache_cleared": not images._STAGED_IMAGE_CACHE and images._STAGED_IMAGE_DIR is None,
     },
     "source_pixel_before": source_pixel_before,
     "first_pixel": first_pixel,
