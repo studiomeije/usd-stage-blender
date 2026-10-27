@@ -229,7 +229,11 @@ them.
    RealityKit cannot load.
 2. Register it in `_SOCKET_READERS` under the node's Blender `type`.
 3. Move the type into `SUPPORTED_TYPES` in `Plugin/nodes/validate.py`, out of
-   `BAKE_TYPES` or `UNSUPPORTED_TYPES`, so validation stops refusing it.
+   `BAKE_TYPES` or `UNSUPPORTED_TYPES`, so validation stops refusing it. If
+   some of the node's settings cannot be translated, write a check that
+   reports them and register it in `_SUPPORTED_NODE_CHECKS`; prefer asking a
+   refusal function beside your reader, so the validator and the export give
+   the same answer.
 4. Add the node to [FEATURE_SUPPORT.md](FEATURE_SUPPORT.md#shader-nodes) and,
    if its translation is approximate, to
    [MATERIAL_TRANSLATION.md](MATERIAL_TRANSLATION.md).
