@@ -5,6 +5,7 @@ Export diagnostics and reporting
 from __future__ import annotations
 
 import json
+import math
 import time
 import traceback
 from pathlib import Path
@@ -264,22 +265,36 @@ class ExportDiagnostics:
         return self.data.copy()
 
     def to_json(self, indent: int = 2) -> str:
-        """Get diagnostics as JSON string"""
-        return json.dumps(self.data, indent=indent)
+        """The report as strict JSON."""
+        return json.dumps(json_value(self.data), indent=indent, allow_nan=False)
 
     def save(self, filepath: Path):
         """Save diagnostics to JSON file"""
         filepath.parent.mkdir(parents=True, exist_ok=True)
         with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(self.data, f, indent=2)
-def _json_safe(value):
-    """Convert common non-JSON values to serializable forms."""
+            # Sanitized as a whole: not every setter sanitizes what it stores.
+            json.dump(json_value(self.data), f, indent=2, allow_nan=False)
+def json_value(value):
+    """``value`` as plain JSON: dicts, lists, strings, numbers, booleans, None.
+
+    Paths become strings, sets become lists, and any other object becomes its
+    ``str``. A non-finite float becomes ``"NaN"``, ``"Infinity"`` or
+    ``"-Infinity"``: JSON has no spelling for them, and a report a strict
+    parser refuses is no report at all.
+    """
     if isinstance(value, dict):
-        return {str(k): _json_safe(v) for k, v in value.items()}
+        return {str(k): json_value(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
-        return [_json_safe(v) for v in value]
+        return [json_value(v) for v in value]
     if isinstance(value, Path):
         return str(value)
+    if isinstance(value, float) and not math.isfinite(value):
+        if math.isnan(value):
+            return "NaN"
+        return "Infinity" if value > 0 else "-Infinity"
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(value)
+
+
+_json_safe = json_value
