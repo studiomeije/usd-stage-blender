@@ -137,11 +137,32 @@ usdstage info scene.blend
   "unit_system": "METRIC",
   "unit_scale": 1.0,
   "object_count": 4,
-  "material_count": 1
+  "material_count": 1,
+  "variant_sets": []
 }
 ```
 
 `material_count` counts materials assigned to scene objects.
+
+`variant_sets` lists the variant sets the `.blend` declares, each with its
+`kind` and default selection. A `GEOMETRY` set lists each variant's
+`collection`; a `MATERIAL` set gives its `target_collection`, the set it is
+`nested_in` if any, and each variant's `material` and, when narrowed, the
+shapes it is `offered_on`. They are reported as declared, so a variant whose
+collection or material was deleted shows `null` here rather than being
+hidden. It is the way to see what a file will export without exporting it.
+
+```json
+"variant_sets": [
+  {"name": "Seat", "kind": "GEOMETRY", "default_variant": "Fabric",
+   "variants": [{"name": "Fabric", "collection": "Fabric"},
+                {"name": "Leather", "collection": "Leather"}]},
+  {"name": "Colour", "kind": "MATERIAL", "default_variant": "Navy",
+   "target_collection": "Upholstery",
+   "variants": [{"name": "Navy", "material": "Fabric_Navy"},
+                {"name": "Bordeaux", "material": "Fabric_Bordeaux"}]}
+]
+```
 
 ### `list-objects`
 
@@ -527,6 +548,11 @@ A failed `export` or `bake-export` always writes `<output>.diagnostics.json`,
 including a failure before anything was exported, such as a bad override.
 `diagnostics_enabled`, `--diagnostics` and `--no-diagnostics` only decide
 whether a successful run keeps one.
+
+An export that authored variant sets records them under `variant_sets`: each
+set, its variants, their collections and member objects, and the selection the
+asset ships with. Prim identifiers that normalization had to rename are
+recorded under `prim_renames`.
 
 ## Output
 

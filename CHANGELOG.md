@@ -5,6 +5,87 @@ Notable changes to USD Stage for Blender, newest first. Dates are release dates.
 Entries describe what changed for you — what now works, what stops the export,
 and what you have to do differently. Internal refactors are not listed.
 
+## Unreleased
+
+- You can now export USD variant sets. Group each variant in its own
+  collection, then declare the set in the new **Variants** panel — **Shape
+  Set** builds one from a parent collection whose children are already the
+  variants, starting from the collection selected in the Outliner. The export
+  authors a `variantSet` on the asset's root prim, and the file ships
+  selecting the variant you marked as the default. Objects in no variant are
+  present whatever the selection.
+- The Variants panel keeps a declaration consistent as you edit it. Renaming
+  a variant or a set carries the new name to the default selection, to the
+  finish sets nested inside it and to their Offered On toggles. A variant you
+  add takes its name from the collection or material you then give it, until
+  you name it yourself. And the panel lists, for the selected set, every
+  problem an export would refuse or warn about, in the export's own words.
+- A variant you have hidden is brought into the export, and your view layer is
+  put back exactly as it was afterwards. Blender's exporter drops a collection
+  excluded from the view layer and anything disabled for renders, so until now
+  a variant-organised scene exported only whatever happened to be visible —
+  or, if you hid variants with the outliner's eye, exported all of them stacked
+  on top of each other.
+- An export stops rather than shipping a variant set that cannot switch. Two
+  variants claiming the same object, a variant whose objects are parented under
+  another variant's, a name that is not a USD identifier, or an opinion in the
+  file that would override the variants are all refused with the names
+  involved. Variant names are never renamed for you: a variant name is what
+  Reality Composer Pro lists and what your code passes to
+  `setVariantSelection(for:to:)`. Creating a set from a collection is the one
+  place a name is adjusted, where you can see and edit it in the panel.
+- A finish set can now nest inside a shape set, so a finish can be offered
+  on some shapes and not others - walnut on the square top but not the
+  round one. Set Nest Inside on the finish set, then use each finish's
+  Offered On toggles - one per shape - to pick the shapes that offer it. A
+  finish you leave offered everywhere is offered on a shape you add later
+  too, and you cannot turn the last shape off: a finish offered on nothing
+  is refused where you make the mistake, not at export.
+- A variant set now varies either **shape** or **finish**. A shape set
+  switches whole collections of objects, as before. A finish set keeps the
+  objects and rebinds their material, so the same tabletop can be offered in
+  oak or walnut without a second copy of the mesh. Because the two vary
+  different things, one object can belong to a shape set and a finish set at
+  once: three tops and four finishes is twelve looks from three meshes.
+  **Finish Set** builds one in a step: pick the collection it applies to and
+  the start the finishes' material names share, such as `Fabric_`, and every
+  matching material becomes a variant named after the rest of its name, with
+  the one your objects already wear as the default. A finish recolours
+  objects a shape set hides by default too, and leaves an object parented
+  under a target alone unless it is a target itself. Offering a finish
+  nothing currently wears works too, whatever its name - `Bordeaux.001`
+  included.
+- An export can now be split into an asset interface and a payload, with
+  Advanced USD ▸ Payload Geometry. The interface holds the root prim, its
+  kind, asset info, bounds and variant sets; the geometry moves to
+  `assets/<name>_payload`. Another scene can then reference your asset,
+  place it and pick a variant without loading any geometry, and a USDZ
+  still carries both halves. Composed, it is identical to a flat export:
+  the payload repeats the units and frame rate, so animation plays at the
+  same speed.
+- Objects with Blender Rigid Body enabled now export with a RealityKit
+  collider, sized from the object's own bounds, so an asset can be tapped,
+  dragged or collided with in an app without adding a collision component
+  by hand in Reality Composer Pro. Collision shapes other than Box are
+  approximated as a box and the diagnostics report says which. The
+  component is a child called `Collider`, or `Collider_1` when the object
+  already has a child of that name, such as a collision proxy. Turn it off
+  with Advanced USD ▸ Colliders.
+- Exports now identify themselves as an asset. The root prim carries a USD
+  `kind` (Component by default), `assetInfo` naming the file a consumer
+  references, and an `extentsHint` giving its bounds. Another stage can
+  therefore reference, instance and lay out the export as one model without
+  loading its geometry. Set Asset Kind to None to author none of it.
+- `usdstage info` lists the variant sets a `.blend` declares - what each
+  varies, and the collection or material behind every variant - so you can
+  see what a file will export without exporting it, and the diagnostics
+  report records what an export authored.
+- **Reality Composer Pro's `.reality` compile keeps only the selection you
+  shipped.** `realitytool` resolves the default and discards the other
+  variants, so a `.reality` built from an `.rkassets` bundle carries none
+  unless you also define Reality Composer Pro's own variants in the editor.
+  The variant sets survive intact in `.usda`, `.usdc` and `.usdz`.
+
 ## 1.1.0 — 2026-10-17
 
 - An export where two materials have names that reduce to the same USD prim

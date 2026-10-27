@@ -12,6 +12,8 @@ This page is the index of the USD Stage for Blender documentation. Use it to fin
 | [MATERIAL_TRANSLATION.md](MATERIAL_TRANSLATION.md) | How a Blender shader graph becomes a RealityKit MaterialX graph: the surface, color space, textures |
 | [BAKING.md](BAKING.md) | When a bake happens, what each bake mode captures, and what scene state it overrides |
 | [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md) | Geometry, units, animation, staging and publication, and USDZ packaging |
+| [APPLE_CONFORMANCE.md](APPLE_CONFORMANCE.md) | What Apple's own tools measurably do with each USD feature, and which ones never reach a compiled `.reality` |
+| [REALITYKIT_USD_SUPPORT.md](REALITYKIT_USD_SUPPORT.md) | How much of the USD RealityKit consumes this exporter authors, and what is left on the table |
 
 ## If you are chasing a specific surprise
 
@@ -19,6 +21,8 @@ This page is the index of the USD Stage for Blender documentation. Use it to fin
 - **"My object is the wrong size."** [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#1-the-apple-spatial-contract).
 - **"The export doesn't match my viewport."** [BAKING.md](BAKING.md#2-the-bake-modes); the view transform is not applied to baked textures.
 - **"I set a setting and nothing happened."** [SETTINGS.md](SETTINGS.md), which records the settings that other settings override.
+- **"The file has the feature but my app does not."** [APPLE_CONFORMANCE.md](APPLE_CONFORMANCE.md), which records what survives `realitytool` and what it silently drops.
+- **"Can the exporter do X at all?"** [REALITYKIT_USD_SUPPORT.md](REALITYKIT_USD_SUPPORT.md), which lists the RealityKit features it authors, refuses and leaves unused.
 - **"Something is missing from the export and nothing told me."** [FEATURE_SUPPORT.md](FEATURE_SUPPORT.md), which ends with the features that leave without a warning.
 
 ## Known issues

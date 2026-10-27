@@ -19,9 +19,10 @@ page.
 2. [Object selection and scope](#2-object-selection-and-scope)
 3. [Geometry decisions](#3-geometry-decisions)
 4. [Animation](#4-animation)
-5. [Staging and publication](#5-staging-and-publication)
-6. [Packaging](#6-packaging)
-7. [Preflight and validation gates](#7-preflight-and-validation-gates)
+5. [Variant sets](#5-variant-sets)
+6. [Staging and publication](#6-staging-and-publication)
+7. [Packaging](#7-packaging)
+8. [Preflight and validation gates](#8-preflight-and-validation-gates)
 
 ## Pipeline order
 
@@ -258,7 +259,155 @@ the named clips into the one aggregate animation when it imports the file, so
 the clip names do not survive. Leave it off for RealityKit runtime exports and
 split the imported animation in app code.
 
-## 5. Staging and publication
+## 5. Variant sets
+
+Blender authors no USD variant sets, and its exporter does not write
+collections as prims, so a scene organised as `Seat/Fabric` and `Seat/Leather`
+arrives in USD flat with the grouping gone. USD Stage for Blender authors the
+sets itself, from the sets you declare in the **Variants** panel.
+
+### What you declare
+
+A variant set is a name and a list of variants; each variant points at the
+collection whose objects it owns, or for a finish set at a material. The
+panel builds the common cases in one step:
+
+- **Shape Set** turns a parent collection's children into the variants. It
+  starts from the collection selected in the Outliner.
+- **Finish Set** takes the collection the finishes apply to and the start the
+  materials' names share - `Fabric_` for `Fabric_Encre` and `Fabric_Navy` -
+  and makes one variant per matching material, named after the rest of its
+  name. The material the objects already wear becomes the default.
+- **Empty** starts a set to fill in by hand. A variant added there takes its
+  name from the collection or material you give it, until you name it
+  yourself.
+
+Names are references - the default selection, a finish set's Nest Inside,
+its Offered On toggles - so renaming a variant or a set carries the new name
+to all of them. Below the selected set the panel lists every problem the
+export would refuse or warn about, from the same validation the export runs.
+
+The sets are saved in the `.blend`, so the panel and the command line export
+the same variants from the same file, and `usdstage info` lists them without
+exporting.
+
+Objects in no variant are untouched and present whatever the selection.
+
+### What is written
+
+One `variantSet` on the asset's root prim — where the OpenUSD asset guidelines
+put it, so a selection stays reachable even when the component is instanceable
+or its payload is unloaded. Inside each variant, every member of every variant
+in that set is activated or deactivated:
+
+```usda
+def Xform "root" (
+    variants = { string Seat = "Fabric" }
+    prepend variantSets = "Seat"
+)
+{
+    variantSet "Seat" = {
+        "Fabric" { over "SeatFabric" { bool active = 1 }
+                   over "SeatLeather" { bool active = 0 } }
+        "Leather" { over "SeatFabric" { bool active = 0 }
+                    over "SeatLeather" { bool active = 1 } }
+    }
+}
+```
+
+`active` is authored **only** inside the variants. Variants sit low in USD's
+composition order, so an opinion on the same field in the local layer stack
+beats them and the set silently stops switching; the preflight refuses that
+case rather than shipping it.
+
+### Hidden variants are brought in for the export
+
+The variant you are not working on is usually hidden, and Blender's exporter
+drops an excluded collection and anything the active **Use Settings for** mode
+sees as hidden. So the export opens every member's path into the view layer
+first and puts your view layer back exactly as it was afterwards, even if the
+export fails. Only the outliner's eye never mattered: Blender exports through
+it regardless.
+
+With **Author Variant Sets** off, neither authoring nor that staging runs, and
+the export holds exactly what the viewport shows.
+
+### Shape sets and finish sets
+
+A variant set varies one of two things, chosen per set:
+
+| | **Shape** | **Finish** |
+|---|---|---|
+| Each variant owns | a collection | a material |
+| The set also needs | — | the collection it applies to |
+| What it authors | `active` on the member prims | `material:binding` on the targets |
+
+A finish set leaves every object present and rebinds it, so the same objects
+can belong to a shape set *and* a finish set: the two vary different USD
+properties and neither shadows the other. That is how one file offers three
+tops and four finishes as twelve looks without twelve copies of the geometry.
+
+What is refused is two sets varying the **same** property of one object — two
+shape sets both authoring `active`, or two finish sets both rebinding. The
+rule is about the property, not the object.
+
+Two consequences worth knowing:
+
+- Blender writes a `material:binding` on every mesh, and a local opinion beats
+  every variant. Authoring a finish set therefore **removes** that binding, so
+  the variants are the only thing saying what the object wears. Every
+  selection supplies one, and the preflight refuses a stray binding left
+  outside.
+- The binding is rewritten on the mesh beneath each target object, where
+  Blender wrote it, including on objects a shape set hides by default. An
+  object parented under a target is a separate object and keeps its own
+  material unless the finish set targets it too.
+- A finish you do not currently use is still exportable. Blender writes no
+  material prim for a material no face wears, so the finish set defines one,
+  named the way Blender would have named it and never sharing a prim with a
+  different material, and the MaterialX rewrite converts it like any other.
+
+### Offering a finish on some shapes only
+
+Independent sets offer every combination, including ones you do not sell. When
+a finish suits only some shapes, nest the finish set inside the shape set:
+set **Nest Inside** to the shape set, and use each finish's **Offered On**
+toggles - one per shape - to say which shapes offer it. A finish offered on
+every shape needs no narrowing, and a shape added later is offered it too.
+
+The finish set is then authored inside each shape variant rather than beside
+it, so selecting a shape changes which finishes exist:
+
+```
+Shape = Round   → Finish offers Oak
+Shape = Square  → Finish offers Oak, Walnut
+```
+
+Each shape variant rebinds every target except the members of the other
+shapes, so an object every shape shares - a frame, say - takes the finish
+whichever shape is selected. Every shape must offer at least one finish, or the
+export is refused: a shape that ships with nothing to choose is a mistake, not
+a style. One level of nesting is the limit.
+
+### What variants cannot do
+
+- **They cannot be animated.** USD resolves a selection at composition time.
+- **A member cannot be in two variants of one set**, and a member cannot be
+  parented under another variant's member: deactivating the parent takes the
+  child with it, so the child's variant could never compose. Both are refused
+  before anything is written.
+- **A finish set over a multi-material mesh** sets every GeomSubset to one
+  material, and warns that it did.
+- **A selected-only export** carries the other variants of any set the
+  selection touches, and leaves out a set it does not touch.
+- **Reality Composer Pro's `.reality` compile keeps only the selection you
+  shipped.** `realitytool` resolves the default selection and discards the
+  rest, so a `.reality` built from an `.rkassets` bundle carries no variants
+  unless you define Reality Composer Pro's own variants in the editor. The
+  variant sets survive in `.usd`, `.usdc` and `.usdz`, and the USDKit stage
+  APIs switch them at runtime.
+
+## 6. Staging and publication
 
 ### The attempt directory
 
@@ -366,7 +515,7 @@ Diff the composed stage rather than the file, for example by opening both with
 USD and walking the prims in sorted path order, or accept that every re-export
 shows as changed.
 
-## 6. Packaging
+## 7. Packaging
 
 `export_format` offers `USDA`, `USDC`, and `USDZ` (the default), and the format
 sets the output file's extension. USDZ stages its root as binary `.usdc`.
@@ -387,7 +536,7 @@ after validation passes; a symlinked destination is refused. If the
 packager runs and self-validates. External tools run in their own process
 group with timeouts (600 seconds to package, 300 to check).
 
-## 7. Preflight and validation gates
+## 8. Preflight and validation gates
 
 ### Before anything is written
 

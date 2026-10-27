@@ -264,6 +264,55 @@ class USDStageExportSettings(PropertyGroup):
         update=_on_settings_changed,
     )
 
+    payload_geometry: BoolProperty(
+        name="Payload Geometry",
+        description=(
+            "Split the export into an asset interface and a payload layer, so "
+            "a consumer can reference, place and choose a variant of the asset "
+            "without loading its geometry"
+        ),
+        default=False,
+        update=_on_settings_changed,
+    )
+
+    export_colliders: BoolProperty(
+        name="Colliders",
+        description=(
+            "Author a RealityKit collider for every object with Blender Rigid "
+            "Body enabled, so the asset is interactive without hand-work in "
+            "Reality Composer Pro"
+        ),
+        default=True,
+        update=_on_settings_changed,
+    )
+
+    root_prim_kind: EnumProperty(
+        name="Asset Kind",
+        description=(
+            "The USD model kind written on the root prim, which lets another "
+            "stage treat the export as one model"
+        ),
+        items=[
+            ('COMPONENT', "Component", "One asset, with no models inside it"),
+            ('GROUP', "Group", "A group of models"),
+            ('ASSEMBLY', "Assembly", "An assembly of published models"),
+            ('NONE', "None", "Author no kind, asset info or bounds hint"),
+        ],
+        default='COMPONENT',
+        update=_on_settings_changed,
+    )
+
+    export_variants: BoolProperty(
+        name="Author Variant Sets",
+        description=(
+            "Author the scene's declared variant sets. Turn off to export the "
+            "scene exactly as the viewport shows it, with no variant sets and "
+            "no hidden variants brought in"
+        ),
+        default=True,
+        update=_on_settings_changed,
+    )
+
     export_custom_properties: BoolProperty(
         name="Custom Properties",
         description="Export custom properties as USD attributes",
@@ -866,7 +915,7 @@ class USDSTAGE_PT_export_usd_root(Panel):
     bl_region_type = 'UI'
     bl_category = "USD Stage"
     bl_options = {'DEFAULT_CLOSED'}
-    bl_order = 3
+    bl_order = 4
 
     def draw_header(self, context):
         self.layout.label(text="", icon='SETTINGS')
@@ -890,6 +939,9 @@ class USDSTAGE_PT_export_usd_root(Panel):
 
 def _draw_usd_general_section(layout, settings):
     layout.prop(settings, "root_prim_name", placeholder="Scene")
+    layout.prop(settings, "root_prim_kind")
+    layout.prop(settings, "export_colliders")
+    layout.prop(settings, "payload_geometry")
     layout.prop(settings, "export_custom_properties")
     if settings.export_custom_properties:
         layout.prop(settings, "custom_properties_namespace")
@@ -933,7 +985,7 @@ class USDSTAGE_PT_export_diagnostics(Panel):
     bl_region_type = 'UI'
     bl_category = "USD Stage"
     bl_options = {'DEFAULT_CLOSED'}
-    bl_order = 4
+    bl_order = 5
 
     def draw_header(self, context):
         self.layout.label(text="", icon='STATUS_INFO')
