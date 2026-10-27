@@ -30,6 +30,21 @@ from .usd_utils import Sdf, require_pxr
 #: an owned sidecar directory, so publication needs no new rules.
 PAYLOAD_DIRECTORY = "assets"
 
+#: Layer metadata the payload repeats from the interface. The units keep it
+#: legible opened on its own. The timing is not optional: USD scales time
+#: across a composition arc whose two layers disagree on time codes per second,
+#: and a payload that omits it reads as 24, so a 30 fps animation would play
+#: back stretched by 30/24.
+_SHARED_LAYER_METADATA = (
+    "upAxis",
+    "metersPerUnit",
+    "kilogramsPerUnit",
+    "timeCodesPerSecond",
+    "framesPerSecond",
+    "startTimeCode",
+    "endTimeCode",
+)
+
 
 def split_asset_payload(stage, usd_path, settings=None, diagnostics=None) -> dict:
     """Move the geometry into a payload layer, leaving an interface behind.
@@ -77,8 +92,7 @@ def split_asset_payload(stage, usd_path, settings=None, diagnostics=None) -> dic
         child = root_path.AppendChild(name)
         Sdf.CopySpec(root_layer, child, payload_layer, child)
 
-    # Stage metadata so the payload is still legible opened on its own.
-    for key in ("upAxis", "metersPerUnit"):
+    for key in _SHARED_LAYER_METADATA:
         if root_layer.pseudoRoot.HasInfo(key):
             payload_layer.pseudoRoot.SetInfo(key, root_layer.pseudoRoot.GetInfo(key))
     payload_layer.defaultPrim = root_path.name

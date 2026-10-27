@@ -131,8 +131,7 @@ def author_colliders(
             continue
 
         extent, centre = bounds
-        _author_one(stage, prim, extent, centre)
-        authored.append(f"{prim.GetPath()}/Collider")
+        authored.append(str(_author_one(stage, prim, extent, centre).GetPath()))
         if member.blender_shape != "BOX":
             approximated.append(f"{member.object_name} ({member.blender_shape})")
 
@@ -161,10 +160,23 @@ def _local_bounds(cache, prim):
     return extent, centre
 
 
-def _author_one(stage, prim, extent, centre) -> None:
+def _collider_path(stage, prim):
+    """``Collider`` under the object, or the first free ``Collider_N``.
+
+    The name is the artist's as much as ours: a collision proxy parented under
+    the object it serves is routinely called Collider, and defining over its
+    prim would retype that object into a component.
+    """
+    name, suffix = "Collider", 1
+    while stage.GetPrimAtPath(prim.GetPath().AppendChild(name)):
+        name = f"Collider_{suffix}"
+        suffix += 1
+    return prim.GetPath().AppendChild(name)
+
+
+def _author_one(stage, prim, extent, centre):
     """Write the component exactly as Reality Composer Pro spells it."""
-    collider = stage.DefinePrim(prim.GetPath().AppendChild("Collider"),
-                                "RealityKitComponent")
+    collider = stage.DefinePrim(_collider_path(stage, prim), "RealityKitComponent")
 
     identifier = collider.CreateAttribute(
         "info:id", Sdf.ValueTypeNames.Token, custom=False,
@@ -197,3 +209,4 @@ def _author_one(stage, prim, extent, centre) -> None:
         pose.CreateAttribute(
             "position", Sdf.ValueTypeNames.Float3, custom=False
         ).Set(Gf.Vec3f(*centre))
+    return collider

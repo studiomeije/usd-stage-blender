@@ -10,6 +10,7 @@ pytest.importorskip("pxr")
 from pxr import Gf, Usd, UsdGeom  # noqa: E402
 
 from Plugin.export.colliders import (  # noqa: E402
+    ColliderMember,
     author_colliders,
     resolve_collider_plan,
 )
@@ -220,3 +221,17 @@ def test_a_collider_is_sized_before_any_variant_can_hide_its_object():
     # And a collider rides with its object when a variant deactivates it.
     stage.GetPrimAtPath("/Root/Spare").SetActive(False)
     assert not stage.GetPrimAtPath("/Root/Spare/Collider")
+
+
+def test_a_child_object_named_collider_is_left_alone():
+    """A collision proxy parented under its object is routinely called Collider."""
+    stage = _stage()
+    UsdGeom.Xform.Define(stage, "/Root/Table/Collider")
+    UsdGeom.Cube.Define(stage, "/Root/Table/Collider/Proxy")
+
+    written = author_colliders(stage, (ColliderMember("Table", "BOX"),),
+                               {"/Root/Table": "Table"})
+
+    assert written == ("/Root/Table/Collider_1",)
+    assert stage.GetPrimAtPath("/Root/Table/Collider").GetTypeName() == "Xform"
+    assert stage.GetPrimAtPath("/Root/Table/Collider_1").GetTypeName() == "RealityKitComponent"

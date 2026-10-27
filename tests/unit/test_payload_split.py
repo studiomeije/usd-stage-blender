@@ -167,3 +167,30 @@ def test_what_was_written_reaches_the_sidecar(tmp_path):
     assert diagnostics.to_dict()["payload_split"]["payload_layer"] == (
         "table_payload.usda"
     )
+
+
+def test_the_payload_keeps_the_animation_timing(tmp_path):
+    """USD scales time across an arc whose layers disagree on time codes.
+
+    A payload without the interface's 30 fps would read as 24 and stretch
+    every animation by 30/24.
+    """
+    path = tmp_path / "anim.usda"
+    stage = Usd.Stage.CreateNew(str(path))
+    stage.SetTimeCodesPerSecond(30)
+    stage.SetFramesPerSecond(30)
+    stage.SetStartTimeCode(1)
+    stage.SetEndTimeCode(60)
+    root = UsdGeom.Xform.Define(stage, "/root")
+    stage.SetDefaultPrim(root.GetPrim())
+    moving = UsdGeom.Xform.Define(stage, "/root/Moving").AddTranslateOp()
+    moving.Set((0.0, 0.0, 0.0), 1)
+    moving.Set((10.0, 0.0, 0.0), 60)
+
+    split_asset_payload(stage, path, _settings())
+    stage.GetRootLayer().Save()
+
+    reopened = Usd.Stage.Open(str(path))
+    translate = reopened.GetPrimAtPath("/root/Moving").GetAttribute("xformOp:translate")
+    assert translate.GetTimeSamples() == [1.0, 60.0]
+    assert tuple(translate.Get(60)) == (10.0, 0.0, 0.0)
