@@ -7,6 +7,17 @@ and what you have to do differently. Internal refactors are not listed.
 
 ## Unreleased
 
+- An asset referenced through a network `file://server/share/...` URL is now
+  copied from that server. The server name used to be dropped, so the export
+  looked for the path on your own disk instead. Upper-case `FILE://` URLs are
+  read as URLs too, and an asset path with a scheme such as `s3://` is no
+  longer mistaken for a local file.
+- The diagnostics report is always valid JSON. A value such as an empty
+  object's bounds could write `NaN` into it, which strict JSON readers refuse;
+  such numbers are now written as the strings `"NaN"`, `"Infinity"` and
+  `"-Infinity"`.
+- An export started from the panel now records how long each step took in its
+  diagnostics report, as the command line always did.
 - You can now export USD variant sets. Group each variant in its own
   collection, then declare the set in the new **Variants** panel — **Shape
   Set** builds one from a parent collection whose children are already the

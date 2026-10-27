@@ -22,6 +22,13 @@ Blender's interface.
 - **Animation**: transform animation, skinned meshes, shape keys, vertex
   displacement and drivers over `frame` export
   ([docs/EXPORT_PIPELINE.md](docs/EXPORT_PIPELINE.md)).
+- **Variants**: offer an asset in several shapes and finishes from one file.
+  Group the alternatives in collections or materials, declare them in the
+  Variants panel, and the export writes USD variant sets
+  ([docs/EXPORT_PIPELINE.md](docs/EXPORT_PIPELINE.md#5-variant-sets)).
+- **Ready to use in an app**: Rigid Body objects export with a RealityKit
+  collider, and every export says what it is - its kind, name and bounds - so
+  another scene can reference and lay it out without loading it.
 - **Portable output**: every export is Y-up, -Z forward and in meters, with
   textures staged beside it under relative paths.
 - **Command line and agent skills**: export, bake, validate and manage
@@ -61,6 +68,8 @@ repository.
 - **3D Viewport ▸ Sidebar ▸ USD Stage**: the export panel with the Profile,
   the Export button, material, texture and USD settings, the background job
   monitor, and diagnostics.
+- **3D Viewport ▸ Sidebar ▸ USD Stage ▸ Variants**: declare the asset's
+  variant sets.
 - **Shader Editor ▸ Sidebar ▸ USD Stage ▸ RealityKit Compatibility**:
   check the active material against the chosen Profile and select the nodes
   that block translation.
@@ -137,6 +146,8 @@ folder redacted. What else to attach to a report is in
 ## Documentation
 
 - [docs/README.md](docs/README.md) indexes every documentation page.
+- [CONTRIBUTING.md](CONTRIBUTING.md) covers setting up a checkout, running the
+  tests, and extending the add-on.
 - [CHANGELOG.md](CHANGELOG.md) lists what changed in each release, including
   what to redo when coming from BlenderToRCP.
 

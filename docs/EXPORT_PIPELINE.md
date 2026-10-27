@@ -26,18 +26,16 @@ page.
 
 ## Pipeline order
 
-Every export runs the same sequence, whether you start it from the sidebar
-(`Plugin/ops/export_operator.py`), the CLI `export` command
-(`Plugin/api/commands/export.py`), or the bake lane
-(`Plugin/api/commands/bake_export.py`). *Staging* means assembling the export
-in a private temporary directory. *Publication* means installing the finished
-files into your output directory in an order that can never leave it
-half-written.
+Every export runs the same sequence, from `Plugin/export/pipeline.py`, whether
+you start it from the sidebar, the command line `export` command, or a bake
+export. *Staging* means assembling the export in a private temporary
+directory. *Publication* means installing the finished files into your output
+directory in an order that can never leave it half-written.
 
 | Step | Implementation | Notes |
 |------|----------------|-------|
-| Selection closure | `collect_export_objects` | Fails closed on an empty selected-only export |
-| Material validation | `Plugin/nodes/validate.py` | Strict, before any file is written; the bake lane runs the asset preflight instead |
+| Selection closure | `validation_scope` | Fails closed on an empty selected-only export |
+| Material validation | `validate_materials` | Strict, before any file is written; a bake export runs the asset preflight instead |
 | Staging directory | `create_export_staging_dir` | `.usdstage_temp/<output>.<attempt>/` |
 | Animation preparation | `prepare_animation_export` | Concatenates takes onto one NLA track and bakes |
 | Native USD export | `export_blender_scene` | `bpy.ops.wm.usd_export` with a fixed contract |
@@ -50,21 +48,28 @@ Post-processing (`Plugin/export/postprocess_usd.py`) runs in this order:
 1. Localize source dependencies into the export-owned namespace.
 2. Normalize the scene: default prim, up axis, prim names, mesh repair,
    `doubleSided`.
-3. Rewrite materials into RealityKit MaterialX graphs declaring MaterialX 1.39,
+3. Reserve a material for every variant finish, including one nothing in the
+   scene wears yet.
+4. Rewrite materials into RealityKit MaterialX graphs declaring MaterialX 1.39,
    deleting Blender's UsdPreviewSurface network (see
    [No UsdPreviewSurface network](MATERIAL_TRANSLATION.md#no-usdpreviewsurface-network)).
-4. Author the RCP animation library, when enabled.
-5. Finalize assets: localize anything steps 3 and 4 authored.
-6. Re-apply `doubleSided = false` over the final set of owned layers.
-7. Retag `colorSpace:name` tokens RealityKit has no alias for (see
+5. Author the RCP animation library, when enabled.
+6. Finalize assets: localize anything steps 4 and 5 authored.
+7. Re-apply `doubleSided = false` over the final set of owned layers.
+8. Retag `colorSpace:name` tokens RealityKit has no alias for (see
    [Color space](MATERIAL_TRANSLATION.md#color-space)).
-8. Write the primvars materials read that Blender does not export: each
+9. Write the primvars materials read that Blender does not export: each
    object's Object Info Random value, and the per-corner UV derivatives Bump
    needs.
-9. Copy vertex colors into `displayColor`/`displayOpacity` where a material
-   reads them.
-10. Clear empty blend-shape animation declarations.
-11. Run the [composed-stage preflight](#the-composed-stage-preflight).
+10. Copy vertex colors into `displayColor`/`displayOpacity` where a material
+    reads them.
+11. Clear empty blend-shape animation declarations.
+12. Author a RealityKit collider for each Rigid Body object.
+13. Author the declared [variant sets](#5-variant-sets).
+14. Author the asset's `kind`, `assetInfo` and `extentsHint`.
+15. Run the [composed-stage preflight](#the-composed-stage-preflight), once for
+    every variant selection.
+16. Split the asset into an interface and a payload, when enabled.
 
 ## 1. The Apple spatial contract
 
