@@ -13,7 +13,12 @@ import bpy
 from bpy.props import IntProperty, StringProperty
 from bpy.types import Operator
 
-from ..export.variants import suggest_identifier
+from ..export.variants import (
+    finish_name_from_material,
+    guess_finish_prefix,
+    suggest_identifier,
+    unique_name,
+)
 
 
 def _variant_sets(context):
@@ -29,13 +34,41 @@ def _active_set(context):
 
 
 def _unique_name(existing, base: str) -> str:
-    taken = {item.name for item in existing}
-    if base not in taken:
-        return base
-    suffix = 2
-    while f"{base}_{suffix}" in taken:
-        suffix += 1
-    return f"{base}_{suffix}"
+    return unique_name((item.name for item in existing), base)
+
+
+def _active_collection(context):
+    """The collection selected in the Outliner, unless it is the scene's own."""
+    layer_collection = getattr(context.view_layer, "active_layer_collection", None)
+    collection = getattr(layer_collection, "collection", None)
+    if collection is None or collection == context.scene.collection:
+        return None
+    return collection
+
+
+def _matching_materials(prefix: str) -> list:
+    """Surface materials whose names start with ``prefix``, in name order."""
+    return sorted(
+        (
+            material for material in bpy.data.materials
+            if material.name.startswith(prefix)
+            and not getattr(material, "is_grease_pencil", False)
+        ),
+        key=lambda material: material.name,
+    )
+
+
+def _worn_material(collection):
+    """The first material a mesh in ``collection`` (or below) wears."""
+    stack = [collection] if collection is not None else []
+    while stack:
+        current = stack.pop(0)
+        for obj in current.objects:
+            for slot in getattr(obj, "material_slots", ()):
+                if slot.material is not None:
+                    return slot.material
+        stack.extend(current.children)
+    return None
 
 
 def _find_layer_collection(layer_collection, collection):
@@ -59,10 +92,10 @@ def _is_visible(context, collection) -> bool:
 
 
 class USDSTAGE_OT_variant_set_add_from_collection(Operator):
-    """Create a variant set from a collection whose children are the variants"""
+    """Create a shape set from a collection whose child collections are the variants"""
 
     bl_idname = "usdstage.variant_set_add_from_collection"
-    bl_label = "From Collection"
+    bl_label = "Shape Set from Collection"
     bl_options = {'REGISTER', 'UNDO'}
 
     collection_name: StringProperty(
@@ -71,6 +104,10 @@ class USDSTAGE_OT_variant_set_add_from_collection(Operator):
     )
 
     def invoke(self, context, event):
+        # The collection selected in the Outliner is usually the one meant.
+        active = _active_collection(context)
+        if not self.collection_name and active is not None and active.children:
+            self.collection_name = active.name
         return context.window_manager.invoke_props_dialog(self)
 
     def draw(self, context):
@@ -121,11 +158,90 @@ class USDSTAGE_OT_variant_set_add_from_collection(Operator):
         return {'FINISHED'}
 
 
+class USDSTAGE_OT_variant_set_add_finish(Operator):
+    """Create a finish set: one variant per material of a family, rebinding a collection's objects"""
+
+    bl_idname = "usdstage.variant_set_add_finish"
+    bl_label = "Finish Set"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    target_name: StringProperty(
+        name="Applies To",
+        description="The collection whose objects each finish rebinds",
+    )
+    prefix: StringProperty(
+        name="Materials Starting With",
+        description=(
+            "Every material whose name starts with this becomes a variant, "
+            "named after the rest of its name. Leave empty to add variants by hand"
+        ),
+    )
+
+    def invoke(self, context, event):
+        target = _active_collection(context)
+        if not self.target_name and target is not None:
+            self.target_name = target.name
+        if not self.prefix:
+            worn = _worn_material(bpy.data.collections.get(self.target_name))
+            if worn is not None:
+                self.prefix = guess_finish_prefix(worn.name)
+        return context.window_manager.invoke_props_dialog(self, width=360)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop_search(self, "target_name", bpy.data, "collections", text="Applies To")
+        layout.prop(self, "prefix")
+        if self.prefix:
+            found = [material.name for material in _matching_materials(self.prefix)]
+            if found:
+                shown = ", ".join(found[:4]) + (", ..." if len(found) > 4 else "")
+                layout.label(text=f"{len(found)} finishes: {shown}", icon='MATERIAL')
+            else:
+                layout.label(text="No material starts with that", icon='ERROR')
+
+    def execute(self, context):
+        target = bpy.data.collections.get(self.target_name)
+        if target is None:
+            self.report({'ERROR'}, "Pick the collection the finishes apply to")
+            return {'CANCELLED'}
+        materials = _matching_materials(self.prefix) if self.prefix else []
+        if self.prefix and not materials:
+            self.report({'ERROR'}, f"No material starts with '{self.prefix}'")
+            return {'CANCELLED'}
+
+        sets = _variant_sets(context)
+        variant_set = sets.add()
+        variant_set.kind = 'MATERIAL'
+        base = self.prefix.strip("_.- ") or f"{target.name}_Finish"
+        variant_set.name = _unique_name(sets[:-1], suggest_identifier(base, "Finish"))
+        variant_set.target_collection = target
+        for material in materials:
+            variant = variant_set.variants.add()
+            variant.name = _unique_name(
+                variant_set.variants[:-1], finish_name_from_material(material.name, self.prefix)
+            )
+            variant.material = material
+
+        # Ship what the objects already wear, when it is one of the finishes.
+        worn = _worn_material(target)
+        default = next(
+            (variant.name for variant in variant_set.variants if variant.material == worn),
+            variant_set.variants[0].name if len(variant_set.variants) else "",
+        )
+        variant_set.default_variant = default
+        context.scene.usd_stage_variant_sets_index = len(sets) - 1
+        self.report(
+            {'INFO'},
+            f"Added finish set '{variant_set.name}' with {len(materials)} finishes",
+        )
+        return {'FINISHED'}
+
+
 class USDSTAGE_OT_variant_set_add_empty(Operator):
     """Add an empty variant set to fill in by hand"""
 
     bl_idname = "usdstage.variant_set_add_empty"
-    bl_label = "Empty Set"
+    bl_label = "Empty Variant Set"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -326,6 +442,7 @@ class USDSTAGE_OT_variant_preview(Operator):
 
 _CLASSES = (
     USDSTAGE_OT_variant_set_add_from_collection,
+    USDSTAGE_OT_variant_set_add_finish,
     USDSTAGE_OT_variant_set_add_empty,
     USDSTAGE_OT_variant_set_remove,
     USDSTAGE_OT_variant_add,

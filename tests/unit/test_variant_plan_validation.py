@@ -634,3 +634,49 @@ def test_two_nested_finish_sets_on_one_object_are_refused():
 def test_a_nested_finish_never_contests_its_own_parent():
     """Its parent varies activation; it varies the binding."""
     assert "VARIANT_PROPERTY_CONTESTED" not in _codes(validate_variant_plan(_nested_plan()))
+
+
+def test_a_shape_set_ignores_a_parent_left_from_when_it_was_a_finish():
+    """Only a finish nests; a stale Nest Inside on a shape must not count."""
+    shapes = _variant_set("Shape", [
+        _variant("Round", _collection("Round", objects=[_object("TopRound")])),
+        _variant("Square", _collection("Square", objects=[_object("TopSquare")])),
+    ])
+    trims = _variant_set("Trim", [
+        _variant("Brass", _collection("Brass", objects=[_object("TrimBrass")])),
+        _variant("Steel", _collection("Steel", objects=[_object("TrimSteel")])),
+    ])
+    trims.parent_set = "Shape"
+
+    plan = _plan(shapes, trims)
+
+    assert plan.set_named("Trim").parent_set == ""
+    # Two independent shape sets: 2 x 2 states, not 2 + 2.
+    assert plan.combination_count == 4
+
+
+@pytest.mark.parametrize("material, prefix", [
+    ("Fabric_Encre", "Fabric_"),
+    ("Wood.Oak", "Wood."),
+    ("Plain", ""),
+])
+def test_a_finish_family_prefix_is_guessed_from_a_material_name(material, prefix):
+    from Plugin.export.variants import guess_finish_prefix
+    assert guess_finish_prefix(material) == prefix
+
+
+@pytest.mark.parametrize("material, prefix, name", [
+    ("Fabric_Encre", "Fabric_", "Encre"),
+    ("Fabric_Bordeaux.001", "Fabric_", "Bordeaux_001"),
+    ("Velours bleu", "", "Velours_bleu"),
+    ("Fabric_", "Fabric_", "Fabric"),
+])
+def test_a_finish_is_named_after_its_material_less_the_family(material, prefix, name):
+    from Plugin.export.variants import finish_name_from_material
+    assert finish_name_from_material(material, prefix) == name
+
+
+def test_unique_names_count_up_from_two():
+    from Plugin.export.variants import unique_name
+    assert unique_name(["Oak"], "Walnut") == "Walnut"
+    assert unique_name(["Oak", "Oak_2"], "Oak") == "Oak_3"

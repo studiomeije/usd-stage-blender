@@ -159,6 +159,7 @@ def test_declared_variant_sets_are_reported(fake_bpy):
     assert scene_info.handle({})["variant_sets"] == [
         {
             "name": "Seat",
+            "kind": "GEOMETRY",
             "default_variant": "Fabric",
             "variants": [
                 {"name": "Fabric", "collection": "Fabric"},
@@ -178,3 +179,38 @@ def test_a_variant_whose_collection_was_deleted_is_reported_not_hidden(fake_bpy)
 
     variants = scene_info.handle({})["variant_sets"][0]["variants"]
     assert variants[1] == {"name": "Leather", "collection": None}
+
+
+def test_a_finish_set_reports_its_materials_not_null_collections(fake_bpy):
+    """A finish owns materials; null collections would read as broken."""
+    scene = _scene([_object("Cube", "Red")])
+    scene.usd_stage_variant_sets = [
+        SimpleNamespace(
+            name="Colour",
+            kind="MATERIAL",
+            default_variant="Navy",
+            target_collection=SimpleNamespace(name="Seats"),
+            parent_set="Seat",
+            variants=[
+                SimpleNamespace(name="Navy", material=SimpleNamespace(name="Fabric_Navy"),
+                                collection=None, applies_to=""),
+                SimpleNamespace(name="Red", material=None, collection=None,
+                                applies_to="Leather"),
+            ],
+        )
+    ]
+    fake_bpy(scene)
+
+    assert scene_info.handle({})["variant_sets"] == [
+        {
+            "name": "Colour",
+            "kind": "MATERIAL",
+            "default_variant": "Navy",
+            "target_collection": "Seats",
+            "nested_in": "Seat",
+            "variants": [
+                {"name": "Navy", "material": "Fabric_Navy"},
+                {"name": "Red", "material": None, "offered_on": ["Leather"]},
+            ],
+        }
+    ]

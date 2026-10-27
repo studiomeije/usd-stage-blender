@@ -56,6 +56,39 @@ def suggest_identifier(name: str, fallback: str = "Variant") -> str:
     return cleaned
 
 
+def unique_name(taken, base: str) -> str:
+    """``base``, or ``base_2``, ``base_3``... - the first not in ``taken``."""
+    taken = set(taken)
+    if base not in taken:
+        return base
+    suffix = 2
+    while f"{base}_{suffix}" in taken:
+        suffix += 1
+    return f"{base}_{suffix}"
+
+
+def guess_finish_prefix(material_name: str) -> str:
+    """The family prefix of a material name, for picking its siblings.
+
+    ``Fabric_Encre`` suggests ``Fabric_``: finishes are usually named as one
+    family with a varying tail. A name with no separator suggests nothing.
+    """
+    name = str(material_name or "")
+    for separator in ("_", ".", "-", " "):
+        index = name.rfind(separator)
+        if index > 0:
+            return name[: index + 1]
+    return ""
+
+
+def finish_name_from_material(material_name: str, prefix: str = "") -> str:
+    """A variant name for a finish, from its material less the family prefix."""
+    name = str(material_name or "")
+    if prefix and name.startswith(prefix) and len(name) > len(prefix):
+        name = name[len(prefix):]
+    return suggest_identifier(name.strip("_.- ") or name, "Finish")
+
+
 @dataclass(frozen=True)
 class VariantIssue:
     """One actionable finding about a declared variant set."""
@@ -334,7 +367,12 @@ def resolve_variant_plan(context, settings) -> VariantPlan:
                 target_collection_name=str(getattr(target, "name", "") or ""),
                 has_target=target is not None,
                 target_objects=tuple(target_objects),
-                parent_set=str(getattr(entry, "parent_set", "") or "").strip(),
+                # Only a finish nests. A shape set can still hold a value the
+                # panel no longer shows, left from when it was a finish.
+                parent_set=(
+                    str(getattr(entry, "parent_set", "") or "").strip()
+                    if kind == MATERIAL else ""
+                ),
             )
         )
     return VariantPlan(sets=tuple(sets))
@@ -659,16 +697,6 @@ def _validate_nesting(
             f"{parent.name!r}, which is a finish set. A finish nests "
             "inside a shape, so that different shapes can offer "
             "different finishes.",
-            variant_set=variant_set.name,
-        )
-        return
-
-    if parent.parent_set:
-        issues.error(
-            "VARIANT_NESTING_TOO_DEEP",
-            f"Variant set {parent.name!r} is itself nested, so "
-            f"{variant_set.name!r} cannot nest inside it. One level "
-            "is the limit.",
             variant_set=variant_set.name,
         )
         return

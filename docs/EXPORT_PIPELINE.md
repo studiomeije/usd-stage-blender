@@ -269,10 +269,27 @@ sets itself, from the sets you declare in the **Variants** panel.
 ### What you declare
 
 A variant set is a name and a list of variants; each variant points at the
-collection whose objects it owns. **From Collection** builds one in a click
-from a parent collection whose children are already the variants. The sets are
-saved in the `.blend`, so the panel and the command line export the same
-variants from the same file, and `usdstage info` lists them without exporting.
+collection whose objects it owns, or for a finish set at a material. The
+panel builds the common cases in one step:
+
+- **Shape Set** turns a parent collection's children into the variants. It
+  starts from the collection selected in the Outliner.
+- **Finish Set** takes the collection the finishes apply to and the start the
+  materials' names share - `Fabric_` for `Fabric_Encre` and `Fabric_Navy` -
+  and makes one variant per matching material, named after the rest of its
+  name. The material the objects already wear becomes the default.
+- **Empty** starts a set to fill in by hand. A variant added there takes its
+  name from the collection or material you give it, until you name it
+  yourself.
+
+Names are references - the default selection, a finish set's Nest Inside,
+its Offered On toggles - so renaming a variant or a set carries the new name
+to all of them. Below the selected set the panel lists every problem the
+export would refuse or warn about, from the same validation the export runs.
+
+The sets are saved in the `.blend`, so the panel and the command line export
+the same variants from the same file, and `usdstage info` lists them without
+exporting.
 
 Objects in no variant are untouched and present whatever the selection.
 
@@ -341,9 +358,14 @@ Two consequences worth knowing:
   the variants are the only thing saying what the object wears. Every
   selection supplies one, and the preflight refuses a stray binding left
   outside.
+- The binding is rewritten on the mesh beneath each target object, where
+  Blender wrote it, including on objects a shape set hides by default. An
+  object parented under a target is a separate object and keeps its own
+  material unless the finish set targets it too.
 - A finish you do not currently use is still exportable. Blender writes no
-  material prim for a material no face wears, so the finish set defines one
-  and the MaterialX rewrite converts it like any other.
+  material prim for a material no face wears, so the finish set defines one,
+  named the way Blender would have named it and never sharing a prim with a
+  different material, and the MaterialX rewrite converts it like any other.
 
 ### Offering a finish on some shapes only
 
@@ -361,8 +383,9 @@ Shape = Round   → Finish offers Oak
 Shape = Square  → Finish offers Oak, Walnut
 ```
 
-Inside a shape variant only that shape's prims compose, so the finishes bind
-exactly what is present. Every shape must offer at least one finish, or the
+Each shape variant rebinds every target except the members of the other
+shapes, so an object every shape shares - a frame, say - takes the finish
+whichever shape is selected. Every shape must offer at least one finish, or the
 export is refused: a shape that ships with nothing to choose is a mistake, not
 a style. One level of nesting is the limit.
 

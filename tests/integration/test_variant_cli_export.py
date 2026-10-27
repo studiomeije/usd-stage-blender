@@ -199,6 +199,7 @@ def test_info_reports_the_declared_sets_without_exporting(scene):
     assert payload["variant_sets"] == [
         {
             "name": "Seat",
+            "kind": "GEOMETRY",
             "default_variant": "Fabric",
             "variants": [
                 {"name": "Fabric", "collection": "Fabric"},
