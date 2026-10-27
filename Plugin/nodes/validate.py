@@ -1248,35 +1248,20 @@ def _is_rk_group(node) -> bool:
 
 
 def _collect_used_nodes(material) -> Set[object]:
-    from ..export.materials.extract.core import _active_output_node
+    """The nodes the export reads, with the active output, from the extractor.
 
-    used_nodes: Set[object] = set()
+    The export's own walk is the one answer to which nodes a material uses;
+    the validator only adds the output node it reports issues against.
+    """
+    from ..export.materials.extract.core import (
+        _active_output_node,
+        _collect_used_nodes as export_walk,
+    )
 
+    used_nodes, _volume_linked, _displacement_linked = export_walk(material)
     active_output = _active_output_node(material)
-    if active_output is None:
-        return used_nodes
-
-    def visit(node):
-        if node in used_nodes:
-            return
-        used_nodes.add(node)
-        for input_socket in getattr(node, "inputs", []):
-            if not input_socket.is_linked:
-                continue
-            for link in input_socket.links:
-                from_node = link.from_node
-                if from_node:
-                    visit(from_node)
-
-    for socket_name in ("Surface", "Volume", "Displacement"):
-        socket = active_output.inputs.get(socket_name)
-        if not socket or not socket.is_linked:
-            continue
-        for link in socket.links:
-            if link.from_node:
-                visit(link.from_node)
-
-    used_nodes.add(active_output)
+    if active_output is not None:
+        used_nodes.add(active_output)
     return used_nodes
 
 

@@ -12,6 +12,7 @@ import shutil
 import struct
 import tempfile
 from array import array
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -1372,14 +1373,225 @@ def _resolve_socket_value(
     provenance.append(_node_label(from_node, from_socket))
     node_type = getattr(from_node, "type", "")
 
-    if node_type == '_USDSTAGE_DERIVED':
-        expr = from_node.build(visited, provenance, cache, expected_type)
-        if expr is None:
-            return {"kind": "unresolved", "provenance": list(provenance)}
-        return expr
+    reader = _SOCKET_READERS.get(node_type)
+    if reader is not None:
+        result = reader(_SocketRead(
+            socket, visited, channel, provenance, cache, cache_key,
+            expected_type, from_node, from_socket, node_type,
+        ))
+        if result is not _FALL_THROUGH:
+            return result
 
-    if node_type == 'REROUTE':
-        input_socket = from_node.inputs[0] if from_node.inputs else None
+    # Unsupported node type: return unresolved with provenance chain.
+    if cache is not None and cache_key is not None:
+        cache[cache_key] = {"kind": "unresolved", "provenance": list(provenance)}
+    return {"kind": "unresolved", "provenance": list(provenance)}
+
+
+# ---------------------------------------------------------------------------
+# Socket readers: one per Blender node type
+# ---------------------------------------------------------------------------
+#
+# Each turns the output of one kind of node into an expression: a constant,
+# a texture read or a MaterialX node. To translate a new node, write a reader
+# and add it to _SOCKET_READERS. A reader returns None when the socket
+# yields nothing, an ``unresolved`` dict to refuse it with a reason, or
+# _FALL_THROUGH to leave it to the generic refusal below the dispatch.
+
+
+@dataclass(frozen=True)
+class _SocketRead:
+    """One socket being read, and everything the read carries along."""
+
+    socket: Any
+    visited: Any
+    channel: Any
+    provenance: Any
+    cache: Any
+    cache_key: Any
+    expected_type: Any
+    from_node: Any
+    from_socket: Any
+    node_type: Any
+
+
+#: A reader's answer for "not mine after all": the dispatch then refuses
+#: the socket the way it refuses an unknown node.
+_FALL_THROUGH = object()
+
+
+def _read_derived(read: _SocketRead):
+    """A derived value built by the extractor itself, not a Blender node."""
+    from_node = read.from_node
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    expected_type = read.expected_type
+    expr = from_node.build(visited, provenance, cache, expected_type)
+    if expr is None:
+        return {"kind": "unresolved", "provenance": list(provenance)}
+    return expr
+
+
+def _read_reroute(read: _SocketRead):
+    """Reroute: whatever feeds it."""
+    from_node = read.from_node
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel, expected_type = read.channel, read.expected_type
+    input_socket = from_node.inputs[0] if from_node.inputs else None
+    return _resolve_socket_value(
+        input_socket,
+        visited,
+        channel,
+        provenance,
+        cache,
+        expected_type=expected_type,
+    )
+
+
+def _read_separate_color(read: _SocketRead):
+    """Separate Color: one channel of a colour, in RGB or HSV mode."""
+    from_node, from_socket = read.from_node, read.from_socket
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    # The output socket names the channel: Red, Green, Blue in every mode.
+    # A channel a downstream Separate node asked of this float output does
+    # not change which component this node reads.
+    ch = _channel_from_socket_name(from_socket.name if from_socket else "")
+    mode = (getattr(from_node, "mode", "RGB") or "RGB").upper()
+    if mode == 'HSL':
+        return {
+            "kind": "unresolved",
+            "provenance": list(provenance),
+            "reason": (
+                "Separate Color in HSL mode has no exact MaterialX form (RealityKit "
+                "has no RGB to HSL node); use RGB or HSV mode, or bake the material"
+            ),
+        }
+    if mode == 'HSV':
+        color = _named_color_operand(from_node, 'Color', visited, provenance, cache)
+        if not isinstance(color, dict) or color.get("kind") == "unresolved":
+            return color or {"kind": "unresolved", "provenance": list(provenance)}
+        return _component_of(_cycles_rgb_to_hsv(color), ch or "r")
+    input_socket = from_node.inputs.get('Color') if hasattr(from_node, "inputs") else None
+    if input_socket is None and hasattr(from_node, "inputs") and from_node.inputs:
+        input_socket = from_node.inputs[0]
+    resolved = _resolve_socket_value(
+        input_socket,
+        visited,
+        None,
+        provenance,
+        cache,
+        expected_type='color3',
+    )
+    if not ch or not isinstance(resolved, dict):
+        return resolved
+    return _component_of(resolved, ch)
+
+
+def _read_separate_xyz(read: _SocketRead):
+    """Separate XYZ: one component of a vector."""
+    from_node, from_socket = read.from_node, read.from_socket
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    ch = _channel_from_socket_name(from_socket.name if from_socket else "")
+    input_socket = from_node.inputs.get('Vector') if hasattr(from_node, "inputs") else None
+    if input_socket is None and hasattr(from_node, "inputs") and from_node.inputs:
+        input_socket = from_node.inputs[0]
+    resolved = _resolve_socket_value(
+        input_socket,
+        visited,
+        None,
+        provenance,
+        cache,
+        expected_type='vector3',
+    )
+    if not ch or not isinstance(resolved, dict):
+        return resolved
+    # A colour, vector or color4 node hands back its whole value; the
+    # component read is authored explicitly (a colour reads as a vector
+    # component for component, so X is red).
+    return _component_of(resolved, ch)
+
+
+def _read_normal_map(read: _SocketRead):
+    """Normal Map: the world-space normal it produces."""
+    from_node = read.from_node
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel, expected_type = read.channel, read.expected_type
+    # The node's output is a world-space normal. Straight into a
+    # Principled Normal it is authored in tangent space instead
+    # (surface_normal_expr); anything else gets Blender's world vector.
+    tangent = _normal_map_tangent_expr(from_node, visited, provenance[:-1], cache)
+    if not tangent or tangent.get("kind") == "unresolved":
+        return tangent
+    return _coerce_output(tangent_normal_to_world(tangent), expected_type, channel)
+
+
+def _read_bump(read: _SocketRead):
+    """Bump: the perturbed normal."""
+    from_node = read.from_node
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel, expected_type = read.channel, read.expected_type
+    expr = _bump_expr(from_node, visited, provenance, cache)
+    if expr is None:
+        return {"kind": "unresolved", "provenance": list(provenance)}
+    return _coerce_output(expr, expected_type, channel)
+
+
+def _read_expression_node(read: _SocketRead):
+    """Nodes whose whole output is one expression builder's result."""
+    from_node, from_socket, node_type = read.from_node, read.from_socket, read.node_type
+    visited, provenance, cache, cache_key = read.visited, read.provenance, read.cache, read.cache_key
+    channel, expected_type = read.channel, read.expected_type
+    if node_type == 'ATTRIBUTE':
+        expr = _attribute_node_expr(from_node, from_socket, provenance)
+    elif node_type == 'UVMAP':
+        expr = _uv_map_node_expr(from_node, provenance)
+    elif node_type == 'OBJECT_INFO':
+        expr = _object_info_expr(from_socket, provenance)
+    elif node_type == 'MAPPING':
+        expr = _mapping_vector_expr(from_node, visited, provenance, cache)
+    elif node_type == 'GAMMA':
+        expr = _gamma_expr(from_node, visited, provenance, cache)
+    elif node_type == 'TEX_CHECKER':
+        expr = _checker_expr(from_node, from_socket, visited, provenance, cache)
+    else:
+        expr = _camera_data_expr(getattr(from_socket, "name", "") or "")
+    if expr is not None:
+        if expr.get("kind") == "constant" and expected_type in ("color3", "vector3"):
+            value = expr.get("value")
+            if not isinstance(value, (list, tuple)):
+                expr = _constant_expr((float(value),) * 3)
+        expr = _coerce_output(expr, expected_type, channel)
+        if cache is not None and cache_key is not None:
+            cache[cache_key] = dict(expr)
+        return expr
+    return {"kind": "unresolved", "provenance": list(provenance)}
+
+
+def _read_group(read: _SocketRead):
+    """Node group: the group output socket this link reads."""
+    from_node, from_socket = read.from_node, read.from_socket
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel, expected_type = read.channel, read.expected_type
+    group_tree = getattr(from_node, "node_tree", None)
+    if not group_tree:
+        return {"kind": "unresolved", "provenance": list(provenance)}
+
+    outputs = [n for n in group_tree.nodes if n.type == 'GROUP_OUTPUT']
+    if not outputs:
+        return {"kind": "unresolved", "provenance": list(provenance)}
+    output_node = next((n for n in outputs if getattr(n, "is_active_output", False)), outputs[0])
+
+    input_socket = None
+    if from_socket and hasattr(output_node, "inputs"):
+        input_socket = output_node.inputs.get(from_socket.name)
+    if input_socket is None and from_socket and hasattr(from_node, "outputs"):
+        try:
+            index = list(from_node.outputs).index(from_socket)
+            if hasattr(output_node, "inputs") and index < len(output_node.inputs):
+                input_socket = output_node.inputs[index]
+        except Exception:
+            input_socket = None
+
+    if input_socket and input_socket.is_linked:
         return _resolve_socket_value(
             input_socket,
             visited,
@@ -1388,657 +1600,692 @@ def _resolve_socket_value(
             cache,
             expected_type=expected_type,
         )
-
-    if node_type == 'SEPARATE_COLOR':
-        # The output socket names the channel: Red, Green, Blue in every mode.
-        # A channel a downstream Separate node asked of this float output does
-        # not change which component this node reads.
-        ch = _channel_from_socket_name(from_socket.name if from_socket else "")
-        mode = (getattr(from_node, "mode", "RGB") or "RGB").upper()
-        if mode == 'HSL':
-            return {
-                "kind": "unresolved",
-                "provenance": list(provenance),
-                "reason": (
-                    "Separate Color in HSL mode has no exact MaterialX form (RealityKit "
-                    "has no RGB to HSL node); use RGB or HSV mode, or bake the material"
-                ),
-            }
-        if mode == 'HSV':
-            color = _named_color_operand(from_node, 'Color', visited, provenance, cache)
-            if not isinstance(color, dict) or color.get("kind") == "unresolved":
-                return color or {"kind": "unresolved", "provenance": list(provenance)}
-            return _component_of(_cycles_rgb_to_hsv(color), ch or "r")
-        input_socket = from_node.inputs.get('Color') if hasattr(from_node, "inputs") else None
-        if input_socket is None and hasattr(from_node, "inputs") and from_node.inputs:
-            input_socket = from_node.inputs[0]
-        resolved = _resolve_socket_value(
-            input_socket,
-            visited,
-            None,
-            provenance,
-            cache,
-            expected_type='color3',
-        )
-        if not ch or not isinstance(resolved, dict):
-            return resolved
-        return _component_of(resolved, ch)
-
-    if node_type == 'SEPXYZ':
-        ch = _channel_from_socket_name(from_socket.name if from_socket else "")
-        input_socket = from_node.inputs.get('Vector') if hasattr(from_node, "inputs") else None
-        if input_socket is None and hasattr(from_node, "inputs") and from_node.inputs:
-            input_socket = from_node.inputs[0]
-        resolved = _resolve_socket_value(
-            input_socket,
-            visited,
-            None,
-            provenance,
-            cache,
-            expected_type='vector3',
-        )
-        if not ch or not isinstance(resolved, dict):
-            return resolved
-        # A colour, vector or color4 node hands back its whole value; the
-        # component read is authored explicitly (a colour reads as a vector
-        # component for component, so X is red).
-        return _component_of(resolved, ch)
-
-    if node_type == 'NORMAL_MAP':
-        # The node's output is a world-space normal. Straight into a
-        # Principled Normal it is authored in tangent space instead
-        # (surface_normal_expr); anything else gets Blender's world vector.
-        tangent = _normal_map_tangent_expr(from_node, visited, provenance[:-1], cache)
-        if not tangent or tangent.get("kind") == "unresolved":
-            return tangent
-        return _coerce_output(tangent_normal_to_world(tangent), expected_type, channel)
-
-    if node_type == 'BUMP':
-        expr = _bump_expr(from_node, visited, provenance, cache)
-        if expr is None:
-            return {"kind": "unresolved", "provenance": list(provenance)}
-        return _coerce_output(expr, expected_type, channel)
-
-    if node_type in ('MAPPING', 'GAMMA', 'TEX_CHECKER', 'CAMERA', 'ATTRIBUTE', 'OBJECT_INFO', 'UVMAP'):
-        if node_type == 'ATTRIBUTE':
-            expr = _attribute_node_expr(from_node, from_socket, provenance)
-        elif node_type == 'UVMAP':
-            expr = _uv_map_node_expr(from_node, provenance)
-        elif node_type == 'OBJECT_INFO':
-            expr = _object_info_expr(from_socket, provenance)
-        elif node_type == 'MAPPING':
-            expr = _mapping_vector_expr(from_node, visited, provenance, cache)
-        elif node_type == 'GAMMA':
-            expr = _gamma_expr(from_node, visited, provenance, cache)
-        elif node_type == 'TEX_CHECKER':
-            expr = _checker_expr(from_node, from_socket, visited, provenance, cache)
-        else:
-            expr = _camera_data_expr(getattr(from_socket, "name", "") or "")
-        if expr is not None:
-            if expr.get("kind") == "constant" and expected_type in ("color3", "vector3"):
-                value = expr.get("value")
-                if not isinstance(value, (list, tuple)):
-                    expr = _constant_expr((float(value),) * 3)
-            expr = _coerce_output(expr, expected_type, channel)
-            if cache is not None and cache_key is not None:
-                cache[cache_key] = dict(expr)
-            return expr
-        return {"kind": "unresolved", "provenance": list(provenance)}
-
-    if node_type == 'GROUP':
-        group_tree = getattr(from_node, "node_tree", None)
-        if not group_tree:
-            return {"kind": "unresolved", "provenance": list(provenance)}
-
-        outputs = [n for n in group_tree.nodes if n.type == 'GROUP_OUTPUT']
-        if not outputs:
-            return {"kind": "unresolved", "provenance": list(provenance)}
-        output_node = next((n for n in outputs if getattr(n, "is_active_output", False)), outputs[0])
-
-        input_socket = None
-        if from_socket and hasattr(output_node, "inputs"):
-            input_socket = output_node.inputs.get(from_socket.name)
-        if input_socket is None and from_socket and hasattr(from_node, "outputs"):
-            try:
-                index = list(from_node.outputs).index(from_socket)
-                if hasattr(output_node, "inputs") and index < len(output_node.inputs):
-                    input_socket = output_node.inputs[index]
-            except Exception:
-                input_socket = None
-
-        if input_socket and input_socket.is_linked:
-            return _resolve_socket_value(
-                input_socket,
-                visited,
-                channel,
-                provenance,
-                cache,
-                expected_type=expected_type,
-            )
-        return {"kind": "unresolved", "provenance": list(provenance)}
-
-    if node_type in {'MIX_RGB', 'MIX'}:
-        expr = _mix_expr(from_node, visited, channel, provenance, cache, expected_type)
-        if expr is not None:
-            return expr
-        # A shape the capability gate refuses falls through to the unresolved
-        # tail so the bake advice fires.
+    return {"kind": "unresolved", "provenance": list(provenance)}
 
 
-    if node_type == 'MATH':
-        operation = (getattr(from_node, "operation", "") or "").upper()
-        use_clamp = bool(getattr(from_node, "use_clamp", False))
-        # Collapse a pass-through (add 0, subtract 0, multiply 1, divide 1)
-        # to its linked input instead of authoring a no-op MaterialX node.
-        # A clamped pass-through is NOT a pass-through - the clamp must be
-        # authored, so it takes the general path below. The input is still a
-        # scalar socket: a colour or vector feeding it converts to a float
-        # first, and the float then broadcasts to the consumer.
-        if not use_clamp and hasattr(from_node, "inputs") and len(from_node.inputs) >= 2:
-            in0 = from_node.inputs[0]
-            in1 = from_node.inputs[1]
-            for linked, other, linked_index in ((in0, in1, 0), (in1, in0, 1)):
-                if not (linked and linked.is_linked) or (other is not None and _socket_is_live(other)):
-                    continue
-                try:
-                    value = float(other.default_value)
-                except Exception:
-                    value = None
-                if _is_identity_math(operation, value, linked_index=linked_index):
-                    passed = _float_math_input_expr(_resolve_socket_value(
-                        linked,
-                        visited,
-                        None,
-                        provenance,
-                        cache,
-                        expected_type="float",
-                    ))
-                    return _float_to_expected(passed, expected_type)
-        expr = _math_node_expr(from_node, operation, visited, channel, provenance, cache)
-        if expr is not None:
-            # Math is always scalar; a colour/vector consumer needs an
-            # explicit broadcast, matching Blender's implicit conversion.
-            return _float_to_expected(expr, expected_type)
-        # Unsupported operation: fall through to the unresolved tail so the
-        # bake advice fires - never approximate silently.
+def _read_mix(read: _SocketRead):
+    """Mix and the legacy MixRGB."""
+    from_node = read.from_node
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel, expected_type = read.channel, read.expected_type
+    expr = _mix_expr(from_node, visited, channel, provenance, cache, expected_type)
+    if expr is not None:
+        return expr
+    # A shape the capability gate refuses falls through to the unresolved
+    # tail so the bake advice fires.
+    return _FALL_THROUGH
 
-    if node_type == 'CLAMP':
-        # Float only: a colour or vector Value converts first, and the float
-        # result converts for the consumer.
-        return _typed_result(_clamp_node_expr(from_node, visited, provenance, cache), expected_type, channel)
 
-    if node_type == 'MAP_RANGE':
-        return _typed_result(_map_range_expr(from_node, visited, provenance, cache), expected_type, channel)
-
-    if node_type == 'HUE_SAT':
-        return _typed_result(_hue_saturation_expr(from_node, visited, provenance, cache), expected_type, channel)
-
-    if node_type == 'INVERT':
-        return _typed_result(_invert_expr(from_node, visited, provenance, cache), expected_type, channel)
-
-    if node_type == 'BRIGHTCONTRAST':
-        return _typed_result(_bright_contrast_expr(from_node, visited, provenance, cache), expected_type, channel)
-
-    if node_type == 'VALTORGB':
-        fac_expr = _expr_from_socket(
-            from_node.inputs.get('Fac') if hasattr(from_node, "inputs") else None,
-            visited,
-            channel,
-            provenance,
-            cache,
-            default=0.0,
-        )
-        ramp = getattr(from_node, "color_ramp", None)
-        elements = sorted(
-            getattr(ramp, "elements", []) or [],
-            key=lambda item: float(getattr(item, "position", 0.0)),
-        )
-        if not elements:
-            return {"kind": "unresolved", "provenance": list(provenance)}
-
-        interpolation = (getattr(ramp, "interpolation", "LINEAR") or "LINEAR").upper()
-        color_mode = (getattr(ramp, "color_mode", "RGB") or "RGB").upper()
-        if color_mode != "RGB" or interpolation not in {"LINEAR", "CONSTANT", "EASE"}:
-            return {
-                "kind": "unresolved",
-                "provenance": list(provenance),
-                "reason": (
-                    f"Color Ramp mode {color_mode}/{interpolation} requires baking; "
-                    "the OS 27 exporter supports RGB Linear, Constant, and Ease"
-                ),
-            }
-
-        output_name = (getattr(from_socket, "name", "") or "").lower()
-        alpha_output = output_name == "alpha"
-        ramp_type = "float" if alpha_output else "color3"
-
-        stops = []
-        for element in elements:
-            position = float(getattr(element, "position", 0.0))
-            color = list(getattr(element, "color", (0.0, 0.0, 0.0, 1.0)))
-            while len(color) < 4:
-                color.append(1.0)
-            value = float(color[3]) if alpha_output else [float(v) for v in color[:3]]
-            stops.append((position, value))
-
-        result = _constant_expr(stops[0][1])
-        for index in range(1, len(stops)):
-            left_position, left_value = stops[index - 1]
-            right_position, right_value = stops[index]
-
-            if interpolation == "CONSTANT" or right_position <= left_position:
-                result = _make_node_expr(
-                    _nodedef_for("ifgreatereq", ramp_type),
-                    {
-                        "value1": fac_expr,
-                        "value2": _constant_expr(right_position),
-                        "in1": _constant_expr(right_value),
-                        "in2": result,
-                    },
-                )
+def _read_math(read: _SocketRead):
+    """Math, collapsing a pass-through operation to its input."""
+    from_node = read.from_node
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel, expected_type = read.channel, read.expected_type
+    operation = (getattr(from_node, "operation", "") or "").upper()
+    use_clamp = bool(getattr(from_node, "use_clamp", False))
+    # Collapse a pass-through (add 0, subtract 0, multiply 1, divide 1)
+    # to its linked input instead of authoring a no-op MaterialX node.
+    # A clamped pass-through is NOT a pass-through - the clamp must be
+    # authored, so it takes the general path below. The input is still a
+    # scalar socket: a colour or vector feeding it converts to a float
+    # first, and the float then broadcasts to the consumer.
+    if not use_clamp and hasattr(from_node, "inputs") and len(from_node.inputs) >= 2:
+        in0 = from_node.inputs[0]
+        in1 = from_node.inputs[1]
+        for linked, other, linked_index in ((in0, in1, 0), (in1, in0, 1)):
+            if not (linked and linked.is_linked) or (other is not None and _socket_is_live(other)):
                 continue
+            try:
+                value = float(other.default_value)
+            except Exception:
+                value = None
+            if _is_identity_math(operation, value, linked_index=linked_index):
+                passed = _float_math_input_expr(_resolve_socket_value(
+                    linked,
+                    visited,
+                    None,
+                    provenance,
+                    cache,
+                    expected_type="float",
+                ))
+                return _float_to_expected(passed, expected_type)
+    expr = _math_node_expr(from_node, operation, visited, channel, provenance, cache)
+    if expr is not None:
+        # Math is always scalar; a colour/vector consumer needs an
+        # explicit broadcast, matching Blender's implicit conversion.
+        return _float_to_expected(expr, expected_type)
+    # Unsupported operation: fall through to the unresolved tail so the
+    # bake advice fires - never approximate silently.
+    return _FALL_THROUGH
 
-            if interpolation == "EASE":
-                mix_factor = _make_node_expr(
-                    _nodedef_for("smoothstep", "float"),
-                    {
-                        "in": fac_expr,
-                        "low": _constant_expr(left_position),
-                        "high": _constant_expr(right_position),
-                    },
-                )
-            else:
-                mix_factor = _make_node_expr(
-                    _nodedef_for("range", "float"),
-                    {
-                        "in": fac_expr,
-                        "inlow": _constant_expr(left_position),
-                        "inhigh": _constant_expr(right_position),
-                        "outlow": _constant_expr(0.0),
-                        "outhigh": _constant_expr(1.0),
-                        "gamma": _constant_expr(1.0),
-                        "doclamp": _constant_expr(True),
-                    },
-                )
-            segment = _make_node_expr(
-                _nodedef_for("mix", ramp_type),
-                {
-                    "bg": _constant_expr(left_value),
-                    "fg": _constant_expr(right_value),
-                    "mix": mix_factor,
-                },
-            )
+
+def _read_clamp(read: _SocketRead):
+    """Clamp."""
+    from_node = read.from_node
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel, expected_type = read.channel, read.expected_type
+    # Float only: a colour or vector Value converts first, and the float
+    # result converts for the consumer.
+    return _typed_result(_clamp_node_expr(from_node, visited, provenance, cache), expected_type, channel)
+
+
+def _read_map_range(read: _SocketRead):
+    """Map Range."""
+    from_node = read.from_node
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel, expected_type = read.channel, read.expected_type
+    return _typed_result(_map_range_expr(from_node, visited, provenance, cache), expected_type, channel)
+
+
+def _read_hue_saturation(read: _SocketRead):
+    """Hue/Saturation/Value."""
+    from_node = read.from_node
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel, expected_type = read.channel, read.expected_type
+    return _typed_result(_hue_saturation_expr(from_node, visited, provenance, cache), expected_type, channel)
+
+
+def _read_invert(read: _SocketRead):
+    """Invert Color."""
+    from_node = read.from_node
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel, expected_type = read.channel, read.expected_type
+    return _typed_result(_invert_expr(from_node, visited, provenance, cache), expected_type, channel)
+
+
+def _read_bright_contrast(read: _SocketRead):
+    """Brightness/Contrast."""
+    from_node = read.from_node
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel, expected_type = read.channel, read.expected_type
+    return _typed_result(_bright_contrast_expr(from_node, visited, provenance, cache), expected_type, channel)
+
+
+def _read_color_ramp(read: _SocketRead):
+    """Color Ramp."""
+    from_node, from_socket = read.from_node, read.from_socket
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel = read.channel
+    fac_expr = _expr_from_socket(
+        from_node.inputs.get('Fac') if hasattr(from_node, "inputs") else None,
+        visited,
+        channel,
+        provenance,
+        cache,
+        default=0.0,
+    )
+    ramp = getattr(from_node, "color_ramp", None)
+    elements = sorted(
+        getattr(ramp, "elements", []) or [],
+        key=lambda item: float(getattr(item, "position", 0.0)),
+    )
+    if not elements:
+        return {"kind": "unresolved", "provenance": list(provenance)}
+
+    interpolation = (getattr(ramp, "interpolation", "LINEAR") or "LINEAR").upper()
+    color_mode = (getattr(ramp, "color_mode", "RGB") or "RGB").upper()
+    if color_mode != "RGB" or interpolation not in {"LINEAR", "CONSTANT", "EASE"}:
+        return {
+            "kind": "unresolved",
+            "provenance": list(provenance),
+            "reason": (
+                f"Color Ramp mode {color_mode}/{interpolation} requires baking; "
+                "the OS 27 exporter supports RGB Linear, Constant, and Ease"
+            ),
+        }
+
+    output_name = (getattr(from_socket, "name", "") or "").lower()
+    alpha_output = output_name == "alpha"
+    ramp_type = "float" if alpha_output else "color3"
+
+    stops = []
+    for element in elements:
+        position = float(getattr(element, "position", 0.0))
+        color = list(getattr(element, "color", (0.0, 0.0, 0.0, 1.0)))
+        while len(color) < 4:
+            color.append(1.0)
+        value = float(color[3]) if alpha_output else [float(v) for v in color[:3]]
+        stops.append((position, value))
+
+    result = _constant_expr(stops[0][1])
+    for index in range(1, len(stops)):
+        left_position, left_value = stops[index - 1]
+        right_position, right_value = stops[index]
+
+        if interpolation == "CONSTANT" or right_position <= left_position:
             result = _make_node_expr(
                 _nodedef_for("ifgreatereq", ramp_type),
                 {
                     "value1": fac_expr,
-                    "value2": _constant_expr(left_position),
-                    "in1": segment,
+                    "value2": _constant_expr(right_position),
+                    "in1": _constant_expr(right_value),
                     "in2": result,
                 },
             )
-        return result
+            continue
 
-    if node_type == 'CURVE_RGB':
-        # The validator requires baking for RGB Curves: ND_curveadjust has no
-        # implementation in RealityKit's MaterialX 1.39 library, so an authored
-        # curve would cost the material its shader graph.
-        return _unresolved(provenance, "RGB Curves requires baking; its curve node has no RealityKit implementation")
-
-    if node_type == 'RGBTOBW':
-        return _float_to_expected(_rgb_to_bw_expr(from_node, visited, provenance, cache), expected_type)
-
-    if node_type == 'COMBINE_COLOR':
-        # Blender 5.2 names the sockets Red, Green, Blue (and A when present).
-        # Reading 'R'/'G'/'B' matched nothing and folded every Combine Color
-        # to black; measured on t25_surface_readers' UV cube.
-        mode = (getattr(from_node, "mode", "") or "").upper()
-        if mode and mode != "RGB":
-            return {"kind": "unresolved", "provenance": list(provenance)}
-        r_expr = _expr_from_socket(
-            from_node.inputs.get('Red') if hasattr(from_node, "inputs") else None,
-            visited,
-            channel,
-            provenance,
-            cache,
-            default=0.0,
-        )
-        g_expr = _expr_from_socket(
-            from_node.inputs.get('Green') if hasattr(from_node, "inputs") else None,
-            visited,
-            channel,
-            provenance,
-            cache,
-            default=0.0,
-        )
-        b_expr = _expr_from_socket(
-            from_node.inputs.get('Blue') if hasattr(from_node, "inputs") else None,
-            visited,
-            channel,
-            provenance,
-            cache,
-            default=0.0,
-        )
-        a_socket = from_node.inputs.get('A') if hasattr(from_node, "inputs") else None
-        if a_socket:
-            a_expr = _expr_from_socket(
-                a_socket,
-                visited,
-                channel,
-                provenance,
-                cache,
-                default=1.0,
+        if interpolation == "EASE":
+            mix_factor = _make_node_expr(
+                _nodedef_for("smoothstep", "float"),
+                {
+                    "in": fac_expr,
+                    "low": _constant_expr(left_position),
+                    "high": _constant_expr(right_position),
+                },
             )
-            return _make_node_expr(
-                _nodedef_for("combine4", "color4"),
-                {"in1": r_expr, "in2": g_expr, "in3": b_expr, "in4": a_expr},
+        else:
+            mix_factor = _make_node_expr(
+                _nodedef_for("range", "float"),
+                {
+                    "in": fac_expr,
+                    "inlow": _constant_expr(left_position),
+                    "inhigh": _constant_expr(right_position),
+                    "outlow": _constant_expr(0.0),
+                    "outhigh": _constant_expr(1.0),
+                    "gamma": _constant_expr(1.0),
+                    "doclamp": _constant_expr(True),
+                },
             )
+        segment = _make_node_expr(
+            _nodedef_for("mix", ramp_type),
+            {
+                "bg": _constant_expr(left_value),
+                "fg": _constant_expr(right_value),
+                "mix": mix_factor,
+            },
+        )
+        result = _make_node_expr(
+            _nodedef_for("ifgreatereq", ramp_type),
+            {
+                "value1": fac_expr,
+                "value2": _constant_expr(left_position),
+                "in1": segment,
+                "in2": result,
+            },
+        )
+    return result
+
+
+def _read_rgb_curves(read: _SocketRead):
+    """RGB Curves, which only a bake can reproduce."""
+    provenance = read.provenance
+    # The validator requires baking for RGB Curves: ND_curveadjust has no
+    # implementation in RealityKit's MaterialX 1.39 library, so an authored
+    # curve would cost the material its shader graph.
+    return _unresolved(provenance, "RGB Curves requires baking; its curve node has no RealityKit implementation")
+
+
+def _read_rgb_to_bw(read: _SocketRead):
+    """RGB to BW."""
+    from_node = read.from_node
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    expected_type = read.expected_type
+    return _float_to_expected(_rgb_to_bw_expr(from_node, visited, provenance, cache), expected_type)
+
+
+def _read_combine_color(read: _SocketRead):
+    """Combine Color, in RGB mode."""
+    from_node = read.from_node
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel = read.channel
+    # Blender 5.2 names the sockets Red, Green, Blue (and A when present).
+    # Reading 'R'/'G'/'B' matched nothing and folded every Combine Color
+    # to black; measured on t25_surface_readers' UV cube.
+    mode = (getattr(from_node, "mode", "") or "").upper()
+    if mode and mode != "RGB":
+        return {"kind": "unresolved", "provenance": list(provenance)}
+    r_expr = _expr_from_socket(
+        from_node.inputs.get('Red') if hasattr(from_node, "inputs") else None,
+        visited,
+        channel,
+        provenance,
+        cache,
+        default=0.0,
+    )
+    g_expr = _expr_from_socket(
+        from_node.inputs.get('Green') if hasattr(from_node, "inputs") else None,
+        visited,
+        channel,
+        provenance,
+        cache,
+        default=0.0,
+    )
+    b_expr = _expr_from_socket(
+        from_node.inputs.get('Blue') if hasattr(from_node, "inputs") else None,
+        visited,
+        channel,
+        provenance,
+        cache,
+        default=0.0,
+    )
+    a_socket = from_node.inputs.get('A') if hasattr(from_node, "inputs") else None
+    if a_socket:
+        a_expr = _expr_from_socket(
+            a_socket,
+            visited,
+            channel,
+            provenance,
+            cache,
+            default=1.0,
+        )
         return _make_node_expr(
-            _nodedef_for("combine3", "color3"),
-            {"in1": r_expr, "in2": g_expr, "in3": b_expr},
+            _nodedef_for("combine4", "color4"),
+            {"in1": r_expr, "in2": g_expr, "in3": b_expr, "in4": a_expr},
         )
+    return _make_node_expr(
+        _nodedef_for("combine3", "color3"),
+        {"in1": r_expr, "in2": g_expr, "in3": b_expr},
+    )
 
-    if node_type == 'NORMAL':
-        if getattr(from_socket, "name", "") == 'Dot':
-            # Only the Normal output, the widget's constant direction, is
-            # exported; reading it for the Dot output exported a vector.
-            return {
-                "kind": "unresolved",
-                "provenance": list(provenance or ()),
-                "reason": "the Normal node's Dot output has no MaterialX export; bake the material",
-            }
-        output = from_node.outputs.get('Normal') if hasattr(from_node, "outputs") else None
-        value = None
-        if output:
-            try:
-                value = list(output.default_value)[:3]
-            except Exception:
-                value = None
-        if value is not None:
-            return _typed_result({"kind": "constant", "value": value, "value_type": "vector3"}, expected_type, channel)
-        return _make_node_expr(_nodedef_for("normal", "vector3"), {"space": "world"})
 
-    if node_type == 'VERTEX_COLOR':
-        # Blender 5.2's Color Attribute node (bl_idname ShaderNodeVertexColor,
-        # type VERTEX_COLOR). Its USD exporter writes each mesh color
-        # attribute as ``primvars:<attribute name>``, and that primvar is
-        # color4f[] for every attribute type and domain (see
-        # _COLOR_ATTRIBUTE_PRIMVAR_TYPES for the measured table). The read
-        # declares the primvar's own type; a narrower consumer is reached by
-        # an explicit extraction node, never by narrowing the read.
-        layer_name = (getattr(from_node, "layer_name", "") or "").strip()
-        output_name = (getattr(from_socket, "name", "") or "").lower()
-        if not layer_name:
+def _read_normal(read: _SocketRead):
+    """Normal: its constant direction."""
+    from_node, from_socket = read.from_node, read.from_socket
+    provenance = read.provenance
+    channel, expected_type = read.channel, read.expected_type
+    if getattr(from_socket, "name", "") == 'Dot':
+        # Only the Normal output, the widget's constant direction, is
+        # exported; reading it for the Dot output exported a vector.
+        return {
+            "kind": "unresolved",
+            "provenance": list(provenance or ()),
+            "reason": "the Normal node's Dot output has no MaterialX export; bake the material",
+        }
+    output = from_node.outputs.get('Normal') if hasattr(from_node, "outputs") else None
+    value = None
+    if output:
+        try:
+            value = list(output.default_value)[:3]
+        except Exception:
+            value = None
+    if value is not None:
+        return _typed_result({"kind": "constant", "value": value, "value_type": "vector3"}, expected_type, channel)
+    return _make_node_expr(_nodedef_for("normal", "vector3"), {"space": "world"})
+
+
+def _read_color_attribute(read: _SocketRead):
+    """Color Attribute: the mesh's first colour attribute."""
+    from_node, from_socket = read.from_node, read.from_socket
+    provenance = read.provenance
+    channel, expected_type = read.channel, read.expected_type
+    # Blender 5.2's Color Attribute node (bl_idname ShaderNodeVertexColor,
+    # type VERTEX_COLOR). Its USD exporter writes each mesh color
+    # attribute as ``primvars:<attribute name>``, and that primvar is
+    # color4f[] for every attribute type and domain (see
+    # _COLOR_ATTRIBUTE_PRIMVAR_TYPES for the measured table). The read
+    # declares the primvar's own type; a narrower consumer is reached by
+    # an explicit extraction node, never by narrowing the read.
+    layer_name = (getattr(from_node, "layer_name", "") or "").strip()
+    output_name = (getattr(from_socket, "name", "") or "").lower()
+    if not layer_name:
+        return {
+            "kind": "unresolved",
+            "provenance": list(provenance),
+            "reason": (
+                "Color Attribute names no color attribute; the exported "
+                "primvar cannot be referenced implicitly - pick the "
+                "attribute explicitly on the node"
+            ),
+        }
+    if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', layer_name):
+        return {
+            "kind": "unresolved",
+            "provenance": list(provenance),
+            "reason": (
+                f"Color attribute name '{layer_name}' is not a valid USD "
+                "primvar identifier (letters, digits, underscore; not "
+                "starting with a digit); rename the attribute"
+            ),
+        }
+    primvar_type = _color_attribute_primvar_type(from_node, layer_name)
+    if primvar_type is None:
+        return {
+            "kind": "unresolved",
+            "provenance": list(provenance),
+            "reason": (
+                f"Color attribute '{layer_name}' was not found on a mesh "
+                "using this material, so the exported USD would carry no "
+                f"primvars:{layer_name} for the geompropvalue read; add "
+                "the attribute or fix the node's name"
+            ),
+        }
+    # MaterialX has a dedicated vertex-colour reader, and it is what
+    # RealityKit uses: across 281 shipping RCP-authored materials,
+    # ND_geomcolor_* appears while ND_geompropvalue_* appears not once.
+    # A geompropvalue read of a colour attribute makes Reality Composer
+    # Pro substitute its striped placeholder for the whole material.
+    # geomcolor takes an integer set index rather than a primvar name, so
+    # only the first colour attribute is addressable; a named attribute
+    # beyond the first cannot be expressed and is refused above by the
+    # index lookup.
+    color_set_index = _color_attribute_set_index(from_node, layer_name)
+    if color_set_index is None:
+        return {
+            "kind": "unresolved",
+            "provenance": list(provenance),
+            "reason": (
+                f"Color attribute '{layer_name}' is not the mesh's first "
+                "colour attribute. RealityKit addresses vertex colours by "
+                "set index, so only the first is exportable; reorder the "
+                "attributes or bake the material"
+            ),
+        }
+    read = _make_node_expr(
+        _nodedef_for("geomcolor", primvar_type),
+        {"index": _constant_expr(color_set_index)},
+    )
+
+    if output_name == 'alpha':
+        if primvar_type != "color4":
+            # Only reachable if the measured table ever gains a
+            # three-channel case; alpha is not in the data then, so say so
+            # rather than reading a channel that does not exist.
             return {
                 "kind": "unresolved",
                 "provenance": list(provenance),
                 "reason": (
-                    "Color Attribute names no color attribute; the exported "
-                    "primvar cannot be referenced implicitly - pick the "
-                    "attribute explicitly on the node"
+                    f"Color attribute '{layer_name}' exports as a "
+                    f"{primvar_type} primvar, which carries no alpha "
+                    "channel; use the Color output or bake the material"
                 ),
             }
-        if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', layer_name):
-            return {
-                "kind": "unresolved",
-                "provenance": list(provenance),
-                "reason": (
-                    f"Color attribute name '{layer_name}' is not a valid USD "
-                    "primvar identifier (letters, digits, underscore; not "
-                    "starting with a digit); rename the attribute"
-                ),
-            }
-        primvar_type = _color_attribute_primvar_type(from_node, layer_name)
-        if primvar_type is None:
-            return {
-                "kind": "unresolved",
-                "provenance": list(provenance),
-                "reason": (
-                    f"Color attribute '{layer_name}' was not found on a mesh "
-                    "using this material, so the exported USD would carry no "
-                    f"primvars:{layer_name} for the geompropvalue read; add "
-                    "the attribute or fix the node's name"
-                ),
-            }
-        # MaterialX has a dedicated vertex-colour reader, and it is what
-        # RealityKit uses: across 281 shipping RCP-authored materials,
-        # ND_geomcolor_* appears while ND_geompropvalue_* appears not once.
-        # A geompropvalue read of a colour attribute makes Reality Composer
-        # Pro substitute its striped placeholder for the whole material.
-        # geomcolor takes an integer set index rather than a primvar name, so
-        # only the first colour attribute is addressable; a named attribute
-        # beyond the first cannot be expressed and is refused above by the
-        # index lookup.
-        color_set_index = _color_attribute_set_index(from_node, layer_name)
-        if color_set_index is None:
-            return {
-                "kind": "unresolved",
-                "provenance": list(provenance),
-                "reason": (
-                    f"Color attribute '{layer_name}' is not the mesh's first "
-                    "colour attribute. RealityKit addresses vertex colours by "
-                    "set index, so only the first is exportable; reorder the "
-                    "attributes or bake the material"
-                ),
-            }
-        read = _make_node_expr(
-            _nodedef_for("geomcolor", primvar_type),
-            {"index": _constant_expr(color_set_index)},
+        alpha = _swizzle_expr(read, "color4", "float", "a")
+        if expected_type and expected_type not in {"float", "half", "integer"}:
+            # A scalar into a colour/vector socket: Blender broadcasts it.
+            return _make_node_expr(
+                _nodedef_for("convert", expected_type, input_type="float"),
+                {"in": alpha},
+            )
+        return alpha
+
+    if channel in {"r", "g", "b"}:
+        if primvar_type == "color3":
+            return _swizzle_color3_to_float_expr(read, channel)
+        return _swizzle_expr(read, primvar_type, "float", channel)
+
+    if expected_type == primvar_type:
+        return read
+
+    rgb = (
+        read
+        if primvar_type == "color3"
+        else _swizzle_expr(read, primvar_type, "color3", "rgb")
+    )
+    if expected_type in {"float", "half", "integer"}:
+        # Blender's implicit colour-to-float conversion is linear RGB to
+        # gray; a Separate node asking for one channel reads it itself.
+        return _coerce_output(rgb, "float", channel)
+    return rgb
+
+
+def _read_noise_texture(read: _SocketRead):
+    """Noise Texture."""
+    from_node, from_socket = read.from_node, read.from_socket
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel, expected_type = read.channel, read.expected_type
+    return _typed_result(
+        _noise_texture_expr(from_node, from_socket, visited, provenance, cache), expected_type, channel
+    )
+
+
+def _read_voronoi_texture(read: _SocketRead):
+    """Voronoi Texture."""
+    from_node, from_socket = read.from_node, read.from_socket
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel, expected_type = read.channel, read.expected_type
+    return _typed_result(
+        _voronoi_texture_expr(from_node, from_socket, visited, provenance, cache), expected_type, channel
+    )
+
+
+def _read_gradient_texture(read: _SocketRead):
+    """Gradient Texture."""
+    from_node = read.from_node
+    visited, provenance, cache = read.visited, read.provenance, read.cache
+    channel, expected_type = read.channel, read.expected_type
+    # Fac and Color carry the same value; Color repeats it in r, g and b.
+    return _typed_result(_gradient_texture_expr(from_node, visited, provenance, cache), expected_type, channel)
+
+
+def _read_environment_texture(read: _SocketRead):
+    """Environment Texture."""
+    from_node, from_socket = read.from_node, read.from_socket
+    visited, provenance, cache, cache_key = read.visited, read.provenance, read.cache, read.cache_key
+    channel, expected_type = read.channel, read.expected_type
+    expr = _environment_texture_expr(
+        from_node, from_socket, visited, provenance, cache, expected_type, channel
+    )
+    if expr is not None and cache is not None and cache_key is not None:
+        cache[cache_key] = dict(expr)
+    return expr
+
+
+def _read_image_texture(read: _SocketRead):
+    """Image Texture, with Flat or Box projection."""
+    from_node, from_socket = read.from_node, read.from_socket
+    visited, provenance, cache, cache_key = read.visited, read.provenance, read.cache, read.cache_key
+    channel, expected_type = read.channel, read.expected_type
+    projection = str(getattr(from_node, "projection", "FLAT") or "FLAT").upper()
+    if projection == 'BOX':
+        return _box_projection_expr(
+            from_node, from_socket, visited, provenance, cache, expected_type, channel
         )
-
-        if output_name == 'alpha':
-            if primvar_type != "color4":
-                # Only reachable if the measured table ever gains a
-                # three-channel case; alpha is not in the data then, so say so
-                # rather than reading a channel that does not exist.
-                return {
-                    "kind": "unresolved",
-                    "provenance": list(provenance),
-                    "reason": (
-                        f"Color attribute '{layer_name}' exports as a "
-                        f"{primvar_type} primvar, which carries no alpha "
-                        "channel; use the Color output or bake the material"
-                    ),
-                }
-            alpha = _swizzle_expr(read, "color4", "float", "a")
-            if expected_type and expected_type not in {"float", "half", "integer"}:
-                # A scalar into a colour/vector socket: Blender broadcasts it.
-                return _make_node_expr(
-                    _nodedef_for("convert", expected_type, input_type="float"),
-                    {"in": alpha},
-                )
-            return alpha
-
-        if channel in {"r", "g", "b"}:
-            if primvar_type == "color3":
-                return _swizzle_color3_to_float_expr(read, channel)
-            return _swizzle_expr(read, primvar_type, "float", channel)
-
-        if expected_type == primvar_type:
-            return read
-
-        rgb = (
-            read
-            if primvar_type == "color3"
-            else _swizzle_expr(read, primvar_type, "color3", "rgb")
-        )
-        if expected_type in {"float", "half", "integer"}:
-            # Blender's implicit colour-to-float conversion is linear RGB to
-            # gray; a Separate node asking for one channel reads it itself.
-            return _coerce_output(rgb, "float", channel)
-        return rgb
-
-    if node_type == 'TEX_NOISE':
-        return _typed_result(
-            _noise_texture_expr(from_node, from_socket, visited, provenance, cache), expected_type, channel
-        )
-
-    if node_type == 'TEX_VORONOI':
-        return _typed_result(
-            _voronoi_texture_expr(from_node, from_socket, visited, provenance, cache), expected_type, channel
-        )
-
-    if node_type == 'TEX_GRADIENT':
-        # Fac and Color carry the same value; Color repeats it in r, g and b.
-        return _typed_result(_gradient_texture_expr(from_node, visited, provenance, cache), expected_type, channel)
-
-    if node_type == 'TEX_ENVIRONMENT':
-        expr = _environment_texture_expr(
+    if projection != 'FLAT':
+        # SPHERE and TUBE have no MaterialX projection nodedef in the
+        # manifest, and the FLAT path would silently sample by UV instead.
+        return {
+            "kind": "unresolved",
+            "provenance": list(provenance),
+            "reason": (
+                f"Image Texture projection {projection} has no MaterialX "
+                "equivalent (only Flat and Box are exported); bake the "
+                "material"
+            ),
+        }
+    if _computed_image_reads or not image_uses_uv_transform(from_node) or image_premultiplies_color(from_node):
+        expr = _computed_image_expr(
             from_node, from_socket, visited, provenance, cache, expected_type, channel
         )
         if expr is not None and cache is not None and cache_key is not None:
             cache[cache_key] = dict(expr)
         return expr
-
-    if node_type == 'TEX_IMAGE':
-        projection = str(getattr(from_node, "projection", "FLAT") or "FLAT").upper()
-        if projection == 'BOX':
-            return _box_projection_expr(
-                from_node, from_socket, visited, provenance, cache, expected_type, channel
-            )
-        if projection != 'FLAT':
-            # SPHERE and TUBE have no MaterialX projection nodedef in the
-            # manifest, and the FLAT path would silently sample by UV instead.
-            return {
-                "kind": "unresolved",
-                "provenance": list(provenance),
-                "reason": (
-                    f"Image Texture projection {projection} has no MaterialX "
-                    "equivalent (only Flat and Box are exported); bake the "
-                    "material"
-                ),
-            }
-        if _computed_image_reads or not image_uses_uv_transform(from_node) or image_premultiplies_color(from_node):
-            expr = _computed_image_expr(
-                from_node, from_socket, visited, provenance, cache, expected_type, channel
-            )
-            if expr is not None and cache is not None and cache_key is not None:
-                cache[cache_key] = dict(expr)
-            return expr
-        texture_info = _texture_info_from_image_node(from_node)
-        if not texture_info:
-            return None
-        if texture_info.get("kind") == "unresolved":
-            return dict(texture_info, provenance=list(provenance))
-        image_channel = _image_channel_from_output_socket(from_socket)
-        if image_channel == "a" and texture_info.get("source_has_alpha") is False:
-            # Cycles reads 1 from the Alpha of a file with no alpha channel,
-            # as the computed read above does.
-            return _constant_expr((1.0, 1.0, 1.0) if expected_type in ("color3", "vector3") else 1.0)
-        if image_channel:
-            texture_info["channel"] = image_channel
-            if image_channel == "a":
-                texture_info["output_type"] = "float"
-        if expected_type:
-            texture_info.setdefault("output_type", expected_type)
-        if channel:
-            texture_info.setdefault("channel", channel)
-        if cache is not None and cache_key is not None:
-            cache[cache_key] = dict(texture_info)
-        return texture_info
-
-    if node_type in {'INPUT_BOOL', 'INPUT_INT', 'INPUT_VECTOR'}:
-        value = _input_constant_node_value(from_node)
-        if value is None:
-            return None
-        result = {"kind": "constant", "value": value}
-        if isinstance(value, (list, tuple)):
-            result["value_type"] = "vector3"
-        result = _typed_result(result, expected_type, channel)
-        if cache is not None and cache_key is not None:
-            cache[cache_key] = dict(result)
-        return result
-
-    if node_type == 'RGB':
-        output = from_node.outputs.get('Color') if hasattr(from_node, "outputs") else None
-        value = None
-        if output:
-            try:
-                value = list(output.default_value)[:3]
-            except Exception:
-                value = None
-        if value is None:
-            try:
-                value = list(from_node.outputs[0].default_value)[:3]
-            except Exception:
-                value = None
-        if value is None:
-            return None
-        # A scalar consumer takes Blender's colour-to-float conversion; a
-        # Separate node asking for a channel reads the whole colour.
-        result = _typed_result({"kind": "constant", "value": value, "value_type": "color3"}, expected_type, channel)
-        if cache is not None and cache_key is not None:
-            cache[cache_key] = dict(result)
-        return result
-
-    if node_type == 'VALUE':
-        output = from_node.outputs.get('Value') if hasattr(from_node, "outputs") else None
-        driven = _driven_socket_expr(output) if output is not None else None
-        if driven is not None:
-            if cache is not None and cache_key is not None:
-                cache[cache_key] = dict(driven)
-            return driven
-        value = None
-        if output:
-            try:
-                value = float(output.default_value)
-            except Exception:
-                value = None
-        if value is None and hasattr(from_node, "outputs") and from_node.outputs:
-            try:
-                value = float(from_node.outputs[0].default_value)
-            except Exception:
-                value = None
-        if value is None:
-            return None
-        result = {"kind": "constant", "value": value}
-        if cache is not None and cache_key is not None:
-            cache[cache_key] = dict(result)
-        return result
-
-    if node_type in ('VECT_MATH', 'VECTOR_ROTATE'):
-        if node_type == 'VECT_MATH':
-            expr = _vector_math_expr(from_node, from_socket, visited, channel, provenance, cache)
-        else:
-            expr = _vector_rotate_expr(from_node, visited, provenance, cache)
-        if expr is not None:
-            # The mean for a scalar consumer, a convert for a colour one; a
-            # Separate node reads its component from the whole vector.
-            expr = _typed_result(expr, expected_type, channel)
-            if cache is not None and cache_key is not None:
-                cache[cache_key] = dict(expr)
-            return expr
-
-    if node_type == 'COMBXYZ':
-        parts = []
-        for name in ('X', 'Y', 'Z'):
-            socket = from_node.inputs.get(name) if hasattr(from_node, "inputs") else None
-            parts.append(_float_socket_expr(socket, visited, provenance, cache, default=0.0))
-        if all(part is not None for part in parts):
-            expr = _make_node_expr(
-                _nodedef_for("combine3", "vector3"),
-                {"in1": parts[0], "in2": parts[1], "in3": parts[2]},
-            )
-            expr = _typed_result(expr, expected_type, channel)
-            if cache is not None and cache_key is not None:
-                cache[cache_key] = dict(expr)
-            return expr
-
-    if node_type in _READER_NODE_TYPES:
-        expr = _reader_node_expr(from_node, from_socket, visited, channel, provenance, cache)
-        if expr is not None:
-            if cache is not None and cache_key is not None:
-                cache[cache_key] = dict(expr)
-            return expr
-        # An output with no reader falls through to the unresolved tail below,
-        # so the refusal names the socket rather than approximating it.
-
-    # Unsupported node type: return unresolved with provenance chain.
+    texture_info = _texture_info_from_image_node(from_node)
+    if not texture_info:
+        return None
+    if texture_info.get("kind") == "unresolved":
+        return dict(texture_info, provenance=list(provenance))
+    image_channel = _image_channel_from_output_socket(from_socket)
+    if image_channel == "a" and texture_info.get("source_has_alpha") is False:
+        # Cycles reads 1 from the Alpha of a file with no alpha channel,
+        # as the computed read above does.
+        return _constant_expr((1.0, 1.0, 1.0) if expected_type in ("color3", "vector3") else 1.0)
+    if image_channel:
+        texture_info["channel"] = image_channel
+        if image_channel == "a":
+            texture_info["output_type"] = "float"
+    if expected_type:
+        texture_info.setdefault("output_type", expected_type)
+    if channel:
+        texture_info.setdefault("channel", channel)
     if cache is not None and cache_key is not None:
-        cache[cache_key] = {"kind": "unresolved", "provenance": list(provenance)}
-    return {"kind": "unresolved", "provenance": list(provenance)}
+        cache[cache_key] = dict(texture_info)
+    return texture_info
 
-    return None
+
+def _read_input_constant(read: _SocketRead):
+    """Boolean, Integer and Vector input nodes."""
+    from_node = read.from_node
+    cache, cache_key = read.cache, read.cache_key
+    channel, expected_type = read.channel, read.expected_type
+    value = _input_constant_node_value(from_node)
+    if value is None:
+        return None
+    result = {"kind": "constant", "value": value}
+    if isinstance(value, (list, tuple)):
+        result["value_type"] = "vector3"
+    result = _typed_result(result, expected_type, channel)
+    if cache is not None and cache_key is not None:
+        cache[cache_key] = dict(result)
+    return result
+
+
+def _read_rgb(read: _SocketRead):
+    """RGB: its colour."""
+    from_node = read.from_node
+    cache, cache_key = read.cache, read.cache_key
+    channel, expected_type = read.channel, read.expected_type
+    output = from_node.outputs.get('Color') if hasattr(from_node, "outputs") else None
+    value = None
+    if output:
+        try:
+            value = list(output.default_value)[:3]
+        except Exception:
+            value = None
+    if value is None:
+        try:
+            value = list(from_node.outputs[0].default_value)[:3]
+        except Exception:
+            value = None
+    if value is None:
+        return None
+    # A scalar consumer takes Blender's colour-to-float conversion; a
+    # Separate node asking for a channel reads the whole colour.
+    result = _typed_result({"kind": "constant", "value": value, "value_type": "color3"}, expected_type, channel)
+    if cache is not None and cache_key is not None:
+        cache[cache_key] = dict(result)
+    return result
+
+
+def _read_value(read: _SocketRead):
+    """Value: its number, or the driver that animates it."""
+    from_node = read.from_node
+    cache, cache_key = read.cache, read.cache_key
+    output = from_node.outputs.get('Value') if hasattr(from_node, "outputs") else None
+    driven = _driven_socket_expr(output) if output is not None else None
+    if driven is not None:
+        if cache is not None and cache_key is not None:
+            cache[cache_key] = dict(driven)
+        return driven
+    value = None
+    if output:
+        try:
+            value = float(output.default_value)
+        except Exception:
+            value = None
+    if value is None and hasattr(from_node, "outputs") and from_node.outputs:
+        try:
+            value = float(from_node.outputs[0].default_value)
+        except Exception:
+            value = None
+    if value is None:
+        return None
+    result = {"kind": "constant", "value": value}
+    if cache is not None and cache_key is not None:
+        cache[cache_key] = dict(result)
+    return result
+
+
+def _read_vector_math(read: _SocketRead):
+    """Vector Math and Vector Rotate."""
+    from_node, from_socket, node_type = read.from_node, read.from_socket, read.node_type
+    visited, provenance, cache, cache_key = read.visited, read.provenance, read.cache, read.cache_key
+    channel, expected_type = read.channel, read.expected_type
+    if node_type == 'VECT_MATH':
+        expr = _vector_math_expr(from_node, from_socket, visited, channel, provenance, cache)
+    else:
+        expr = _vector_rotate_expr(from_node, visited, provenance, cache)
+    if expr is not None:
+        # The mean for a scalar consumer, a convert for a colour one; a
+        # Separate node reads its component from the whole vector.
+        expr = _typed_result(expr, expected_type, channel)
+        if cache is not None and cache_key is not None:
+            cache[cache_key] = dict(expr)
+        return expr
+    return _FALL_THROUGH
+
+
+def _read_combine_xyz(read: _SocketRead):
+    """Combine XYZ."""
+    from_node = read.from_node
+    visited, provenance, cache, cache_key = read.visited, read.provenance, read.cache, read.cache_key
+    channel, expected_type = read.channel, read.expected_type
+    socket = read.socket
+    parts = []
+    for name in ('X', 'Y', 'Z'):
+        socket = from_node.inputs.get(name) if hasattr(from_node, "inputs") else None
+        parts.append(_float_socket_expr(socket, visited, provenance, cache, default=0.0))
+    if all(part is not None for part in parts):
+        expr = _make_node_expr(
+            _nodedef_for("combine3", "vector3"),
+            {"in1": parts[0], "in2": parts[1], "in3": parts[2]},
+        )
+        expr = _typed_result(expr, expected_type, channel)
+        if cache is not None and cache_key is not None:
+            cache[cache_key] = dict(expr)
+        return expr
+    return _FALL_THROUGH
+
+
+def _read_geometry_reader(read: _SocketRead):
+    """Texture Coordinate, Geometry, Fresnel and Layer Weight outputs."""
+    from_node, from_socket = read.from_node, read.from_socket
+    visited, provenance, cache, cache_key = read.visited, read.provenance, read.cache, read.cache_key
+    channel = read.channel
+    expr = _reader_node_expr(from_node, from_socket, visited, channel, provenance, cache)
+    if expr is not None:
+        if cache is not None and cache_key is not None:
+            cache[cache_key] = dict(expr)
+        return expr
+    # An output with no reader falls through to the unresolved tail below,
+    # so the refusal names the socket rather than approximating it.
+    return _FALL_THROUGH
+
+
+_SOCKET_READERS = {
+    '_USDSTAGE_DERIVED': _read_derived,
+    'REROUTE': _read_reroute,
+    'SEPARATE_COLOR': _read_separate_color,
+    'SEPXYZ': _read_separate_xyz,
+    'NORMAL_MAP': _read_normal_map,
+    'BUMP': _read_bump,
+    'MAPPING': _read_expression_node,
+    'GAMMA': _read_expression_node,
+    'TEX_CHECKER': _read_expression_node,
+    'CAMERA': _read_expression_node,
+    'ATTRIBUTE': _read_expression_node,
+    'OBJECT_INFO': _read_expression_node,
+    'UVMAP': _read_expression_node,
+    'GROUP': _read_group,
+    'MIX_RGB': _read_mix,
+    'MIX': _read_mix,
+    'MATH': _read_math,
+    'CLAMP': _read_clamp,
+    'MAP_RANGE': _read_map_range,
+    'HUE_SAT': _read_hue_saturation,
+    'INVERT': _read_invert,
+    'BRIGHTCONTRAST': _read_bright_contrast,
+    'VALTORGB': _read_color_ramp,
+    'CURVE_RGB': _read_rgb_curves,
+    'RGBTOBW': _read_rgb_to_bw,
+    'COMBINE_COLOR': _read_combine_color,
+    'NORMAL': _read_normal,
+    'VERTEX_COLOR': _read_color_attribute,
+    'TEX_NOISE': _read_noise_texture,
+    'TEX_VORONOI': _read_voronoi_texture,
+    'TEX_GRADIENT': _read_gradient_texture,
+    'TEX_ENVIRONMENT': _read_environment_texture,
+    'TEX_IMAGE': _read_image_texture,
+    'INPUT_BOOL': _read_input_constant,
+    'INPUT_INT': _read_input_constant,
+    'INPUT_VECTOR': _read_input_constant,
+    'RGB': _read_rgb,
+    'VALUE': _read_value,
+    'VECT_MATH': _read_vector_math,
+    'VECTOR_ROTATE': _read_vector_math,
+    'COMBXYZ': _read_combine_xyz,
+}
+# Texture Coordinate, Geometry, Fresnel and Layer Weight are registered at
+# the end of this module, once the readers module's names are imported.
 
 
 #: Blender Image Texture extension -> MaterialX image uaddressmode/vaddressmode.
@@ -4814,3 +5061,7 @@ from .readers import (  # noqa: E402,F401
     reader_refusal,
     working_color_space_refusal,
 )
+
+
+# One reader serves every output-reading node the readers module knows.
+_SOCKET_READERS.update(dict.fromkeys(_READER_NODE_TYPES, _read_geometry_reader))
