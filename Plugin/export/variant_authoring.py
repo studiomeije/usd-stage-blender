@@ -24,9 +24,11 @@ rather than guessed.
 
 from __future__ import annotations
 
+import re
+
 from .usd_scene import remap_prim_path
 from .usd_utils import Sdf, UsdShade, require_pxr
-from .variants import MATERIAL, VariantPlan, VariantSetPlan, suggest_identifier
+from .variants import MATERIAL, VariantPlan, VariantSetPlan
 
 
 class VariantAuthoringError(RuntimeError):
@@ -37,7 +39,7 @@ class VariantAuthoringError(RuntimeError):
 # Materials a finish offers
 # ---------------------------------------------------------------------------
 
-def reserve_variant_materials(stage, plan: VariantPlan) -> tuple:
+def reserve_variant_materials(stage, plan: VariantPlan, settings=None) -> dict:
     """Define a Material prim for every finish, before the rewrite runs.
 
     Blender writes no material prim for a material no face wears, which is
@@ -45,16 +47,21 @@ def reserve_variant_materials(stage, plan: VariantPlan) -> tuple:
     lets the MaterialX rewrite convert them like any other - it is given them
     outright rather than having to find them bound, because a finish is bound
     later, inside the variant that offers it.
+
+    Returns ``{prim path: (prim, Blender material name)}`` for every finish.
+    The name travels with the prim because a prim defined here carries no
+    record of which Blender material it stands for, and its identifier alone
+    cannot say: ``Oak Wood`` and ``Oak_Wood`` reduce to the same one.
     """
     if plan.is_empty:
-        return ()
+        return {}
     require_pxr()
 
     root = stage.GetDefaultPrim()
     if not root:
-        return ()
+        return {}
 
-    materials = _Materials(stage, root)
+    materials = _Materials(stage, root, settings)
     reserved = {}
     for variant_set in plan.sets:
         if variant_set.kind != MATERIAL:
@@ -63,25 +70,64 @@ def reserve_variant_materials(stage, plan: VariantPlan) -> tuple:
             if not variant.has_material:
                 continue
             material = materials.get(variant.material_name)
-            reserved.setdefault(str(material.GetPath()), material.GetPrim())
-    return tuple(reserved.values())
+            reserved.setdefault(
+                str(material.GetPath()), (material.GetPrim(), variant.material_name)
+            )
+    return reserved
+
+
+#: Where Blender records the name of the datablock behind a prim, when the
+#: export writes it (``author_blender_name``, on by default).
+_BLENDER_NAME = "userProperties:blender:data_name"
+
+
+def blender_prim_name(name: str, allow_unicode: bool = True) -> str:
+    """The prim name Blender's exporter gives a datablock called ``name``.
+
+    Every character that is not a letter, digit or underscore becomes an
+    underscore - letters beyond ASCII survive when ``allow_unicode`` is on -
+    and a leading digit gets an underscore in front. ``Encre.001`` exports as
+    ``Encre_001`` and ``1Oak`` as ``_1Oak``.
+    """
+    text = str(name or "")
+    if allow_unicode:
+        text = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in text)
+    else:
+        text = re.sub(r"[^A-Za-z0-9_]", "_", text)
+    if not text:
+        return "_"
+    if text[0].isdigit():
+        text = "_" + text
+    return text
 
 
 class _Materials:
-    """The stage's Material prims by name, found once rather than per lookup.
+    """The stage's Material prims by the Blender material behind each.
 
-    A nested finish set asks for the same materials again under every shape
-    variant, and each ask was walking the whole stage.
+    Found once rather than per lookup: a nested finish set asks for the same
+    materials again under every shape variant.
+
+    Matched by Blender name, not by prim name. The exporter records the name
+    on every material it writes; when that record is off, the prim name the
+    exporter would have chosen is the next best key. A finish no face wears
+    has no prim yet and gets one here, under an identifier no other material
+    holds, so ``Oak Wood`` and ``Oak_Wood`` cannot collapse into one prim.
     """
 
-    def __init__(self, stage, root):
+    def __init__(self, stage, root, settings=None):
         self._stage = stage
-        self._by_name = {}
+        self._allow_unicode = bool(getattr(settings, "allow_unicode", True))
+        self._by_blender_name = {}
+        self._by_prim_name = {}
         self._scope = None
         for prim in stage.TraverseAll():
             if not prim.IsA(UsdShade.Material):
                 continue
-            self._by_name.setdefault(prim.GetName(), prim)
+            recorded = prim.GetAttribute(_BLENDER_NAME)
+            blender_name = str(recorded.Get() or "") if recorded else ""
+            if blender_name:
+                self._by_blender_name.setdefault(blender_name, prim)
+            self._by_prim_name.setdefault(prim.GetName(), prim)
             if self._scope is None:
                 self._scope = prim.GetPath().GetParentPath()
         if self._scope is None:
@@ -89,15 +135,32 @@ class _Materials:
 
     def get(self, material_name: str):
         """The Material for a Blender material, defined if the export lacks one."""
-        identifier = suggest_identifier(material_name, "Material")
-        existing = self._by_name.get(identifier)
+        existing = self._by_blender_name.get(material_name)
+        if existing is None:
+            candidate = self._by_prim_name.get(
+                blender_prim_name(material_name, self._allow_unicode)
+            )
+            # A prim that records a different Blender name is that material's,
+            # not this one's, however alike the two names look.
+            if candidate is not None and not _recorded_name(candidate):
+                existing = candidate
         if existing is not None:
             return UsdShade.Material(existing)
-        material = UsdShade.Material.Define(
-            self._stage, self._scope.AppendChild(identifier)
-        )
-        self._by_name[identifier] = material.GetPrim()
+
+        identifier = blender_prim_name(material_name, allow_unicode=False)
+        path = self._scope.AppendChild(identifier)
+        suffix = 1
+        while self._stage.GetPrimAtPath(path):
+            path = self._scope.AppendChild(f"{identifier}_{suffix}")
+            suffix += 1
+        material = UsdShade.Material.Define(self._stage, path)
+        self._by_blender_name[material_name] = material.GetPrim()
         return material
+
+
+def _recorded_name(prim) -> str:
+    recorded = prim.GetAttribute(_BLENDER_NAME)
+    return str(recorded.Get() or "") if recorded else ""
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +200,8 @@ def author_variants(
     paths = _prim_paths(stage, object_map, path_edits)
     selected_only = bool(getattr(settings, "selected_objects_only", False))
     animated = _animated_members(stage, paths, settings)
-    materials = _Materials(stage, root)
+    materials = _Materials(stage, root, settings)
+    object_prims = frozenset(paths.values())
 
     authored: list[str] = []
     for variant_set in plan.sets:
@@ -172,11 +236,12 @@ def author_variants(
                 f"Variant set {variant_set.name!r} nests inside "
                 f"{variant_set.parent_set!r}, which is not authored."
             )
+        bound = _binding_paths(stage, targets, object_prims, variant_set.name, diagnostics)
         if parent is None or parent.name not in authored:
-            _author_finish_set(stage, root, variant_set, targets, materials, diagnostics)
+            _author_finish_set(stage, root, variant_set, bound, materials)
         else:
             _author_nested_finish_set(
-                stage, root, variant_set, parent, targets, materials, diagnostics
+                stage, root, variant_set, parent, bound, paths, materials
             )
         authored.append(variant_set.name)
 
@@ -200,31 +265,36 @@ def _author_shape_set(stage, root, variant_set: VariantSetPlan, resolved) -> Non
     usd_set.SetVariantSelection(variant_set.default_variant)
 
 
-def _author_finish_set(
-    stage, root, variant_set: VariantSetPlan, targets, materials, diagnostics
-) -> None:
-    bound = _binding_paths(stage, targets, variant_set.name, diagnostics)
+def _author_finish_set(stage, root, variant_set: VariantSetPlan, bound, materials) -> None:
     usd_set = root.GetVariantSets().AddVariantSet(variant_set.name)
     for variant in variant_set.variants:
         material = materials.get(variant.material_name)
         usd_set.AddVariant(variant.name)
         usd_set.SetVariantSelection(variant.name)
         with usd_set.GetVariantEditContext():
-            _bind(stage, bound, material, variant_set.name)
+            _bind(stage, bound, material)
     usd_set.SetVariantSelection(variant_set.default_variant)
     _unbind_outside_variants(stage, bound)
 
 
 def _author_nested_finish_set(
     stage, root, variant_set: VariantSetPlan, parent: VariantSetPlan,
-    targets, materials, diagnostics,
+    bound, paths: dict, materials,
 ) -> None:
     """Author the finish set inside each shape variant that offers it.
 
-    Inside a shape variant only that shape's prims compose, so the finishes
-    bind exactly what is present - which is the point of nesting rather than
-    a detail of it.
+    Each shape variant binds every target except the members of the *other*
+    shapes, which that variant deactivates anyway. Decided from membership,
+    not from what happens to compose: an object no shape owns - a frame every
+    shape shares - is bound under every shape, and a target some unrelated
+    set hides by default is bound all the same.
     """
+    members = {
+        variant.name: [
+            Sdf.Path(paths[name]) for name in variant.object_names if name in paths
+        ]
+        for variant in parent.variants
+    }
     parent_set = root.GetVariantSets().GetVariantSet(parent.name)
     for parent_variant in parent.variants:
         offered = [
@@ -233,41 +303,70 @@ def _author_nested_finish_set(
         ]
         if not offered:
             continue
+        elsewhere = [
+            member for name, owned in members.items()
+            if name != parent_variant.name for member in owned
+        ]
+        present = [
+            path for path in bound
+            if not any(Sdf.Path(path).HasPrefix(member) for member in elsewhere)
+        ]
         parent_set.SetVariantSelection(parent_variant.name)
         with parent_set.GetVariantEditContext():
-            present = [path for path in targets if stage.GetPrimAtPath(path)]
-            bound = _binding_paths(stage, present, variant_set.name, diagnostics)
             nested = root.GetVariantSets().AddVariantSet(variant_set.name)
             for variant in offered:
                 material = materials.get(variant.material_name)
                 nested.AddVariant(variant.name)
                 nested.SetVariantSelection(variant.name)
                 with nested.GetVariantEditContext():
-                    _bind(stage, bound, material, variant_set.name)
-            default = variant_set.default_for(parent_variant.name, offered)
-            nested.SetVariantSelection(default)
-            _unbind_outside_variants(stage, bound)
+                    _bind(stage, present, material)
+            nested.SetVariantSelection(variant_set.default_for(parent_variant.name, offered))
     parent_set.SetVariantSelection(parent.default_variant)
+    _unbind_outside_variants(stage, bound)
 
 
-def _bind(stage, paths, material, set_name: str) -> None:
+def _bind(stage, paths, material) -> None:
+    """Bind ``material`` on each path, in the stage's current edit target.
+
+    Written as specs rather than through the composed prim: a shape set may
+    already have deactivated a target, and a mesh under an inactive Xform
+    does not compose at all - yet it still needs the binding for when its
+    shape is selected.
+    """
+    edit_target = stage.GetEditTarget()
+    layer = edit_target.GetLayer()
+    target = material.GetPath()
     for path in paths:
-        prim = _require_prim(stage, path, set_name)
-        UsdShade.MaterialBindingAPI.Apply(prim)
-        UsdShade.MaterialBindingAPI(prim).Bind(material)
+        spec = Sdf.CreatePrimInLayer(layer, edit_target.MapToSpecPath(Sdf.Path(path)))
+        schemas = spec.GetInfo("apiSchemas") if spec.HasInfo("apiSchemas") else Sdf.TokenListOp()
+        prepended = list(schemas.prependedItems)
+        if "MaterialBindingAPI" not in prepended:
+            prepended.append("MaterialBindingAPI")
+            schemas.prependedItems = prepended
+            spec.SetInfo("apiSchemas", schemas)
+        relationship = spec.relationships.get("material:binding")
+        if relationship is None:
+            relationship = Sdf.RelationshipSpec(spec, "material:binding", custom=False)
+        relationship.targetPathList.explicitItems = [target]
 
 
-def _binding_paths(stage, targets, set_name: str, diagnostics) -> list[str]:
+def _binding_paths(stage, targets, object_prims, set_name: str, diagnostics) -> list[str]:
     """Bind where Blender binds: the mesh, not the Xform above it.
 
     An object becomes an Xform with its mesh beneath, and the binding sits on
     the mesh. Binding the Xform is a weaker inherited opinion the mesh's own
     overrides, and the material rewrite - which collects what meshes bind -
     would not see it either.
+
+    Read from the root layer's specs, where Blender wrote them, rather than
+    from the composed stage: once a shape set deactivates a target its mesh
+    no longer composes, and a composed walk would miss the very binding the
+    finish has to replace.
     """
+    layer = stage.GetRootLayer()
     paths: list[str] = []
     for target in targets:
-        found = _bound_descendants(stage, target)
+        found = _bound_descendants(layer, target, object_prims)
         if len(found) > 1:
             _warn(diagnostics,
                   f"Variant set {set_name!r}: {target} binds {len(found)} "
@@ -277,19 +376,32 @@ def _binding_paths(stage, targets, set_name: str, diagnostics) -> list[str]:
     return paths
 
 
-def _bound_descendants(stage, object_path: str) -> list[str]:
-    prim = stage.GetPrimAtPath(object_path)
-    if not prim:
-        return []
-    found: list[str] = []
-    stack = [prim]
+def _bound_descendants(layer, object_path: str, object_prims=frozenset()) -> list[str]:
+    """The prims under one object that carry its binding.
+
+    Stops at a child that is another object's prim: a parented object is a
+    separate Blender object, and a finish rebinds only the objects it targets.
+    Falls back to the object's mesh when nothing is bound yet, and to the
+    object prim itself when it has no mesh.
+    """
+    spec = layer.GetPrimAtPath(object_path)
+    if spec is None:
+        return [object_path]
+    own = str(spec.path)
+    bound: list[str] = []
+    meshes: list[str] = []
+    stack = [spec]
     while stack:
         current = stack.pop()
-        relationship = UsdShade.MaterialBindingAPI(current).GetDirectBindingRel()
-        if relationship and relationship.HasAuthoredTargets():
-            found.append(str(current.GetPath()))
-        stack.extend(current.GetAllChildren())
-    return sorted(found) or [str(prim.GetPath())]
+        path = str(current.path)
+        if path != own and path in object_prims:
+            continue
+        if current.relationships.get("material:binding") is not None:
+            bound.append(path)
+        elif current.typeName == "Mesh":
+            meshes.append(path)
+        stack.extend(current.nameChildren.values())
+    return sorted(bound) or sorted(meshes)[:1] or [object_path]
 
 
 def _unbind_outside_variants(stage, paths) -> None:

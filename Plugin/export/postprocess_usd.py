@@ -90,7 +90,7 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
             settings,
             context,
             diagnostics,
-        )
+        ) or {}
 
         _run_step(
             diagnostics,
@@ -100,7 +100,8 @@ def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> Non
             settings,
             context,
             diagnostics,
-            reserved_materials,
+            tuple(prim for prim, _name in reserved_materials.values()),
+            {path: name for path, (_prim, name) in reserved_materials.items()},
         )
 
         _run_step(diagnostics, "author_animation_library", author_animation_library, stage, settings, diagnostics)
@@ -327,12 +328,15 @@ def _author_colliders(
 
 
 def _reserve_variant_materials(stage, settings, context, diagnostics=None):
-    """Define a Material prim for every finish, ahead of the rewrite."""
+    """Define a Material prim for every finish, ahead of the rewrite.
+
+    Returns ``{prim path: (prim, Blender material name)}``.
+    """
     plan = variants.resolve_variant_plan(context, settings)
     if plan.is_empty:
-        return ()
+        return {}
     variants.require_valid_variant_plan(plan, diagnostics)
-    return variant_authoring.reserve_variant_materials(stage, plan)
+    return variant_authoring.reserve_variant_materials(stage, plan, settings)
 
 
 def _author_variants(

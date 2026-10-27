@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 pytest.importorskip("pxr")
-from pxr import Usd, UsdGeom, UsdShade  # noqa: E402
+from pxr import Sdf, Usd, UsdGeom, UsdShade  # noqa: E402
 
 from Plugin.export.diagnostics import ExportDiagnostics  # noqa: E402
 from Plugin.export.realitykit_preflight import (  # noqa: E402
@@ -647,3 +647,176 @@ def test_a_nested_set_is_declared_inside_the_shape_variants():
     for name in ("Round", "Square"):
         nested = shape.variants[name].primSpec.variantSets
         assert list(nested.keys()) == ["Finish"], name
+
+
+# --------------------------------------------------------------------------
+# Finishes over Blender's own layout: an Xform per object, its mesh beneath
+# --------------------------------------------------------------------------
+
+def _blender_layout(*object_names, bind="Navy", materials=("Navy", "Red"), children=()):
+    """Objects as Blender exports them: ``/Root/<name>`` Xform, bound mesh below.
+
+    ``children`` are ``(parent, child)`` pairs: the child object's Xform is
+    written inside its parent's, the way Blender parents objects.
+    """
+    stage = Usd.Stage.CreateInMemory()
+    root = UsdGeom.Xform.Define(stage, "/Root")
+    stage.SetDefaultPrim(root.GetPrim())
+    for name in materials:
+        UsdShade.Material.Define(stage, f"/Root/_materials/{name}")
+
+    def add(path):
+        UsdGeom.Xform.Define(stage, path)
+        mesh = UsdGeom.Mesh.Define(stage, f"{path}/{path.rsplit('/', 1)[1]}")
+        UsdShade.MaterialBindingAPI.Apply(mesh.GetPrim())
+        UsdShade.MaterialBindingAPI(mesh.GetPrim()).Bind(
+            UsdShade.Material.Get(stage, f"/Root/_materials/{bind}")
+        )
+
+    object_map = {}
+    for name in object_names:
+        add(f"/Root/{name}")
+        object_map[f"/Root/{name}"] = name
+    for parent, child in children:
+        add(f"/Root/{parent}/{child}")
+        object_map[f"/Root/{parent}/{child}"] = child
+    return stage, object_map
+
+
+def _mesh_binding(stage, object_path):
+    """The material the object's mesh binds directly, by name, or None."""
+    name = object_path.rsplit("/", 1)[1]
+    mesh = stage.GetPrimAtPath(f"{object_path}/{name}")
+    material = UsdShade.MaterialBindingAPI(mesh).GetDirectBinding().GetMaterial()
+    return material.GetPrim().GetName() if material else None
+
+
+def _seat_and_colour(nested=False):
+    fabric, leather, frame = (_object(n) for n in ("SeatFabric", "SeatLeather", "Frame"))
+    colour = _material_variant_set(
+        "Colour", [("Navy", "Navy"), ("Red", "Red")],
+        _collection("All", objects=[fabric, leather, frame]),
+    )
+    colour.parent_set = "Seat" if nested else ""
+    plan = _plan_for(
+        _variant_set("Seat", [
+            ("Fabric", _collection("Fabric", objects=[fabric])),
+            ("Leather", _collection("Leather", objects=[leather])),
+        ]),
+        colour,
+    )
+    return plan
+
+
+def test_a_finish_rebinds_a_mesh_its_shape_set_hides_by_default():
+    """Leather is inactive by default, so its mesh does not compose."""
+    stage, object_map = _blender_layout("SeatFabric", "SeatLeather", "Frame")
+
+    _reserve_and_author(stage, _seat_and_colour(), object_map)
+
+    root = stage.GetDefaultPrim()
+    root.GetVariantSet("Seat").SetVariantSelection("Leather")
+    for colour in ("Navy", "Red"):
+        root.GetVariantSet("Colour").SetVariantSelection(colour)
+        assert _mesh_binding(stage, "/Root/SeatLeather") == colour
+        assert _mesh_binding(stage, "/Root/Frame") == colour
+
+
+def test_a_nested_finish_binds_a_shared_object_on_its_mesh_under_every_shape():
+    """The frame belongs to no shape, so every shape has to rebind it."""
+    stage, object_map = _blender_layout("SeatFabric", "SeatLeather", "Frame")
+
+    _reserve_and_author(stage, _seat_and_colour(nested=True), object_map)
+
+    root = stage.GetDefaultPrim()
+    for seat in ("Fabric", "Leather"):
+        root.GetVariantSet("Seat").SetVariantSelection(seat)
+        for colour in ("Navy", "Red"):
+            root.GetVariantSet("Colour").SetVariantSelection(colour)
+            assert _mesh_binding(stage, f"/Root/Seat{seat}") == colour
+            assert _mesh_binding(stage, "/Root/Frame") == colour, (seat, colour)
+    # Bound on the mesh, where Blender binds, never on the Xform above it.
+    xform = UsdShade.MaterialBindingAPI(stage.GetPrimAtPath("/Root/Frame"))
+    assert not xform.GetDirectBindingRel().GetTargets()
+
+
+def test_a_nested_finish_binds_nothing_another_shape_owns():
+    stage, object_map = _blender_layout("SeatFabric", "SeatLeather", "Frame")
+
+    _reserve_and_author(stage, _seat_and_colour(nested=True), object_map)
+
+    fabric_variant = stage.GetRootLayer().GetPrimAtPath("/Root{Seat=Fabric}")
+    nested = fabric_variant.variantSets["Colour"].variants["Red"].primSpec
+    assert "SeatLeather" not in nested.nameChildren
+
+
+def test_a_finish_leaves_a_parented_child_object_alone():
+    """A child object is its own Blender object, outside the finish's targets."""
+    stage, object_map = _blender_layout("Chair", children=[("Chair", "Cushion")])
+    plan = _plan_for(_material_variant_set(
+        "Colour", [("Navy", "Navy"), ("Red", "Red")],
+        _collection("Chairs", objects=[_object("Chair")]),
+    ))
+
+    _reserve_and_author(stage, plan, object_map)
+
+    stage.GetDefaultPrim().GetVariantSet("Colour").SetVariantSelection("Red")
+    assert _mesh_binding(stage, "/Root/Chair") == "Red"
+    assert _mesh_binding(stage, "/Root/Chair/Cushion") == "Navy"
+
+
+def _named_material(stage, prim_name, blender_name):
+    material = UsdShade.Material.Define(stage, f"/Root/_materials/{prim_name}")
+    material.GetPrim().CreateAttribute(
+        "userProperties:blender:data_name", Sdf.ValueTypeNames.String, custom=True
+    ).Set(blender_name)
+    return material
+
+
+def test_a_finish_finds_the_prim_blender_wrote_for_its_material():
+    """``Encre.001`` exports as ``Encre_001``; the recorded name ties them."""
+    stage, object_map = _blender_layout("Chair", materials=("Navy",))
+    _named_material(stage, "Encre_001", "Encre.001")
+    plan = _plan_for(_material_variant_set(
+        "Colour", [("Navy", "Navy"), ("Encre", "Encre.001")],
+        _collection("Chairs", objects=[_object("Chair")]),
+    ))
+
+    reserved = reserve_variant_materials(stage, plan)
+
+    assert "/Root/_materials/Encre_001" in reserved
+    assert reserved["/Root/_materials/Encre_001"][1] == "Encre.001"
+    materials = [
+        prim.GetName() for prim in stage.Traverse() if prim.IsA(UsdShade.Material)
+    ]
+    assert sorted(materials) == ["Encre_001", "Navy"]
+
+
+def test_an_unworn_finish_gets_its_own_prim_and_keeps_its_blender_name():
+    """``Oak Wood`` must not borrow the prim of a different ``Oak_Wood``."""
+    stage, object_map = _blender_layout("Chair", materials=("Navy",))
+    _named_material(stage, "Oak_Wood", "Oak_Wood")
+    plan = _plan_for(_material_variant_set(
+        "Colour", [("Navy", "Navy"), ("Oak", "Oak Wood")],
+        _collection("Chairs", objects=[_object("Chair")]),
+    ))
+
+    reserved = reserve_variant_materials(stage, plan)
+
+    names = {name for _prim, name in reserved.values()}
+    assert names == {"Navy", "Oak Wood"}
+    oak_path = next(path for path, (_p, name) in reserved.items() if name == "Oak Wood")
+    assert oak_path == "/Root/_materials/Oak_Wood_1"
+
+
+def test_a_material_named_with_a_leading_digit_matches_blenders_prim():
+    stage, object_map = _blender_layout("Chair", materials=("Navy",))
+    UsdShade.Material.Define(stage, "/Root/_materials/_1Oak")    # no recorded name
+    plan = _plan_for(_material_variant_set(
+        "Colour", [("Navy", "Navy"), ("Oak", "1Oak")],
+        _collection("Chairs", objects=[_object("Chair")]),
+    ))
+
+    reserved = reserve_variant_materials(stage, plan)
+
+    assert "/Root/_materials/_1Oak" in reserved
