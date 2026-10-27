@@ -141,6 +141,28 @@ export owns. Materials are rewritten before anything reads them. Variants are
 authored last, over finished work, so every earlier pass saw every variant's
 content, and the preflight then judges each selection.
 
+## Bake flow
+
+A bake export bakes before it exports. `bake_materials_for_objects` in
+`Plugin/export/bake_textures.py` runs the bake as a sequence of steps over one
+`_BakeRun`, which holds the resolved settings, a snapshot of every object's
+source materials, the progress counters and the reuse cache. If any step
+fails, every material slot is put back before the error is raised.
+
+| Step | Function | What it does |
+|---|---|---|
+| Plan | `_plan_bake` | Resolves the bake mode, resolution, image format and passes, and snapshots each object's source materials before anything changes them. |
+| Refuse | `_refuse_unbakeable_mix_shaders` | Stops on a Mix Shader the bake mode cannot reproduce. |
+| Count | `_BakeRun.count_steps` | Counts the passes that will run, so progress is a true fraction. |
+| Per object | `_bake_object` | Picks the UV map the bake writes into, and works out a reuse key for each slot. |
+| Reuse | `_reuse_cached_bakes` | Binds the baked materials of an earlier object with the same mesh, material and settings, so the two export as instances. Off for Lighting & Shadows, whose lighting differs per object. |
+| Targets | `_create_bake_targets` | Copies each slot's material and creates the image the color pass bakes into. |
+| Passes | `_bake_color_pass`, `_bake_roughness_pass`, `_bake_opacity_pass` | Bake color (or the lit surface), roughness and opacity, each only where some slot needs it. |
+| Finish | `_finish_baked_materials` | Rebuilds each baked material around its images and offers it for reuse. |
+
+What each bake mode captures, and the scene state it overrides, is in
+[BAKING.md](BAKING.md).
+
 ## Material rewrite flow
 
 `rewrite_materials` in `Plugin/export/materials/rewrite.py` runs in two phases
