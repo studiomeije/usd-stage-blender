@@ -1,8 +1,13 @@
-"""
-USD post-processing pipeline for RealityKit compatibility.
+"""Post-processing an exported stage for RealityKit.
 
-Runs scene normalization, material rewriting, and texture preparation.
+Blender's exporter writes the geometry; this turns that stage into a
+RealityKit asset: assets localized into the export, names and units
+normalized, materials rewritten as MaterialX, variants, colliders and asset
+metadata authored, and the result checked. Each step is a pass in
+:data:`PASSES`, so adding one is adding an entry there.
 """
+
+from dataclasses import dataclass, field
 
 from .materials.rewrite import rewrite_materials
 from .materials.extract import (
@@ -25,219 +30,157 @@ from .usd_assets import prepare_assets
 from .usd_utils import Usd, require_pxr
 
 
+@dataclass
+class _Run:
+    """One post-process run: its inputs, and what each pass leaves for later ones."""
+
+    stage: object
+    usd_path: str
+    settings: object
+    context: object
+    diagnostics: object
+    #: The layers this export owns and may edit, from asset localization.
+    writable_layer_paths: tuple = ()
+    #: Prim renames normalization made, to translate paths captured earlier.
+    prim_path_edits: tuple = ()
+    #: ``{prim path: Blender object name}`` the export hook captured.
+    object_map: dict | None = None
+    #: ``{prim path: (prim, Blender material name)}`` for variant finishes.
+    reserved_materials: dict = field(default_factory=dict)
+
+
+def _reserved_prims(run):
+    return tuple(prim for prim, _name in (run.reserved_materials or {}).values())
+
+
+def _reserved_names(run):
+    return {path: name for path, (_prim, name) in (run.reserved_materials or {}).items()}
+
+
+#: The passes, in the order they run: ``(phase name, pass, result kept as)``.
+#: The phase name is what the diagnostics report records. A pass reads the run
+#: and returns a value; when it is kept, later passes find it on the run.
+#: Passes look their functions up when they run, so each can be replaced alone.
+#:
+#: The order is the design. Assets are localized while external layers still
+#: resolve against their own anchors; everything after edits only layers the
+#: export owns. Materials are rewritten before anything that reads them, and
+#: variants are authored last, over finished work, so every earlier pass saw
+#: every variant's content and the preflight then judges each selection.
+PASSES = (
+    # Copy every layer and asset the stage depends on into the export, and
+    # record which layers it now owns.
+    ("localize_source_dependencies",
+     lambda run: _prepare_assets(run.stage, run.usd_path, run.settings, run.diagnostics),
+     "writable_layer_paths"),
+    # Up axis, units, prim identifiers. Returns the renames it made.
+    ("normalize_scene",
+     lambda run: _normalize_localized_scene(
+         run.stage, run.settings, run.writable_layer_paths, run.diagnostics),
+     "prim_path_edits"),
+    # Persist the localized layers before any later pass recomposes them.
+    ("save_localized_layers", lambda run: _save_stage(run.stage), None),
+    # A finish may offer a material nothing wears, which Blender writes no
+    # prim for; reserving one lets the rewrite convert it like any other.
+    ("reserve_variant_materials",
+     lambda run: _reserve_variant_materials(
+         run.stage, run.settings, run.context, run.diagnostics) or {},
+     "reserved_materials"),
+    ("rewrite_materials",
+     lambda run: rewrite_materials(
+         run.stage, run.settings, run.context, run.diagnostics,
+         _reserved_prims(run), _reserved_names(run)),
+     None),
+    ("author_animation_library",
+     lambda run: author_animation_library(run.stage, run.settings, run.diagnostics),
+     None),
+    # Localize again: material and animation authoring may add asset paths.
+    # This pass's set of owned layers is the authoritative one.
+    ("finalize_assets",
+     lambda run: _prepare_assets(run.stage, run.usd_path, run.settings, run.diagnostics),
+     "writable_layer_paths"),
+    ("normalize_finalized_meshes",
+     lambda run: _normalize_finalized_meshes(
+         run.stage, run.writable_layer_paths, run.diagnostics),
+     None),
+    ("retag_unmapped_color_spaces",
+     lambda run: _retag_unmapped_color_space_names(run.stage, run.diagnostics), None),
+    ("author_object_random",
+     lambda run: _author_object_random(run.stage, run.diagnostics), None),
+    ("author_uv_derivatives",
+     lambda run: _author_uv_derivatives(run.stage, run.diagnostics), None),
+    ("publish_vertex_colors_as_display_color",
+     lambda run: _publish_vertex_colors_as_display_color(
+         run.stage, run.diagnostics, run.context),
+     None),
+    ("complete_blend_shape_weights",
+     lambda run: _complete_blend_shape_weights(run.stage, run.diagnostics), None),
+    # Before the variants: a collider is a child of its object's prim, so
+    # authoring it while every variant member still composes gives each one.
+    ("author_colliders",
+     lambda run: _author_colliders(
+         run.stage, run.settings, run.context, run.object_map,
+         run.prim_path_edits, run.diagnostics),
+     None),
+    ("author_variants",
+     lambda run: _author_variants(
+         run.stage, run.settings, run.context, run.object_map,
+         run.prim_path_edits, run.diagnostics),
+     None),
+    # After the variants: the bounds hint describes the selection shipped.
+    ("author_asset_metadata",
+     lambda run: asset_metadata.author_asset_metadata(
+         run.stage, run.usd_path, run.settings, run.diagnostics),
+     None),
+    ("realitykit_preflight",
+     lambda run: _require_realitykit_preflight(
+         run.stage, run.usd_path, run.settings, run.diagnostics),
+     None),
+    # Last: the split only moves where things live, after the preflight has
+    # judged the whole composed asset.
+    ("split_asset_payload",
+     lambda run: payload.split_asset_payload(
+         run.stage, run.usd_path, run.settings, run.diagnostics),
+     None),
+)
+
+
 def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> None:
-    """Post-process a USD stage for RealityKit compatibility."""
+    """Post-process an exported stage for RealityKit, pass by pass, then save it.
+
+    A pass that raises stops the run; its phase is recorded as failed in the
+    diagnostics report.
+    """
     require_pxr()
 
     stage = Usd.Stage.Open(usd_path, Usd.Stage.LoadAll)
     if not stage:
         raise RuntimeError(f"Failed to open USD stage: {usd_path}")
 
-    # Material extraction may snapshot dirty/generated image pixels to disk.
-    # Keep those files alive through the final texture localization, then clear
-    # every export-local cache entry and temp file even if a later phase fails.
+    # Material extraction may snapshot generated image pixels to disk. Keep
+    # those files alive through the final asset localization, then clear them
+    # even if a pass fails.
     begin_image_staging_session(diagnostics)
     try:
-        # Resolve asset opinions while external source layers still retain their
-        # original resolver anchors. Composition layers are then copied into the
-        # export-owned namespace before any namespace or schema mutation occurs.
-        writable_layer_paths = _run_step(
-            diagnostics,
-            "localize_source_dependencies",
-            _prepare_assets,
-            stage,
-            usd_path,
-            settings,
-            diagnostics,
+        run = _Run(
+            stage=stage,
+            usd_path=usd_path,
+            settings=settings,
+            context=context,
+            diagnostics=diagnostics,
+            # Read once: reading clears it, and two passes need the same map.
+            object_map=usd_hook.consume_captured_object_map(),
         )
-        # The renames this returns are how a prim path captured during export
-        # is translated into the one the stage now has; variant authoring is
-        # the pass that needs it.
-        prim_path_edits = _run_step(
-            diagnostics,
-            "normalize_scene",
-            _normalize_localized_scene,
-            stage,
-            settings,
-            writable_layer_paths,
-            diagnostics,
-        )
-
-        # Persist the localized, normalized layer stack before later passes can
-        # add or rewrite composition arcs. Even a semantically identical Sdf
-        # arc edit may trigger recomposition; no such reload may resurrect the
-        # pre-normalized bytes copied from an external source layer.
-        _run_step(
-            diagnostics,
-            "save_localized_layers",
-            _save_stage,
-            stage,
-        )
-
-        # Consumed once, here: reading it clears it, and both variant passes
-        # need the same map.
-        object_map = usd_hook.consume_captured_object_map()
-
-        # Before the rewrite: a finish may offer a material no object in the
-        # scene wears, which Blender exports no prim for at all. Reserving
-        # them here lets the rewrite convert them like any other; binding
-        # happens later, inside the variant that offers each one.
-        reserved_materials = _run_step(
-            diagnostics,
-            "reserve_variant_materials",
-            _reserve_variant_materials,
-            stage,
-            settings,
-            context,
-            diagnostics,
-        ) or {}
-
-        _run_step(
-            diagnostics,
-            "rewrite_materials",
-            rewrite_materials,
-            stage,
-            settings,
-            context,
-            diagnostics,
-            tuple(prim for prim, _name in reserved_materials.values()),
-            {path: name for path, (_prim, name) in reserved_materials.items()},
-        )
-
-        _run_step(diagnostics, "author_animation_library", author_animation_library, stage, settings, diagnostics)
-
-        # Catch any asset opinions authored by material/animation post-processing.
-        # All composition arcs already point to output-owned layers at this point.
-        final_writable_layer_paths = _run_step(
-            diagnostics,
-            "finalize_assets",
-            _prepare_assets,
-            stage,
-            usd_path,
-            settings,
-            diagnostics,
-        )
-        # Material/animation authoring normally adds only root-layer schemas,
-        # but the final localization pass is the authoritative ownership set.
-        # Re-run the raw Sdf normalization over that exact set so a newly
-        # discovered inactive USD-valued asset cannot bypass the portable
-        # double-sided contract. Already-normalized owners do not warn twice.
-        _run_step(
-            diagnostics,
-            "normalize_finalized_meshes",
-            _normalize_finalized_meshes,
-            stage,
-            final_writable_layer_paths,
-            diagnostics,
-        )
-        _run_step(
-            diagnostics,
-            "retag_unmapped_color_spaces",
-            _retag_unmapped_color_space_names,
-            stage,
-            diagnostics,
-        )
-        _run_step(
-            diagnostics,
-            "author_object_random",
-            _author_object_random,
-            stage,
-            diagnostics,
-        )
-        _run_step(
-            diagnostics,
-            "author_uv_derivatives",
-            _author_uv_derivatives,
-            stage,
-            diagnostics,
-        )
-        _run_step(
-            diagnostics,
-            "publish_vertex_colors_as_display_color",
-            _publish_vertex_colors_as_display_color,
-            stage,
-            diagnostics,
-            context,
-        )
-        _run_step(
-            diagnostics,
-            "complete_blend_shape_weights",
-            _complete_blend_shape_weights,
-            stage,
-            diagnostics,
-        )
-        # Authored last, so every earlier pass - localization, normalization,
-        # the material rewrite, texture staging, mesh normalization - sees a
-        # flat stage with every variant's content present and processes all of
-        # it. Variants are then layered over finished work, and the preflight
-        # that follows validates each composed selection.
-        _run_step(
-            diagnostics,
-            "author_colliders",
-            _author_colliders,
-            stage,
-            settings,
-            context,
-            object_map,
-            prim_path_edits,
-            diagnostics,
-        )
-
-        _run_step(
-            diagnostics,
-            "author_variants",
-            _author_variants,
-            stage,
-            settings,
-            context,
-            object_map,
-            prim_path_edits,
-            diagnostics,
-        )
-
-        # After the variants: a variant-bearing asset has as many sizes as it
-        # has selections, and the hint describes the one it ships with.
-        _run_step(
-            diagnostics,
-            "author_asset_metadata",
-            asset_metadata.author_asset_metadata,
-            stage,
-            usd_path,
-            settings,
-            diagnostics,
-        )
-
-        _run_step(
-            diagnostics,
-            "realitykit_preflight",
-            _require_realitykit_preflight,
-            stage,
-            usd_path,
-            settings,
-            diagnostics,
-        )
-
-        # Last, after the preflight has judged the whole composed asset: the
-        # split only moves where things live, not what they are.
-        _run_step(
-            diagnostics,
-            "split_asset_payload",
-            payload.split_asset_payload,
-            stage,
-            usd_path,
-            settings,
-            diagnostics,
-        )
+        for name, run_pass, keep_as in PASSES:
+            result = _run_step(diagnostics, name, run_pass, run)
+            if keep_as:
+                setattr(run, keep_as, result)
 
         if diagnostics:
             diagnostics.begin_phase("stage_save", {"usd_path": usd_path})
         stage.Save()
         if diagnostics:
             diagnostics.end_phase("stage_save")
-
-        if diagnostics:
-            # A progress note, not a warning: it fires on every successful
-            # export and consumed one of the few user-visible warning slots.
             diagnostics.add_info("USD stage post-processed for RealityKit compatibility")
     finally:
         cleanup_image_staging_session(diagnostics)

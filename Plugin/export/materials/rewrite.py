@@ -2,7 +2,7 @@
 Material rewrite orchestration for USD stages.
 """
 
-from ..usd_utils import Usd, UsdShade, Sdf, UsdGeom
+from ..usd_utils import UsdShade, Sdf, UsdGeom
 from ..usd_hook import (
     consume_captured_material_map,
     consume_captured_mesh_material_map,
@@ -19,6 +19,7 @@ from .extract.core import working_color_space_refusal
 from .author import create_materialx_material
 from .helpers import _get_blender_data_name
 from .mapping import require_realitykit_mapping_contract
+from ..stage_prims import composed_prims
 
 
 def _materials_to_rewrite(stage, extra_material_prims, diagnostics):
@@ -582,77 +583,10 @@ def _bound_material_prims(stage, diagnostics=None):
 
 
 def _material_namespace_prims(stage):
-    """Collect ordinary, used-class, and non-duplicated prototype prims."""
-    prims = []
-    seen_paths = set()
-
-    def append_range(prim_range):
-        for prim in prim_range:
-            path = str(prim.GetPath())
-            if path in seen_paths:
-                continue
-            seen_paths.add(path)
-            prims.append(prim)
-
-    append_range(list(stage.Traverse()))
-    class_backed_prototypes = set()
-
-    if hasattr(stage, "TraverseAll"):
-        all_namespace_prims = [
-            prim
-            for prim in stage.TraverseAll()
-            if prim.IsActive() and prim.IsLoaded() and prim.IsDefined()
-        ]
-        abstract_roots, class_backed_prototypes = _referenced_abstract_roots(
-            stage,
-            all_namespace_prims,
-        )
-        for abstract_root in abstract_roots:
-            append_range(
-                prim
-                for prim in all_namespace_prims
-                if prim.IsAbstract()
-                and prim.GetPath().HasPrefix(abstract_root.GetPath())
-            )
-
-    if Usd is not None and hasattr(stage, "GetPrototypes"):
-        for prototype in stage.GetPrototypes():
-            if str(prototype.GetPath()) in class_backed_prototypes:
-                continue
-            append_range(Usd.PrimRange(prototype))
-
-    return prims
+    """Every prim the rewrite must visit; see :func:`stage_prims.composed_prims`."""
+    return composed_prims(stage)
 
 
-def _referenced_abstract_roots(stage, prims):
-    """Find active internal references to Blender's abstract prototypes."""
-    roots = {}
-    class_backed_prototypes = set()
-    for prim in prims:
-        if prim.IsAbstract():
-            continue
-        try:
-            references = prim.GetMetadata("references")
-            items = list(references.GetAddedOrExplicitItems()) if references else []
-        except Exception:
-            items = []
-        for reference in items:
-            if str(getattr(reference, "assetPath", "") or ""):
-                continue
-            target_path = getattr(reference, "primPath", None)
-            if not target_path or bool(getattr(target_path, "isEmpty", False)):
-                continue
-            target = stage.GetPrimAtPath(target_path)
-            if not target or not target.IsAbstract():
-                continue
-            if not (target.IsActive() and target.IsLoaded() and target.IsDefined()):
-                continue
-            roots[str(target.GetPath())] = target
-            if prim.IsInstance():
-                prototype = prim.GetPrototype()
-                if prototype:
-                    class_backed_prototypes.add(str(prototype.GetPath()))
-    return list(roots.values()), class_backed_prototypes
 
 
 def _variant_bound_material_prims(stage, owners, namespace_prims):

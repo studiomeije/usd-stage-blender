@@ -5,7 +5,6 @@ Export operator for USD Stage for Blender
 from __future__ import annotations
 
 import bpy
-import os
 import json
 from pathlib import Path
 from bpy.props import StringProperty
@@ -110,12 +109,8 @@ class USDSTAGE_OT_export(Operator, ExportHelper):
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
         settings.filepath = self.filepath
-        clamp_specular_tint = bool(
-            getattr(settings, "clamp_specular_tint", False)
-        )
 
-        from ..export import diagnostics
-        from ..export.support_bundle import collect_environment, collect_scene_snapshot
+        from ..export import diagnostics, pipeline
 
         diag = diagnostics.ExportDiagnostics()
         success_diagnostics_enabled = bool(
@@ -126,181 +121,91 @@ class USDSTAGE_OT_export(Operator, ExportHelper):
         diag_path = Path(self.filepath).with_suffix('.diagnostics.json')
         if not success_diagnostics_enabled:
             settings.last_diagnostics_path = ""
-        diag.set_export_context(
+        pipeline.describe_export(
+            diag, context, settings,
             command="ui_export",
-            resolved_output_path=self.filepath,
+            filepath=self.filepath,
             export_format=export_format,
-            selected_only=bool(getattr(settings, "selected_objects_only", False)),
-            clamp_specular_tint=clamp_specular_tint,
-            blend_file=context.blend_data.filepath or None,
+            blend_file=context.blend_data.filepath,
         )
-        diag.set_environment(**collect_environment(context))
-        diag.data["scene"] = collect_scene_snapshot(context)
 
-        from ..export import animation_export
+        def keep_diagnostics():
+            _save_diagnostics(diag, diag_path)
+            settings.last_diagnostics_path = str(diag_path)
 
-        validation_objects = None
-        if bool(getattr(settings, "selected_objects_only", False)):
-            try:
-                export_objects = animation_export.collect_export_objects(
-                    context,
-                    settings,
-                )
-                if export_objects:
-                    validation_objects = animation_export.collect_processing_objects(
-                        context,
-                        export_objects,
-                    )
-            except Exception as exc:
-                self.report({'ERROR'}, str(exc))
-                _save_diagnostics(diag, diag_path)
-                if diag_path:
-                    settings.last_diagnostics_path = str(diag_path)
-                return {'CANCELLED'}
-            if not export_objects:
-                self.report(
-                    {'ERROR'},
-                    "Selection Only is enabled, but no objects are selected.",
-                )
-                _save_diagnostics(diag, diag_path)
-                if diag_path:
-                    settings.last_diagnostics_path = str(diag_path)
-                return {'CANCELLED'}
-
-        from ..nodes import validate as rk_validate
-
-        materials = (
-            _collect_materials_from_objects(validation_objects)
-            if validation_objects is not None
-            else rk_validate.collect_scene_materials(context)
-        )
-        for material in materials:
-            result = rk_validate.validate_material(
-                material,
-                strict=True,
-                clamp_specular_tint=clamp_specular_tint,
-            )
-            for issue in result["warnings"]:
-                diag.add_validation_issue(material.name, issue, severity="warning")
-                diag.add_warning(
-                    f"{material.name}: {issue.get('message', 'Material export warning.')}"
-                )
-            if result["errors"]:
-                error_count = len(result["errors"])
-                for issue in result["errors"]:
-                    diag.add_validation_issue(material.name, issue, severity="error")
-                self.report(
-                    {'ERROR'},
-                    f"Unsupported nodes found in material '{material.name}' ({error_count})."
-                )
-                for issue in result["errors"][:6]:
-                    node_name = issue.get("node_name") or "<unknown>"
-                    node_type = issue.get("node_type") or "?"
-                    message = issue.get("message") or "Unsupported node."
-                    self.report({'ERROR'}, f"{node_name} ({node_type}): {message}")
-                if error_count > 6:
-                    self.report({'ERROR'}, f"{error_count - 6} more errors in '{material.name}'.")
-                _save_diagnostics(diag, diag_path)
-                if diag_path:
-                    settings.last_diagnostics_path = str(diag_path)
-                return {'CANCELLED'}
-
-        temp_usd_path = None
         try:
-            # Import export modules
-            from ..export import blender_usd_export, postprocess_usd, pack_usdz
+            scope = pipeline.validation_scope(context, settings)
+            pipeline.validate_materials(context, settings, scope, diag)
+        except pipeline.ExportRefused as refusal:
+            self._report_refusal(refusal)
+            keep_diagnostics()
+            return {'CANCELLED'}
 
-            # Step 1: Export from Blender to USD
-            self.report({'INFO'}, "Exporting from Blender...")
-            temp_usd_path = blender_usd_export.export_blender_scene(
-                context, settings, self.filepath, diag,
+        progress = {
+            pipeline.STEP_EXPORT: "Exporting from Blender...",
+            pipeline.STEP_POSTPROCESS: "Rewriting materials to RealityKit ShaderGraph...",
+            pipeline.STEP_PACKAGE: "Packaging USDZ...",
+        }
+        try:
+            pipeline.write_export(
+                context, settings, self.filepath, settings.export_format, diag,
+                on_step=lambda step: step in progress and self.report({'INFO'}, progress[step]),
             )
-
-            if not temp_usd_path or not os.path.exists(temp_usd_path):
-                self.report({'ERROR'}, "Blender USD export failed")
-                diag.add_error("Blender USD export failed")
-                _save_diagnostics(diag, diag_path)
-                settings.last_diagnostics_path = str(diag_path)
-                return {'CANCELLED'}
-
-            # Step 2: Post-process USD and enforce the Apple Y-up contract.
-            self.report({'INFO'}, "Rewriting materials to RealityKit ShaderGraph...")
-            postprocess_usd.process_usd_stage(
-                temp_usd_path,
-                settings,
-                context,
-                diag,
-            )
-
-            # Fail fast on strict export errors before packaging.
-            if diag.data.get('errors'):
-                _save_diagnostics(diag, diag_path)
-                if diag_path:
-                    settings.last_diagnostics_path = str(diag_path)
-                for error in diag.data['errors'][:5]:
+        except pipeline.ExportRefused as refusal:
+            if refusal.code == "POSTPROCESS_FAILED":
+                errors = diag.data.get('errors') or []
+                for error in errors[:5]:
                     self.report({'ERROR'}, str(error))
-                if len(diag.data['errors']) > 5:
-                    suffix = " (see diagnostics)" if diag_path else ""
-                    self.report({'ERROR'}, f"{len(diag.data['errors']) - 5} more errors{suffix}")
-                return {'CANCELLED'}
-
-            # Step 3: Package as USDZ if requested
-            if settings.export_format == 'USDZ':
-                self.report({'INFO'}, "Packaging USDZ...")
-                pack_usdz.create_usdz(
-                    temp_usd_path,
-                    self.filepath,
-                    settings,
-                    context,
-                    diag
-                )
+                if len(errors) > 5:
+                    self.report({'ERROR'}, f"{len(errors) - 5} more errors (see diagnostics)")
             else:
-                # Publish the staged USD and sidecar assets to the final location.
-                if temp_usd_path != self.filepath:
-                    blender_usd_export.publish_unpacked_export(temp_usd_path, self.filepath, diag)
-
-            # Save diagnostics if enabled for this export.
-            if success_diagnostics_enabled:
-                _save_diagnostics(diag, diag_path)
-                settings.last_diagnostics_path = str(diag_path)
-
-            if diag.data.get('warnings'):
-                warning_count = len(diag.data['warnings'])
-                for warning in diag.data['warnings'][:5]:
-                    self.report({'WARNING'}, warning)
-                if warning_count > 5:
-                    suffix = " (see diagnostics)" if success_diagnostics_enabled else ""
-                    self.report({'WARNING'}, f"{warning_count - 5} more warnings{suffix}")
-
-            self.report({'INFO'}, f"Export completed: {self.filepath}")
-            _store_last_export_settings(context, settings)
-            return {'FINISHED'}
-
+                diag.add_error(str(refusal))
+                self.report({'ERROR'}, str(refusal))
+            keep_diagnostics()
+            return {'CANCELLED'}
         except Exception as e:
             import traceback
             diag.add_exception(e, stage="ui_export")
             try:
-                _save_diagnostics(diag, diag_path)
-                if diag_path:
-                    settings.last_diagnostics_path = str(diag_path)
+                keep_diagnostics()
             except Exception:
                 pass
             self.report({'ERROR'}, f"Export failed: {str(e)}")
             traceback.print_exc()
             return {'CANCELLED'}
-        finally:
-            # A returned USD path identifies the exact unique attempt to clean.
-            # If native export fails before returning, it cleans its own attempt.
-            if temp_usd_path:
-                try:
-                    from ..export import blender_usd_export
-                    blender_usd_export.remove_export_staging_dir(
-                        self.filepath,
-                        diag,
-                        staging_dir=Path(temp_usd_path).parent,
-                    )
-                except Exception:
-                    pass
+
+        if success_diagnostics_enabled:
+            keep_diagnostics()
+
+        warnings = diag.data.get('warnings') or []
+        for warning in warnings[:5]:
+            self.report({'WARNING'}, warning)
+        if len(warnings) > 5:
+            suffix = " (see diagnostics)" if success_diagnostics_enabled else ""
+            self.report({'WARNING'}, f"{len(warnings) - 5} more warnings{suffix}")
+
+        self.report({'INFO'}, f"Export completed: {self.filepath}")
+        _store_last_export_settings(context, settings)
+        return {'FINISHED'}
+
+    def _report_refusal(self, refusal) -> None:
+        """Say why validation stopped the export, a few issues at a time."""
+        if not refusal.issues:
+            self.report({'ERROR'}, str(refusal))
+            return
+        count = len(refusal.issues)
+        self.report(
+            {'ERROR'},
+            f"Unsupported nodes found in material '{refusal.material}' ({count}).",
+        )
+        for issue in refusal.issues[:6]:
+            node_name = issue.get("node_name") or "<unknown>"
+            node_type = issue.get("node_type") or "?"
+            message = issue.get("message") or "Unsupported node."
+            self.report({'ERROR'}, f"{node_name} ({node_type}): {message}")
+        if count > 6:
+            self.report({'ERROR'}, f"{count - 6} more errors in '{refusal.material}'.")
+
 
 class USDSTAGE_OT_show_diagnostics(Operator):
     """Show export diagnostics"""
@@ -524,26 +429,6 @@ def _save_diagnostics(diag, diag_path: Path | None) -> None:
         return
     diag.set_artifact("diagnostics_path", str(diag_path))
     diag.save(diag_path)
-
-
-def _collect_materials_from_objects(objects) -> list:
-    """Collect each material referenced by an exact export object closure."""
-    materials = []
-    seen: set[int] = set()
-    for obj in objects or []:
-        for slot in getattr(obj, "material_slots", []) or []:
-            material = getattr(slot, "material", None)
-            if material is None:
-                continue
-            try:
-                identity = int(material.as_pointer())
-            except Exception:
-                identity = id(material)
-            if identity in seen:
-                continue
-            seen.add(identity)
-            materials.append(material)
-    return materials
 
 
 def _store_last_export_settings(context, settings) -> None:

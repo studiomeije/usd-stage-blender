@@ -14,12 +14,20 @@ import re
 import shutil
 import tempfile
 import unicodedata
-from urllib.parse import unquote, urlparse
-from urllib.request import url2pathname
+from urllib.parse import urlparse
 
 from .staging_namespace import (
     output_sidecar_namespace,
     take_native_texture_copies,
+)
+from .asset_paths import (
+    absolute_path as _absolute_path,
+    asset_scheme as _asset_scheme,
+    asset_value_paths as _asset_value_paths,
+    layer_filesystem_path as _layer_filesystem_path,
+    local_asset_path as _local_asset_path,
+    normalize_file_url as _normalize_file_url,
+    unique_destination_name as _unique_destination_name,
 )
 from .usd_utils import Sdf
 
@@ -82,14 +90,6 @@ _APPLE_TEXTURE_OUTPUT_EXTENSIONS = {
     ".png",
 }
 
-_NON_FILE_ASSET_SCHEMES = {
-    "anon",
-    "blob",
-    "data",
-    "http",
-    "https",
-    "mem",
-}
 
 _CONTENT_HASH_SUFFIX = re.compile(r"^(?P<stem>.+)-[0-9a-f]{64}$")
 _MAX_CONTENT_STEM_UTF8_BYTES = 120
@@ -520,66 +520,6 @@ def _resolve_layer_texture_source(
         if layer_path is not None:
             return _absolute_path(authored_candidate, layer_path.parent)
     return _absolute_path(authored_candidate, fallback_dir)
-
-
-def _asset_value_paths(asset_value) -> tuple[str, str]:
-    """Return authored and resolver-produced paths without conflating them."""
-    if isinstance(asset_value, Sdf.AssetPath):
-        return str(asset_value.path or ""), str(asset_value.resolvedPath or "")
-    if asset_value:
-        return str(asset_value), ""
-    return "", ""
-
-
-def _layer_filesystem_path(layer) -> Path | None:
-    for attribute in ("realPath", "resolvedPath", "identifier"):
-        value = getattr(layer, attribute, None)
-        if not value:
-            continue
-        candidate = _local_asset_path(str(value))
-        if candidate is not None and "[" not in str(candidate):
-            return _absolute_path(candidate, Path.cwd())
-    return None
-
-
-def _local_asset_path(asset_path: str) -> Path | None:
-    if not asset_path:
-        return None
-    scheme = _asset_scheme(asset_path)
-    if scheme in _NON_FILE_ASSET_SCHEMES:
-        return None
-    if scheme and scheme != "file":
-        return None
-    return Path(_normalize_file_url(asset_path))
-
-
-def _asset_scheme(asset_path: str) -> str:
-    value = str(asset_path or "")
-    parsed = urlparse(value)
-    scheme = parsed.scheme.lower()
-    # A Windows drive path is not a URI scheme. This does no harm on macOS and
-    # keeps support bundles/tests portable.
-    if len(scheme) == 1 and len(value) >= 2 and value[1] == ":":
-        return ""
-    return scheme
-
-
-def _normalize_file_url(asset_path: str) -> str:
-    if _asset_scheme(asset_path) != "file":
-        return asset_path
-    parsed = urlparse(asset_path)
-    path = url2pathname(unquote(parsed.path))
-    if parsed.netloc and parsed.netloc.lower() != "localhost":
-        path = f"//{parsed.netloc}{path}"
-    return path
-
-
-def _absolute_path(path: Path, base_dir: Path) -> Path:
-    candidate = path if path.is_absolute() else base_dir / path
-    try:
-        return candidate.resolve()
-    except OSError:
-        return candidate.absolute()
 
 
 def _effective_texture_override(source_path: Path, texture_override):
@@ -1310,35 +1250,3 @@ def _referenced_texture_paths(stage, usd_dir: Path) -> set[Path]:
                 paths.add(_absolute_path(path, usd_dir))
     return paths
 
-
-def _unique_destination_name(path: Path, used: dict, diagnostics=None, label: str = "asset") -> str:
-    """Return a deterministic name safe on Unicode/case-folding filesystems."""
-    name = path.name
-    name_key = _destination_name_key(name)
-    existing = used.get(name_key)
-    if existing is None or existing == path:
-        used[name_key] = path
-        return name
-
-    stem = path.stem
-    suffix = path.suffix
-    digest = hashlib.sha1(str(path).encode("utf-8")).hexdigest()[:8]
-    candidate = f"{stem}_{digest}{suffix}"
-    counter = 1
-    candidate_key = _destination_name_key(candidate)
-    while candidate_key in used and used[candidate_key] != path:
-        candidate = f"{stem}_{digest}_{counter}{suffix}"
-        candidate_key = _destination_name_key(candidate)
-        counter += 1
-    used[candidate_key] = path
-
-    if diagnostics:
-        diagnostics.add_warning(
-            f"Renamed {label} '{name}' to '{candidate}' to avoid a name collision."
-        )
-
-    return candidate
-
-
-def _destination_name_key(name: str) -> str:
-    return unicodedata.normalize("NFC", str(name)).casefold()

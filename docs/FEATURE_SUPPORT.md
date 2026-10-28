@@ -178,6 +178,10 @@ rules are in
 | Empties as transforms | Yes | Exported as Xforms. |
 | Double-sided meshes | Dropped | Always written single-sided; each changed mesh is noted in the diagnostics sidecar. |
 | World material and environment lighting | Dropped | Never exported; use the **Lighting & Shadows** bake mode to keep the look. |
+| Variant sets | Yes | Declared in the **Variants** panel: shape sets switch collections, finish sets switch materials. See [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#5-variant-sets). |
+| Rigid Body | Partial | Exported as a RealityKit box collider sized from the object's bounds; other collision shapes are approximated as a box, with a warning. Mass and dynamics are not exported. |
+| Asset metadata | Yes | `kind`, `assetInfo` and an `extentsHint` on the root prim, set by **Asset Kind**. |
+| Payload split | Yes | Off by default; **Payload Geometry** writes an interface layer and an `assets/` payload. |
 | USDZ packaging | Yes | Includes only referenced textures. |
 | Diagnostics sidecar | Yes | Always written on failure; turn on **Keep Success Diagnostics** to keep it otherwise. |
 
@@ -194,3 +198,5 @@ looks wrong and nothing told you why.
 - Curve, hair, point-cloud and volume objects.
 - The world material and its environment lighting.
 - Animation on materials, lights and cameras.
+- Rigid Body mass, friction, bounciness and simulation: only the collider
+  shape is exported, so the object is static in RealityKit.

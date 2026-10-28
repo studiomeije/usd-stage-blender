@@ -18,6 +18,7 @@ from .materials.mapping import (
     authored_texture_mapping_contract,
     mapping_contract_details,
 )
+from .stage_prims import composed_prims
 
 try:
     from pxr import UsdSkel
@@ -767,101 +768,10 @@ def _report_variant_limit(
 
 
 def _preflight_prims(stage) -> list[Any]:
-    """Return each composed prim that can affect a RealityKit asset once.
-
-    ``UsdStage.Traverse()`` deliberately stops at instance roots.  Blender's
-    default instanceable-reference export therefore hides the mesh, material,
-    and texture prims below every instance from an ordinary traversal.  Visit
-    each shared prototype exactly once in addition to the ordinary namespace:
-    validating every instance proxy would report the same asset defect once per
-    instance, while omitting prototypes would let those defects ship.
-
-    Blender 5.2 also authors collection definitions below an abstract
-    ``class \"prototypes\"`` prim. ``TraverseAll()`` is required to see that
-    namespace at all. Include only active, loaded, defined class subtrees that
-    an ordinary prim actually references; an unused class must not fail an
-    export. When an internal class reference also creates an OpenUSD prototype,
-    validate the authored class subtree and skip that equivalent prototype so
-    the same defect is not reported twice.
-
-    ``GetPrototypes()`` also returns nested and external-reference prototypes.
-    De-duplicating composed prim paths keeps the helper robust if OpenUSD
-    exposes a nested prototype from more than one range in a future release.
-    """
-    prims: list[Any] = []
-    seen_paths: set[str] = set()
-
-    def append_range(prim_range) -> None:
-        for prim in prim_range:
-            path = str(prim.GetPath())
-            if path in seen_paths:
-                continue
-            seen_paths.add(path)
-            prims.append(prim)
-
-    ordinary_prims = list(stage.Traverse())
-    append_range(ordinary_prims)
-
-    all_namespace_prims = [
-        prim
-        for prim in stage.TraverseAll()
-        if prim.IsActive() and prim.IsLoaded() and prim.IsDefined()
-    ]
-    abstract_roots, class_backed_prototypes = _referenced_abstract_roots(
-        stage,
-        all_namespace_prims,
-    )
-    for abstract_root in abstract_roots:
-        append_range(
-            prim
-            for prim in all_namespace_prims
-            if prim.IsAbstract() and prim.GetPath().HasPrefix(abstract_root.GetPath())
-        )
-
-    for prototype in stage.GetPrototypes():
-        if str(prototype.GetPath()) in class_backed_prototypes:
-            continue
-        append_range(Usd.PrimRange(prototype))
-    return prims
+    """Every prim the preflight judges; see :func:`stage_prims.composed_prims`."""
+    return composed_prims(stage)
 
 
-def _referenced_abstract_roots(stage, prims) -> tuple[list[Any], set[str]]:
-    """Return used internal class roots and prototypes already backed by them."""
-    roots: dict[str, Any] = {}
-    class_backed_prototypes: set[str] = set()
-
-    for prim in prims:
-        if prim.IsAbstract():
-            continue
-        try:
-            references = prim.GetMetadata("references")
-        except Exception:
-            references = None
-        if not references:
-            continue
-        try:
-            items = list(references.GetAddedOrExplicitItems())
-        except Exception:
-            items = []
-
-        for reference in items:
-            if str(getattr(reference, "assetPath", "") or ""):
-                continue
-            target_path = getattr(reference, "primPath", None)
-            if not target_path or bool(getattr(target_path, "isEmpty", False)):
-                continue
-            target = stage.GetPrimAtPath(target_path)
-            if not target or not target.IsAbstract():
-                continue
-            if not (target.IsActive() and target.IsLoaded() and target.IsDefined()):
-                continue
-            roots[str(target.GetPath())] = target
-            if prim.IsInstance():
-                prototype = prim.GetPrototype()
-                if prototype:
-                    class_backed_prototypes.add(str(prototype.GetPath()))
-
-    return list(roots.values()), class_backed_prototypes
 
 
 def _check_stage_metadata(stage, report: RealityKitPreflightReport) -> None:

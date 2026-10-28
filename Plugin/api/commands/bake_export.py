@@ -23,6 +23,12 @@ from ._settings_common import (
     suspend_setting_persistence,
 )
 from ..errors import CommandError
+from ._export_common import (
+    artifacts as _artifacts,
+    command_error,
+    save_diagnostics as _save_diagnostics,
+    support_hint as _support_hint,
+)
 from ...cli.bridge import (
     OUTPUT_MARKER,
     StepTimeoutWatchdog,
@@ -502,16 +508,15 @@ def run_bake_export(
         bake_finalize,
         bake_textures,
         blender_usd_export,
-        pack_usdz,
-        postprocess_usd,
+        pipeline,
     )
-    from ...ops import bake_export_operator as bake_ops
+    from ...export import scene_state
 
     # The native USD selection scope stays separate from the processing scope.
     # Blender expands collection instances itself; selecting their prototype
     # objects as well would export those objects twice. Baking and asset
     # preflight still have to inspect those prototype meshes and materials.
-    objects_to_export = bake_ops._collect_export_objects(context, settings)
+    objects_to_export = animation_export.collect_export_objects(context, settings)
     if not objects_to_export:
         raise CommandError(
             "No exportable objects found.",
@@ -554,8 +559,8 @@ def run_bake_export(
 
     try:
         on_step(0.1, "Preparing Blender scene")
-        bake_ops._ensure_object_mode(context)
-        bake_ops._set_render_engine(context.scene, "CYCLES")
+        scene_state.ensure_object_mode(context)
+        scene_state.set_render_engine(context.scene, "CYCLES")
         # Collection prototypes are often not linked into the active scene,
         # which makes them unavailable to the bake operators. Link them only
         # for processing, and unlink them before the native USD export, whose
@@ -607,65 +612,23 @@ def run_bake_export(
         if getattr(settings, "selected_objects_only", False):
             animation_export._set_export_selection(context, objects_to_export)
 
-        on_step(0.5, "Exporting USD")
-        diag.begin_phase("blender_usd_export", {"output_path": filepath})
-        temp_usd_path = blender_usd_export.export_blender_scene(
-            context,
-            settings,
-            filepath,
-            diag,
-            reset_staging=False,
-            staging_dir=staging_dir,
-        )
-        if not temp_usd_path or not Path(temp_usd_path).exists():
-            raise CommandError(
-                "Blender USD export failed.",
-                code="BLENDER_USD_EXPORT_FAILED",
-                stage="blender_usd_export",
+        steps = {
+            pipeline.STEP_EXPORT: (0.5, "Exporting USD"),
+            pipeline.STEP_POSTPROCESS: (0.7, "Post-processing USD"),
+            pipeline.STEP_PACKAGE: (0.85, "Packaging USDZ"),
+            pipeline.STEP_PUBLISH: (0.9, "Publishing USD export"),
+        }
+        try:
+            temp_usd_path = pipeline.write_export(
+                context, settings, filepath, requested_format, diag,
+                staging_dir=staging_dir,
+                after_postprocess=lambda usd_path: bake_textures.remove_superseded_bake_outputs(
+                    usd_path, staging_dir, bake_result, diag,
+                ),
+                on_step=lambda step: on_step(*steps[step]),
             )
-        diag.end_phase(
-            "blender_usd_export",
-            context={
-                "temp_usd_path": temp_usd_path,
-                "file_size": Path(temp_usd_path).stat().st_size,
-            },
-        )
-
-        on_step(0.7, "Post-processing USD")
-        diag.begin_phase("postprocess_usd", {"usd_path": temp_usd_path})
-        postprocess_usd.process_usd_stage(temp_usd_path, settings, context, diag)
-        bake_textures.remove_superseded_bake_outputs(
-            temp_usd_path,
-            staging_dir,
-            bake_result,
-            diag,
-        )
-        diag.end_phase("postprocess_usd")
-
-        if diag.data.get("errors"):
-            errors = diag.data["errors"][:5]
-            raise CommandError(
-                f"Post-processing errors ({len(diag.data['errors'])} total): "
-                + "; ".join(str(e) for e in errors),
-                code="POSTPROCESS_FAILED",
-                stage="postprocess_usd",
-                details=diag.data.get("material_issues"),
-            )
-
-        if requested_format == "USDZ":
-            on_step(0.85, "Packaging USDZ")
-            diag.begin_phase("pack_usdz", {"output_path": filepath})
-            pack_usdz.create_usdz(temp_usd_path, filepath, settings, context, diag)
-            diag.end_phase(
-                "pack_usdz",
-                context={"file_size": Path(filepath).stat().st_size if Path(filepath).exists() else None},
-            )
-        else:
-            on_step(0.9, "Publishing USD export")
-            if temp_usd_path != filepath:
-                blender_usd_export.publish_unpacked_export(temp_usd_path, filepath, diag)
-            else:
-                diag.add_generated_file("export", filepath)
+        except pipeline.ExportRefused as refusal:
+            raise command_error(refusal) from refusal
 
         outcome["bake_stats"] = {
             "objects_baked": sum(
@@ -715,13 +678,13 @@ def run_bake_export(
             )
         _restore(
             "the object selection",
-            lambda: bake_ops._restore_selection(
+            lambda: scene_state.restore_selection(
                 context, original_selection, original_active
             ),
         )
         _restore(
             "the object mode",
-            lambda: bake_ops._restore_mode(context, original_active, original_mode),
+            lambda: scene_state.restore_mode(context, original_active, original_mode),
         )
         # Clean only this attempt: the directory the returned USD proves, or,
         # before the export returned, the one allocated for the bake.
@@ -795,28 +758,3 @@ def _unlink_processing_scope(animation_export, state: dict, *, strict: bool) -> 
             "Could not restore the native USD scene scope after texture bake; "
             f"temporary dependencies remain linked: {names}."
         )
-
-
-def _save_diagnostics(diag, diagnostics_path: str | None) -> None:
-    if not diagnostics_path:
-        return
-    diag.set_artifact("diagnostics_path", diagnostics_path)
-    diag.save(Path(diagnostics_path))
-
-
-def _artifacts(diagnostics_path: str | None, output_path: str, blend_file: str | None) -> dict:
-    return {
-        "diagnostics_path": diagnostics_path,
-        "support_bundle_hint": _support_hint(blend_file, output_path, diagnostics_path),
-    }
-
-
-def _support_hint(blend_file: str | None, output_path: str | None, diagnostics_path: str | None = None) -> str | None:
-    if not blend_file:
-        return None
-    parts = ["usdstage", "support-bundle", blend_file]
-    if output_path:
-        parts.extend(["--export-path", output_path])
-    if diagnostics_path:
-        parts.extend(["--diagnostics-path", diagnostics_path])
-    return " ".join(parts)

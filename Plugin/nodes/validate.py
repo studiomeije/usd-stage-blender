@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import re
 
-from typing import Dict, List, Set
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Set
 
 from ..material_policies import (
     SPECULAR_TINT_NORMALIZATION_SETTING,
@@ -933,125 +934,9 @@ def validate_material(
                     force_error=strict and not is_warning,
                     removable=False,
                 )
-            if node_type == 'TEX_IMAGE' and getattr(node, "image", None) is None:
-                add_issue(
-                    "warnings",
-                    node,
-                    "Image Texture node has no image.",
-                    force_error=strict,
-                )
-            if node_type == 'UVMAP':
-                from ..export.materials.extract.core import uv_map_node_resolution
-
-                _texcoord, refusal = uv_map_node_resolution(node)
-                if refusal is not None:
-                    add_issue(
-                        "warnings",
-                        node,
-                        refusal[0].upper() + refusal[1:] + ".",
-                        force_error=strict,
-                        removable=False,
-                    )
-            if node_type == 'TEX_ENVIRONMENT':
-                for issue in _environment_texture_issues(node):
-                    add_issue("warnings", node, issue, force_error=strict, removable=False)
-            if node_type == 'TEX_IMAGE':
-                projection = str(
-                    getattr(node, "projection", "FLAT") or "FLAT"
-                ).upper()
-                if projection not in ('FLAT', 'BOX'):
-                    add_issue(
-                        "warnings",
-                        node,
-                        f"Image Texture projection {projection} requires baking; "
-                        "only Flat and Box projections are exported.",
-                        force_error=strict,
-                        removable=False,
-                    )
-            if node_type == 'VERTEX_COLOR':
-                for issue in _vertex_color_issues(node):
-                    add_issue(
-                        "warnings",
-                        node,
-                        issue,
-                        force_error=strict,
-                        removable=False,
-                    )
-            if node_type == 'BSDF_PRINCIPLED':
-                specular_tint_socket = node.inputs.get('Specular Tint')
-                normalization = safe_overbright_achromatic_specular_tint(
-                    getattr(specular_tint_socket, 'default_value', None),
-                    linked=bool(
-                        specular_tint_socket is not None
-                        and getattr(specular_tint_socket, 'is_linked', False)
-                    ),
-                )
-                if clamp_specular_tint and normalization is not None:
-                    add_issue(
-                        "warnings",
-                        node,
-                        specular_tint_normalization_message(normalization),
-                        force_error=False,
-                        removable=False,
-                    )
-                for issue in _unsupported_principled_inputs(
-                    node,
-                    clamp_specular_tint=clamp_specular_tint,
-                ):
-                    add_issue("warnings", node, issue, force_error=strict, removable=False)
-            if node_type == 'NORMAL_MAP':
-                for issue, is_warning in _normal_map_issues(node):
-                    add_issue(
-                        "warnings",
-                        node,
-                        issue,
-                        force_error=strict and not is_warning,
-                        removable=False,
-                    )
-            if node_type == 'MAP_RANGE':
-                from ..export.materials.extract.core import map_range_refusal
-
-                refusal = map_range_refusal(node)
-                if refusal:
-                    add_issue("warnings", node, refusal, force_error=strict, removable=False)
-            if node_type == 'TEX_NOISE':
-                from ..export.materials.extract.core import noise_texture_refusal
-
-                refusal = noise_texture_refusal(node)
-                if refusal:
-                    add_issue("warnings", node, refusal, force_error=strict, removable=False)
-            if node_type == 'TEX_VORONOI':
-                from ..export.materials.extract.core import voronoi_texture_refusal
-
-                refusal = voronoi_texture_refusal(node, _linked_output_names(node))
-                if refusal:
-                    add_issue("warnings", node, refusal, force_error=strict, removable=False)
-            if node_type in ('SEPARATE_COLOR', 'COMBINE_COLOR'):
-                mode = str(getattr(node, "mode", "RGB") or "RGB").upper()
-                exportable = ('RGB', 'HSV') if node_type == 'SEPARATE_COLOR' else ('RGB',)
-                if mode not in exportable:
-                    label = "Separate Color" if node_type == 'SEPARATE_COLOR' else "Combine Color"
-                    add_issue(
-                        "warnings",
-                        node,
-                        f"{label} in {mode} mode is not exportable; use "
-                        f"{' or '.join(exportable)} mode, or bake the material.",
-                        force_error=strict,
-                        removable=False,
-                    )
-            if node_type == 'VALTORGB':
-                ramp = getattr(node, "color_ramp", None)
-                interpolation = (getattr(ramp, "interpolation", "LINEAR") or "LINEAR").upper()
-                color_mode = (getattr(ramp, "color_mode", "RGB") or "RGB").upper()
-                if color_mode != "RGB" or interpolation not in {"LINEAR", "CONSTANT", "EASE"}:
-                    add_issue(
-                        "warnings",
-                        node,
-                        f"Color Ramp {color_mode}/{interpolation} requires baking; only RGB Linear, "
-                        "Constant, and Ease are mapped exactly.",
-                        force_error=strict,
-                        removable=False,
-                    )
+            node_check = _SUPPORTED_NODE_CHECKS.get(node_type)
+            if node_check is not None:
+                node_check(node, _NodeCheck(add_issue, strict, clamp_specular_tint))
             continue
 
         if node_type in {'BSDF_HAIR_PRINCIPLED', 'BSDF_HAIR'}:
@@ -1165,6 +1050,207 @@ def validate_material(
 
     result["ok"] = not result["errors"]
     return result
+
+
+# ---------------------------------------------------------------------------
+# Checks for nodes the export translates
+# ---------------------------------------------------------------------------
+#
+# A supported node type is translated, but some of its settings may not be.
+# Each check reports those for one node type; register a new one in
+# _SUPPORTED_NODE_CHECKS. ``force_error=strict`` makes a finding stop a
+# strict export, as every export is.
+
+
+@dataclass(frozen=True)
+class _NodeCheck:
+    """What a check needs besides the node: how to report, and the export's options."""
+
+    add_issue: Callable[..., None]
+    strict: bool
+    clamp_specular_tint: bool
+
+
+def _check_image_texture(node, check: _NodeCheck) -> None:
+    """Image Texture: it names an image, and a projection the export can write."""
+    add_issue, strict = check.add_issue, check.strict
+    if getattr(node, "image", None) is None:
+        add_issue(
+            "warnings",
+            node,
+            "Image Texture node has no image.",
+            force_error=strict,
+        )
+    projection = str(
+        getattr(node, "projection", "FLAT") or "FLAT"
+    ).upper()
+    if projection not in ('FLAT', 'BOX'):
+        add_issue(
+            "warnings",
+            node,
+            f"Image Texture projection {projection} requires baking; "
+            "only Flat and Box projections are exported.",
+            force_error=strict,
+            removable=False,
+        )
+
+
+def _check_uv_map(node, check: _NodeCheck) -> None:
+    """UV Map: it names a UV map the meshes have."""
+    add_issue, strict = check.add_issue, check.strict
+    from ..export.materials.extract.core import uv_map_node_resolution
+
+    _texcoord, refusal = uv_map_node_resolution(node)
+    if refusal is not None:
+        add_issue(
+            "warnings",
+            node,
+            refusal[0].upper() + refusal[1:] + ".",
+            force_error=strict,
+            removable=False,
+        )
+
+
+def _check_environment_texture(node, check: _NodeCheck) -> None:
+    """Environment Texture: what the export can read of it."""
+    add_issue, strict = check.add_issue, check.strict
+    for issue in _environment_texture_issues(node):
+        add_issue("warnings", node, issue, force_error=strict, removable=False)
+
+
+def _check_color_attribute(node, check: _NodeCheck) -> None:
+    """Color Attribute: an attribute RealityKit can address."""
+    add_issue, strict = check.add_issue, check.strict
+    for issue in _vertex_color_issues(node):
+        add_issue(
+            "warnings",
+            node,
+            issue,
+            force_error=strict,
+            removable=False,
+        )
+
+
+def _check_principled(node, check: _NodeCheck) -> None:
+    """Principled BSDF: inputs PBR Surface 2 cannot express, and the Specular Tint clamp."""
+    add_issue, strict, clamp_specular_tint = check.add_issue, check.strict, check.clamp_specular_tint
+    specular_tint_socket = node.inputs.get('Specular Tint')
+    normalization = safe_overbright_achromatic_specular_tint(
+        getattr(specular_tint_socket, 'default_value', None),
+        linked=bool(
+            specular_tint_socket is not None
+            and getattr(specular_tint_socket, 'is_linked', False)
+        ),
+    )
+    if clamp_specular_tint and normalization is not None:
+        add_issue(
+            "warnings",
+            node,
+            specular_tint_normalization_message(normalization),
+            force_error=False,
+            removable=False,
+        )
+    for issue in _unsupported_principled_inputs(
+        node,
+        clamp_specular_tint=clamp_specular_tint,
+    ):
+        add_issue("warnings", node, issue, force_error=strict, removable=False)
+
+
+def _check_normal_map(node, check: _NodeCheck) -> None:
+    """Normal Map: a space and strength the export can write."""
+    add_issue, strict = check.add_issue, check.strict
+    for issue, is_warning in _normal_map_issues(node):
+        add_issue(
+            "warnings",
+            node,
+            issue,
+            force_error=strict and not is_warning,
+            removable=False,
+        )
+
+
+def _check_map_range(node, check: _NodeCheck) -> None:
+    """Map Range: a data type and interpolation the export can write."""
+    add_issue, strict = check.add_issue, check.strict
+    from ..export.materials.extract.core import map_range_refusal
+
+    refusal = map_range_refusal(node)
+    if refusal:
+        add_issue("warnings", node, refusal, force_error=strict, removable=False)
+
+
+def _check_noise_texture(node, check: _NodeCheck) -> None:
+    """Noise Texture: settings the export reproduces exactly."""
+    add_issue, strict = check.add_issue, check.strict
+    from ..export.materials.extract.core import noise_texture_refusal
+
+    refusal = noise_texture_refusal(node)
+    if refusal:
+        add_issue("warnings", node, refusal, force_error=strict, removable=False)
+
+
+def _check_voronoi_texture(node, check: _NodeCheck) -> None:
+    """Voronoi Texture: settings and outputs the export reproduces exactly."""
+    add_issue, strict = check.add_issue, check.strict
+    from ..export.materials.extract.core import voronoi_texture_refusal
+
+    refusal = voronoi_texture_refusal(node, _linked_output_names(node))
+    if refusal:
+        add_issue("warnings", node, refusal, force_error=strict, removable=False)
+
+
+def _check_color_mode(node, check: _NodeCheck) -> None:
+    """Separate and Combine Color: a mode the export can write."""
+    add_issue, strict = check.add_issue, check.strict
+    node_type = getattr(node, "type", "")
+    mode = str(getattr(node, "mode", "RGB") or "RGB").upper()
+    exportable = ('RGB', 'HSV') if node_type == 'SEPARATE_COLOR' else ('RGB',)
+    if mode not in exportable:
+        label = "Separate Color" if node_type == 'SEPARATE_COLOR' else "Combine Color"
+        add_issue(
+            "warnings",
+            node,
+            f"{label} in {mode} mode is not exportable; use "
+            f"{' or '.join(exportable)} mode, or bake the material.",
+            force_error=strict,
+            removable=False,
+        )
+
+
+def _check_color_ramp(node, check: _NodeCheck) -> None:
+    """Color Ramp: an RGB ramp with Linear, Constant or Ease interpolation."""
+    add_issue, strict = check.add_issue, check.strict
+    ramp = getattr(node, "color_ramp", None)
+    interpolation = (getattr(ramp, "interpolation", "LINEAR") or "LINEAR").upper()
+    color_mode = (getattr(ramp, "color_mode", "RGB") or "RGB").upper()
+    if color_mode != "RGB" or interpolation not in {"LINEAR", "CONSTANT", "EASE"}:
+        add_issue(
+            "warnings",
+            node,
+            f"Color Ramp {color_mode}/{interpolation} requires baking; only RGB Linear, "
+            "Constant, and Ease are mapped exactly.",
+            force_error=strict,
+            removable=False,
+        )
+
+
+_SUPPORTED_NODE_CHECKS = {
+    'TEX_IMAGE': _check_image_texture,
+    'UVMAP': _check_uv_map,
+    'TEX_ENVIRONMENT': _check_environment_texture,
+    'VERTEX_COLOR': _check_color_attribute,
+    'BSDF_PRINCIPLED': _check_principled,
+    'NORMAL_MAP': _check_normal_map,
+    'MAP_RANGE': _check_map_range,
+    'TEX_NOISE': _check_noise_texture,
+    'TEX_VORONOI': _check_voronoi_texture,
+    'SEPARATE_COLOR': _check_color_mode,
+    'COMBINE_COLOR': _check_color_mode,
+    'VALTORGB': _check_color_ramp,
+}
+
+
 def select_offending_nodes(material, issues: Dict[str, object]) -> int:
     """Select offending nodes in a material's node tree; return the count."""
     if not material or not material.node_tree:
@@ -1248,35 +1334,20 @@ def _is_rk_group(node) -> bool:
 
 
 def _collect_used_nodes(material) -> Set[object]:
-    from ..export.materials.extract.core import _active_output_node
+    """The nodes the export reads, with the active output, from the extractor.
 
-    used_nodes: Set[object] = set()
+    The export's own walk is the one answer to which nodes a material uses;
+    the validator only adds the output node it reports issues against.
+    """
+    from ..export.materials.extract.core import (
+        _active_output_node,
+        _collect_used_nodes as export_walk,
+    )
 
+    used_nodes, _volume_linked, _displacement_linked = export_walk(material)
     active_output = _active_output_node(material)
-    if active_output is None:
-        return used_nodes
-
-    def visit(node):
-        if node in used_nodes:
-            return
-        used_nodes.add(node)
-        for input_socket in getattr(node, "inputs", []):
-            if not input_socket.is_linked:
-                continue
-            for link in input_socket.links:
-                from_node = link.from_node
-                if from_node:
-                    visit(from_node)
-
-    for socket_name in ("Surface", "Volume", "Displacement"):
-        socket = active_output.inputs.get(socket_name)
-        if not socket or not socket.is_linked:
-            continue
-        for link in socket.links:
-            if link.from_node:
-                visit(link.from_node)
-
-    used_nodes.add(active_output)
+    if active_output is not None:
+        used_nodes.add(active_output)
     return used_nodes
 
 
