@@ -686,19 +686,33 @@ class USDSTAGE_PT_export_panel(Panel):
             if status:
                 _draw_job_monitor(layout, status, job_state, job_running)
 
-            export_box = layout.box()
+            export_box = layout.column(align=False)
             export_box.enabled = not job_running
-            export_box.prop(settings, "filepath", placeholder="Choose where to save the export")
-            export_box.prop(settings, "export_format")
-            include = export_box.column(heading="Include", align=True)
-            include.prop(settings, "selected_objects_only", text="Selection Only")
-            include.prop(settings, "export_animation", text="Animation")
-            if settings.export_animation:
-                include.prop(settings, "author_animation_library")
+            export_box.prop(settings, "filepath", text="Save To", placeholder="Choose an export file")
+            export_box.prop(settings, "export_format", text="Format")
+            export_box.separator(factor=0.5)
             profile_row = export_box.row(align=True)
+            profile_row.use_property_split = False
             profile_row.prop(settings, "ui_material_type", expand=True)
-
+            method_row = export_box.row(align=True)
+            method_row.use_property_split = False
+            if settings.ui_material_type == MATERIAL_TYPE_PBR:
+                method_row.prop(settings, "ui_pbr_processing", expand=True)
+            else:
+                method_row.prop(settings, "ui_unlit_appearance", expand=True)
             route = resolve_ui_export_route(settings)
+            summary = {
+                None: "Editable materials with dynamic lighting.",
+                "LIT_ALBEDO": "Baked materials with dynamic lighting.",
+                "UNLIT_ALBEDO": "Material colors without scene lighting.",
+                "LIT_IBL": "Baked lighting and shadows.",
+            }[route.bake_mode]
+            export_box.label_multiline(text=summary, icon='INFO')
+            export_box.separator(factor=0.5)
+            scope = export_box.row(align=True)
+            scope.use_property_split = False
+            scope.prop(settings, "selected_objects_only", text="Selection Only", toggle=True)
+            scope.prop(settings, "export_animation", text="Animation", toggle=True)
             export_row = export_box.row()
             export_row.enabled = not job_running
             export_row.scale_y = 1.4
@@ -715,8 +729,22 @@ class USDSTAGE_PT_export_panel(Panel):
             if route.pipeline != PIPELINE_DIRECT:
                 operator.apply_ui_profile = True
 
+            if route.pipeline != PIPELINE_DIRECT and settings.export_variants:
+                sets = context.scene.usd_stage_variant_sets
+                if any(item.kind == 'MATERIAL' for item in sets):
+                    warning = export_box.column()
+                    warning.alert = True
+                    warning.label_multiline(
+                        text="Finish variants need Translate Materials. Switch the profile or turn off Author Variant Sets.",
+                        icon='ERROR',
+                    )
+                elif sets and route.bake_mode == 'LIT_IBL' and not settings.bake_isolate_meshes_lit:
+                    export_box.label_multiline(
+                        text="Enable Isolate Meshes for Shadows below to bake shape alternatives.", icon='ERROR',
+                    )
+
         except Exception as exc:
-            layout.label(text=f"UI error: {exc}", icon='STATUS_ERROR')
+            layout.label_multiline(text=f"UI error: {exc}", icon='STATUS_ERROR')
             layout.operator("usdstage.export", icon='EXPORT', text="Export Scene")
 
 
@@ -744,7 +772,7 @@ def _draw_job_monitor(layout, status, job_state, job_running):
             # textures from a scene with no lights; show the runner's warnings.
             for warning_text in (status.get("warnings") or [])[:3]:
                 warning_row = monitor.row()
-                warning_row.label(text=str(warning_text)[:120], icon='ERROR')
+                warning_row.label_multiline(text=str(warning_text), icon='ERROR')
         elif job_state == "canceled":
             state_row.label(text="Background Job - Canceled", icon='CANCEL')
         else:
@@ -762,20 +790,20 @@ def _draw_job_monitor(layout, status, job_state, job_running):
         except (TypeError, ValueError):
             pass
         monitor.progress(text=message or f"{int(factor * 100)}%", factor=factor, type='BAR')
-        monitor.label(
+        monitor.label_multiline(
             text="Settings are locked until the job finishes or is canceled.",
             icon='LOCKED',
         )
     elif message:
         message_column = monitor.column()
         message_column.alert = job_state == "error"
-        message_column.label(
+        message_column.label_multiline(
             text=message,
             icon='STATUS_ERROR' if job_state == "error" else 'STATUS_INFO',
         )
 
     if status.get("export_path"):
-        monitor.label(text=f"Output: {status.get('export_path')}", icon='FILE')
+        monitor.label_multiline(text=f"Output: {status.get('export_path')}", icon='FILE')
 
     file_row = monitor.row(align=True)
     if status.get("log_path"):
@@ -811,24 +839,20 @@ class USDSTAGE_PT_export_material_settings(Panel):
         layout.enabled = not _is_job_running(settings)
 
         if settings.ui_material_type == MATERIAL_TYPE_PBR:
-            processing_row = layout.row(align=True)
-            processing_row.prop(settings, "ui_pbr_processing", expand=True)
             if settings.ui_pbr_processing == PBR_PROCESSING_TRANSLATE:
-                layout.prop(settings, "clamp_specular_tint")
+                layout.prop(settings, "clamp_specular_tint", text="Clamp Specular Tint")
                 if settings.clamp_specular_tint:
                     policy = layout.box()
-                    policy.label(
+                    policy.label_multiline(
                         text="Export only; the .blend is not changed.",
                         icon='STATUS_WARNING',
                     )
-                    policy.label(text="Coloured or linked tints still stop the export.")
+                    policy.label_multiline(text="Coloured or linked tints still stop the export.")
             else:
                 layout.prop(settings, "bake_roughness_mode", text="Roughness")
                 _draw_bake_channel_options(layout, settings)
             return
 
-        appearance_row = layout.row(align=True)
-        appearance_row.prop(settings, "ui_unlit_appearance", expand=True)
         if settings.ui_unlit_appearance == UNLIT_APPEARANCE_LIGHTING:
             layout.prop(settings, "bake_ibl_source")
             if settings.bake_ibl_source == 'HDRI_FILE':
@@ -953,6 +977,8 @@ def _draw_usd_general_section(layout, settings):
     layout.prop(settings, "allow_unicode")
     layout.prop(settings, "evaluation_mode")
     layout.prop(settings, "use_instancing")
+    if settings.export_animation:
+        layout.prop(settings, "author_animation_library")
 
 
 def _draw_usd_geometry_section(layout, settings):

@@ -19,7 +19,8 @@ pytestmark = pytest.mark.integration
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _PROBE = r'''
-import bpy, json, sys
+import bpy, json, sys, tempfile
+from pathlib import Path
 
 repo = sys.argv[-1]
 sys.path.insert(0, repo)
@@ -69,6 +70,28 @@ result["collections"] = (
     if len(sets) else []
 )
 result["default_variant"] = sets[0].default_variant if len(sets) else None
+
+# Thumbnail selection edits the selected entry, never the export default or
+# scene visibility. Generating thumbnails must not turn sources into assets.
+before_visibility = [child.exclude for child in layer.children]
+result["selected_thumbnail"] = bpy.ops.usdstage.variant_select(index=0) == {'FINISHED'}
+result["selection_index"] = sets[0].variants_index
+result["selection_default"] = sets[0].default_variant
+result["invalid_selection_refused"] = (
+    bpy.ops.usdstage.variant_select(index=99) == {'CANCELLED'}
+    and sets[0].variants_index == 0
+)
+result["shape_previews_generated"] = (
+    bpy.ops.usdstage.variant_generate_previews() == {'FINISHED'}
+)
+result["shape_preview_sizes"] = [
+    list(v.collection.preview.image_size) for v in sets[0].variants
+]
+result["shape_preview_preserves_scene"] = (
+    before_visibility == [child.exclude for child in layer.children]
+    and sets[0].default_variant == result["default_variant"]
+    and all(v.collection.asset_data is None for v in sets[0].variants)
+)
 
 # Preview the other variant: its collection comes in, the sibling goes out.
 scene.usd_stage_variant_sets_index = 0
@@ -196,6 +219,18 @@ result["finish_set"] = {
     "variants": [[v.name, v.material.name] for v in made.variants],
     "default": made.default_variant,
 }
+before_materials = [slot.material for slot in worn.material_slots]
+result["finish_previews_generated"] = (
+    bpy.ops.usdstage.variant_generate_previews() == {'FINISHED'}
+)
+result["finish_preview_sizes"] = [
+    list(v.material.preview.image_size) for v in made.variants
+]
+result["finish_preview_preserves_scene"] = (
+    before_materials == [slot.material for slot in worn.material_slots]
+    and made.default_variant == result["finish_set"]["default"]
+    and all(v.material.asset_data is None for v in made.variants)
+)
 # An operator that reports an error raises when called from a script.
 sets_before = len(scene.usd_stage_variant_sets)
 try:
@@ -214,6 +249,10 @@ broken.name = "Broken"
 broken.variants.add().name = "Lonely"
 broken.default_variant = "Lonely"
 result["panel_issue_codes"] = sorted(i.code for i in _set_issues(bpy.context, broken))
+scene.usd_stage_variant_sets_index = len(scene.usd_stage_variant_sets) - 1
+result["missing_preview_source_refused"] = (
+    bpy.ops.usdstage.variant_generate_previews() == {'CANCELLED'}
+)
 
 # Every operator the panel references, resolvable by idname.
 result["operators_exist"] = sorted(
@@ -221,9 +260,20 @@ result["operators_exist"] = sorted(
         "variant_set_add_from_collection", "variant_set_add_finish", "variant_set_add_empty",
         "variant_set_remove", "variant_add", "variant_remove",
         "variant_set_default", "variant_preview", "variant_toggle_shape",
+        "variant_select", "variant_generate_previews",
     )
     if hasattr(bpy.ops.usdstage, name)
 )
+
+# Native previews remain available after reopening the artist's .blend.
+with tempfile.TemporaryDirectory() as directory:
+    path = str(Path(directory) / "previews.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    result["previews_persist"] = all(
+        source.preview and source.preview.image_size[0] > 0
+        for source in (bpy.data.collections["Leather"], bpy.data.materials["Fabric_Bordeaux"])
+    )
 
 Plugin.unregister()
 result["unregistered_cleanly"] = not hasattr(
@@ -300,7 +350,24 @@ def test_every_operator_the_panel_draws_resolves(panel_probe):
         "variant_set_add_from_collection", "variant_set_add_finish", "variant_set_add_empty",
         "variant_set_remove", "variant_add", "variant_remove",
         "variant_set_default", "variant_preview", "variant_toggle_shape",
+        "variant_select", "variant_generate_previews",
     ))
+
+
+def test_thumbnail_selection_preserves_the_export_default(panel_probe):
+    assert panel_probe["selected_thumbnail"]
+    assert panel_probe["selection_index"] == 0
+    assert panel_probe["selection_default"] == "Leather"
+    assert panel_probe["invalid_selection_refused"]
+
+
+def test_native_previews_do_not_change_scene_content(panel_probe):
+    for kind in ("shape", "finish"):
+        assert panel_probe[f"{kind}_previews_generated"]
+        assert all(width > 0 and height > 0 for width, height in panel_probe[f"{kind}_preview_sizes"])
+        assert panel_probe[f"{kind}_preview_preserves_scene"]
+    assert panel_probe["missing_preview_source_refused"]
+    assert panel_probe["previews_persist"]
 
 
 def test_unregistering_removes_the_scene_property(panel_probe):

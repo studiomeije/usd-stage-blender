@@ -283,35 +283,17 @@ def _set_issues(context, variant_set) -> list:
     return sorted(mine, key=lambda issue: issue.severity != ERROR)
 
 
-def _wrapped(text: str, width: int) -> list:
-    """``text`` broken into lines of about ``width`` characters."""
-    lines, line = [], ""
-    for word in text.split():
-        if line and len(line) + 1 + len(word) > width:
-            lines.append(line)
-            line = word
-        else:
-            line = f"{line} {word}" if line else word
-    if line:
-        lines.append(line)
-    return lines
-
-
 def _draw_issues(layout, context, variant_set) -> None:
     issues = _set_issues(context, variant_set)
     if not issues:
         return
-    # Region width is in pixels; a character is about 9 of them at UI scale 1,
-    # once the panel's margins and the icon column are allowed for.
-    region = getattr(context, "region", None)
-    scale = getattr(getattr(context.preferences, "system", None), "ui_scale", 1.0) or 1.0
-    width = max(20, int((getattr(region, "width", 300) / scale - 70) / 9))
     box = layout.box()
     column = box.column(align=True)
     for issue in issues[:6]:
         icon = 'ERROR' if issue.severity == ERROR else 'INFO'
-        for number, line in enumerate(_wrapped(issue.message, width)):
-            column.label(text=line, icon=icon if number == 0 else 'BLANK1')
+        row = column.column()
+        row.alert = issue.severity == ERROR
+        row.label_multiline(text=issue.message, icon=icon)
     if len(issues) > 6:
         column.label(text=f"... and {len(issues) - 6} more", icon='BLANK1')
 
@@ -337,7 +319,7 @@ def _draw_offered_on(layout, scene, variant_set, variant) -> None:
     label = split.row()
     label.alignment = 'RIGHT'
     label.label(text="Offered On")
-    toggles = split.row(align=True)
+    toggles = split.grid_flow(row_major=True, columns=0, even_columns=True, align=True)
     for shape in parent.variants:
         toggle = toggles.operator(
             "usdstage.variant_toggle_shape",
@@ -352,7 +334,38 @@ def _draw_offered_on(layout, scene, variant_set, variant) -> None:
     if stale:
         warning = layout.row()
         warning.use_property_split = False
-        warning.label(text=f"No longer a shape: {', '.join(stale)}", icon='ERROR')
+        warning.label_multiline(text=f"No longer a shape: {', '.join(stale)}", icon='ERROR')
+
+
+def _draw_previews(layout, variant_set):
+    """Native collection/material thumbnails; generation is an explicit action."""
+    heading = layout.row(align=True)
+    heading.label(text="Previews", icon='RESTRICT_RENDER_OFF')
+    heading.operator("usdstage.variant_generate_previews", text="Refresh", icon='FILE_REFRESH')
+    grid = layout.grid_flow(row_major=True, columns=2, even_columns=True, even_rows=True)
+    missing = False
+    for index, variant in enumerate(variant_set.variants):
+        source = variant.material if variant_set.kind == 'MATERIAL' else variant.collection
+        card = grid.box()
+        card.ui_units_x = 6
+        preview = source.preview if source else None
+        if preview and preview.image_size[0] and preview.icon_id:
+            card.template_icon(icon_value=preview.icon_id, scale=4)
+        else:
+            missing = True
+            placeholder = card.row()
+            placeholder.scale_y = 2
+            placeholder.alignment = 'CENTER'
+            placeholder.label(text="", icon='MATERIAL' if variant_set.kind == 'MATERIAL' else 'OUTLINER_COLLECTION')
+        choose = card.operator(
+            "usdstage.variant_select", text=variant.name,
+            depress=index == variant_set.variants_index,
+        )
+        choose.index = index
+        if variant.name == variant_set.default_variant:
+            card.label(text="Default", icon='CHECKMARK')
+    if missing:
+        layout.label_multiline(text="Refresh builds previews from your current collections and materials.", icon='INFO')
 
 
 # --------------------------------------------------------------------------
@@ -439,9 +452,8 @@ class USDSTAGE_PT_export_variants(Panel):
         if not variant_sets:
             column = layout.column(align=True)
             column.label(text="No variant sets.", icon='INFO')
-            column.label(text="Shape: each variant is a child collection.")
-            column.label(text="Finish: each variant is a material.")
-            _draw_add_buttons(layout.row(align=True), compact=False)
+            column.label_markdown(text="**Shape** switches collections. **Finish** switches materials.")
+            _draw_add_buttons(layout.column(align=True), compact=False)
             return
 
         layout.prop(settings, "export_variants")
@@ -479,7 +491,9 @@ class USDSTAGE_PT_export_variants(Panel):
                 _nesting_problem(scene, variant_set) if variant_set.parent_set else ""
             )
             if problem:
-                set_box.label(text=problem, icon='ERROR')
+                set_box.label_multiline(text=problem, icon='ERROR')
+
+        _draw_previews(column, variant_set)
 
         row = column.row()
         row.template_list(
@@ -499,6 +513,13 @@ class USDSTAGE_PT_export_variants(Panel):
             variant_box.use_property_decorate = False
             if variant_set.kind == 'MATERIAL':
                 variant_box.prop(variant, "material")
+                if variant.material:
+                    preview_header, preview_body = column.panel(
+                        "usdstage_selected_finish_preview", default_closed=True,
+                    )
+                    preview_header.label(text="Selected Finish", icon='MATERIAL')
+                    if preview_body is not None:
+                        preview_body.template_preview(variant.material, show_buttons=False)
                 if variant_set.parent_set and not _nesting_problem(scene, variant_set):
                     _draw_offered_on(variant_box, scene, variant_set, variant)
             else:

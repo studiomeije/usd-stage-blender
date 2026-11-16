@@ -13,6 +13,14 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the module map and
 module names in backticks point at the code; you do not need it to use this
 page.
 
+The sidebar keeps **Save To**, **Format**, the material profile and processing
+method together above one **Export** button. The sentence below the profile
+describes the result. **Selection Only** and **Animation** control export scope;
+the panels below hold material, texture and advanced USD options. Experimental
+animation-library authoring lives under **Advanced USD** when Animation is on.
+Warnings and diagnostics wrap to the sidebar width, including background-job
+errors. Incompatible bake/variant combinations show guidance beside Export.
+
 ## Contents
 
 1. [The Apple spatial contract](#1-the-apple-spatial-contract)
@@ -316,6 +324,15 @@ panel builds the common cases in one step:
 - **Empty** starts a set to fill in by hand. A variant added there takes its
   name from the collection or material you give it, until you name it
   yourself.
+
+Use **Previews → Refresh** to generate Blender's native collection thumbnails
+for shapes and material thumbnails for finishes. Refresh them after editing
+geometry or materials; they are stored in the `.blend`. Thumbnail buttons
+select the entry to edit, without changing its exported default or the scene's
+visibility or material assignments. Use the radio button in the list to choose
+the default, or **Preview in Viewport** to show a shape in the scene. The
+collapsible **Selected Finish** section provides a larger live material preview.
+These previews use Blender's shading and are not a RealityKit render.
 
 Names are references - the default selection, a finish set's Nest Inside,
 its Offered On toggles - so renaming a variant or a set carries the new name

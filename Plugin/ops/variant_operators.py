@@ -407,6 +407,50 @@ class USDSTAGE_OT_variant_toggle_shape(Operator):
         return {'FINISHED'}
 
 
+class USDSTAGE_OT_variant_select(Operator):
+    """Select a variant to edit without changing the exported default"""
+
+    bl_idname = "usdstage.variant_select"
+    bl_label = "Select Variant"
+    index: IntProperty(default=0)
+
+    def execute(self, context):
+        variant_set = _active_set(context)
+        if variant_set is None or not 0 <= self.index < len(variant_set.variants):
+            return {'CANCELLED'}
+        variant_set.variants_index = self.index
+        return {'FINISHED'}
+
+
+class USDSTAGE_OT_variant_generate_previews(Operator):
+    """Generate native Blender previews from the current shapes or finishes"""
+
+    bl_idname = "usdstage.variant_generate_previews"
+    bl_label = "Refresh Variant Previews"
+
+    @classmethod
+    def poll(cls, context):
+        return _active_set(context) is not None
+
+    def execute(self, context):
+        variant_set = _active_set(context)
+        generated = 0
+        for variant in variant_set.variants:
+            source = variant.material if variant_set.kind == 'MATERIAL' else variant.collection
+            if source is None:
+                continue
+            try:
+                source.asset_generate_preview()
+                generated += 1
+            except (RuntimeError, TypeError) as exc:
+                self.report({'WARNING'}, f"{variant.name}: {exc}")
+        if not generated:
+            self.report({'WARNING'}, "Assign collections or materials before generating previews")
+            return {'CANCELLED'}
+        self.report({'INFO'}, f"Updating {generated} preview(s)")
+        return {'FINISHED'}
+
+
 class USDSTAGE_OT_variant_preview(Operator):
     """Show this variant in the viewport, hiding the others in its set"""
 
@@ -448,6 +492,8 @@ _CLASSES = (
     USDSTAGE_OT_variant_add,
     USDSTAGE_OT_variant_remove,
     USDSTAGE_OT_variant_set_default,
+    USDSTAGE_OT_variant_select,
+    USDSTAGE_OT_variant_generate_previews,
     USDSTAGE_OT_variant_toggle_shape,
     USDSTAGE_OT_variant_preview,
 )
