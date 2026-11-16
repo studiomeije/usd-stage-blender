@@ -13,6 +13,8 @@ from Plugin.export import asset_paths, usd_assets, usd_textures
     ("file:///Users/me/My%20Tex/a.png", "/Users/me/My Tex/a.png"),
     ("FILE:///Users/me/a.png", "/Users/me/a.png"),
     ("file://localhost/tmp/a%23b.png", "/tmp/a#b.png"),
+    ("file:///tmp/a%2520b.png", "/tmp/a%20b.png"),
+    ("file:///tmp/a%2523b.png", "/tmp/a%23b.png"),
     ("/plain/a.png", "/plain/a.png"),
 ])
 def test_a_file_url_becomes_its_path(url, path):

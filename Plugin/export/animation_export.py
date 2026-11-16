@@ -74,40 +74,43 @@ def collect_export_objects(context, settings) -> list:
     for obj in selected:
         add(obj)
 
-    if bool(getattr(settings, "export_armatures", True)):
-        evaluation_mode = str(getattr(settings, "evaluation_mode", "RENDER"))
-        for obj in selected:
-            if getattr(obj, "type", None) != "MESH":
-                continue
-            for modifier in getattr(obj, "modifiers", []) or []:
-                if (
-                    getattr(modifier, "type", None) == "ARMATURE"
-                    and (
-                        getattr(modifier, "show_render", True)
-                        if evaluation_mode == "RENDER"
-                        else getattr(modifier, "show_viewport", True)
+    # Close over variant dependencies and rigs together: a sibling introduced
+    # by a shape set can use its own rig or participate in another set.
+    variant_plan = resolve_variant_plan(context, settings)
+    evaluation_mode = str(getattr(settings, "evaluation_mode", "RENDER"))
+    changed = True
+    while changed:
+        changed = False
+        for variant_set in variant_plan.sets_touching(seen):
+            dependencies = [variant_set]
+            parent = variant_plan.set_named(variant_set.parent_set)
+            if parent is not None:
+                dependencies.append(parent)
+            for dependency in dependencies:
+                for member in dependency.target_objects:
+                    changed = add(member) or changed
+                for variant in dependency.variants:
+                    for member in variant.objects:
+                        changed = add(member) or changed
+        if bool(getattr(settings, "export_armatures", True)):
+            for obj in list(closure):
+                if getattr(obj, "type", None) != "MESH":
+                    continue
+                for modifier in getattr(obj, "modifiers", []) or []:
+                    enabled = getattr(
+                        modifier,
+                        "show_render" if evaluation_mode == "RENDER" else "show_viewport",
+                        True,
                     )
-                ):
+                    if getattr(modifier, "type", None) != "ARMATURE" or not enabled:
+                        continue
                     armature = getattr(modifier, "object", None)
                     if armature is None:
                         raise RuntimeError(
                             f"Selected skinned mesh '{obj.name}' has an enabled "
                             "Armature modifier with no target object."
                         )
-                    add(armature)
-
-    # A variant set the selection touches brings its other members along. They
-    # are a dependency in the same sense the armature above is: leave one out
-    # and the authored variant switches to a prim this export never wrote. A
-    # set the selection does not touch is not a dependency of it, so its
-    # members stay out rather than widening the export past what was asked for.
-    variant_plan = resolve_variant_plan(context, settings)
-    if not variant_plan.is_empty:
-        selected_identities = {_rna_identity(obj) for obj in selected}
-        for variant_set in variant_plan.sets_touching(selected_identities):
-            for variant in variant_set.variants:
-                for member in variant.objects:
-                    add(member)
+                    changed = add(armature) or changed
 
     # Preserve scene order for deterministic exports, then retain a linked
     # armature that is not directly linked into the active scene.  Selection

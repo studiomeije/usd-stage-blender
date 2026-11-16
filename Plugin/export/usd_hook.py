@@ -17,6 +17,11 @@ from contextlib import contextmanager
 _captured: dict = {"materials": None, "mesh_materials": None, "objects": None}
 
 
+def captured_material_map() -> dict:
+    """Inspect material identity before the rewrite consumes the capture."""
+    return dict(_captured.get("materials") or {})
+
+
 def consume_captured_material_map() -> dict | None:
     """Return and clear {material prim path: material name} from the last export.
 

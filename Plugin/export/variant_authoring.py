@@ -27,6 +27,7 @@ from __future__ import annotations
 import re
 
 from .usd_scene import remap_prim_path
+from .usd_hook import captured_material_map
 from .usd_utils import Sdf, UsdShade, require_pxr
 from .variants import MATERIAL, VariantPlan, VariantSetPlan
 
@@ -61,7 +62,7 @@ def reserve_variant_materials(stage, plan: VariantPlan, settings=None) -> dict:
     if not root:
         return {}
 
-    materials = _Materials(stage, root, settings)
+    materials = _Materials(stage, root, settings, captured_material_map())
     reserved = {}
     for variant_set in plan.sets:
         if variant_set.kind != MATERIAL:
@@ -114,7 +115,7 @@ class _Materials:
     holds, so ``Oak Wood`` and ``Oak_Wood`` cannot collapse into one prim.
     """
 
-    def __init__(self, stage, root, settings=None):
+    def __init__(self, stage, root, settings=None, material_names=None):
         self._stage = stage
         self._allow_unicode = bool(getattr(settings, "allow_unicode", True))
         self._by_blender_name = {}
@@ -124,7 +125,9 @@ class _Materials:
             if not prim.IsA(UsdShade.Material):
                 continue
             recorded = prim.GetAttribute(_BLENDER_NAME)
-            blender_name = str(recorded.Get() or "") if recorded else ""
+            blender_name = (material_names or {}).get(str(prim.GetPath())) or (
+                str(recorded.Get() or "") if recorded else ""
+            )
             if blender_name:
                 self._by_blender_name.setdefault(blender_name, prim)
             self._by_prim_name.setdefault(prim.GetName(), prim)
@@ -142,7 +145,8 @@ class _Materials:
             )
             # A prim that records a different Blender name is that material's,
             # not this one's, however alike the two names look.
-            if candidate is not None and not _recorded_name(candidate):
+            known = self._by_blender_name.values()
+            if candidate is not None and not _recorded_name(candidate) and candidate not in known:
                 existing = candidate
         if existing is not None:
             return UsdShade.Material(existing)
@@ -174,6 +178,7 @@ def author_variants(
     path_edits=(),
     settings=None,
     diagnostics=None,
+    material_names=None,
 ) -> tuple[str, ...]:
     """Author every declared set, shapes first so finishes can nest in them.
 
@@ -200,7 +205,7 @@ def author_variants(
     paths = _prim_paths(stage, object_map, path_edits)
     selected_only = bool(getattr(settings, "selected_objects_only", False))
     animated = _animated_members(stage, paths, settings)
-    materials = _Materials(stage, root, settings)
+    materials = _Materials(stage, root, settings, material_names)
     object_prims = frozenset(paths.values())
 
     authored: list[str] = []

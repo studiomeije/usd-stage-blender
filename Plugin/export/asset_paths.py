@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 import unicodedata
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
 from urllib.request import url2pathname
 
 from .usd_utils import Sdf
@@ -45,7 +45,9 @@ def normalize_file_url(asset_path: str) -> str:
     if asset_scheme(asset_path) != "file":
         return asset_path
     parsed = urlparse(asset_path)
-    path = url2pathname(unquote(parsed.path))
+    # url2pathname already decodes percent escapes. Decoding twice changes a
+    # literal "%20" in a filename into a space and names a different file.
+    path = url2pathname(parsed.path)
     if parsed.netloc and parsed.netloc.lower() != "localhost":
         path = f"//{parsed.netloc}{path}"
     return path

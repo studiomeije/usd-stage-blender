@@ -208,19 +208,14 @@ def test_every_variant_member_keeps_its_collider(exported):
 
 
 def test_variants_survive_the_bake_route(scene_file, tmp_path_factory):
-    """A different path into the same post-process, never taken before."""
+    """Finish sets must not silently rebind unbaked source materials."""
     pytest.importorskip("pxr")
     output = tmp_path_factory.mktemp("baked") / "pawns.usda"
 
     result = _usdstage(
         "bake-export", str(scene_file),
-        "-o", str(output), "--format", "USDA", "--resolution", "64",
+        "-o", str(output), "--format", "USDA", "--resolution", "64", "--json",
     )
-    assert result.returncode == 0, result.stdout + result.stderr
-
-    stage, root = _with_selection(output, "Many")
-    assert "Shape" in root.GetVariantSets().GetNames()
-    assert sorted(
-        c.GetName() for c in root.GetChildren() if c.GetName().startswith("Many")
-    ) == ["Many_0", "Many_1", "Many_2", "Many_Solid"]
-    assert [p.GetName() for p in stage.Traverse() if p.GetName() == "Collider"]
+    assert result.returncode != 0
+    assert "BAKE_FINISH_VARIANTS_UNSUPPORTED" in result.stdout + result.stderr
+    assert not output.exists()

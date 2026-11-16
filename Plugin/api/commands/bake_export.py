@@ -492,6 +492,47 @@ def run_bake_export(
     diagnostics_path: str | None,
     on_step=lambda _progress, _message: None,
 ) -> dict:
+    """Stage all shape alternatives before baking, then restore visibility."""
+    from ...export import animation_export, variants
+    from ...export.object_scope import rna_identity
+
+    plan = variants.resolve_variant_plan(context, settings)
+    if bool(getattr(settings, "selected_objects_only", False)):
+        objects = animation_export.collect_export_objects(context, settings)
+        plan = variants.VariantPlan(sets=plan.sets_touching(
+            rna_identity(obj) for obj in objects
+        ))
+    variants.require_valid_variant_plan(plan, diag)
+    if any(item.kind == variants.MATERIAL for item in plan.sets):
+        raise CommandError(
+            "Baking finish variants is not supported: each finish needs its "
+            "own bake on the target geometry. Use Translate Materials for "
+            "finish sets, or disable variant export before baking.",
+            code="BAKE_FINISH_VARIANTS_UNSUPPORTED", stage="validation",
+        )
+    if (not plan.is_empty
+            and str(getattr(settings, "bake_mode", "LIT_IBL")) == "LIT_IBL"
+            and not bool(getattr(settings, "bake_isolate_meshes_lit", False))):
+        raise CommandError(
+            "Lighting & Shadows with shape variants requires Isolate Meshes "
+            "While Baking, so hidden alternatives cannot cast shadows on "
+            "each other. Enable isolation or use a material-color bake mode.",
+            code="BAKE_VARIANTS_REQUIRE_ISOLATION", stage="validation",
+        )
+    state = variants.prepare_variant_visibility(context, plan)
+    try:
+        return _run_bake_export(
+            context, settings, filepath, requested_format, diag,
+            diagnostics_path=diagnostics_path, on_step=on_step,
+        )
+    finally:
+        variants.restore_variant_visibility(state)
+
+
+def _run_bake_export(
+    context, settings, filepath, requested_format, diag, *,
+    diagnostics_path, on_step,
+) -> dict:
     """Bake the scene's materials, export, and restore the scene.
 
     Shared by the ``bake-export`` command and the sidebar's background job.

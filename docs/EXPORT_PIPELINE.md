@@ -434,7 +434,13 @@ a style. One level of nesting is the limit.
 - **A finish set over a multi-material mesh** sets every GeomSubset to one
   material, and warns that it did.
 - **A selected-only export** carries the other variants of any set the
-  selection touches, and leaves out a set it does not touch.
+  selection touches, along with their rigs and dependent variant members.
+  Unrelated sets stay out of the export.
+- **Baking supports shape sets, not finish sets.** Hidden shape alternatives
+  are temporarily made available for baking and restored afterwards. Lighting
+  & Shadows requires **Isolate Meshes for Shadows**, so alternatives do not
+  cast shadows on each other. Finish sets require **Translate Materials**;
+  baking them would need a separate bake for every finish on each target.
 - **Reality Composer Pro's `.reality` compile keeps only the selection you
   shipped.** `realitytool` resolves the default selection and discards the
   rest, so a `.reality` built from an `.rkassets` bundle carries no variants

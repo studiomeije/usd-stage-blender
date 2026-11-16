@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 pytest.importorskip("pxr")
-from pxr import Usd, UsdGeom  # noqa: E402
+from pxr import Sdf, Usd, UsdGeom  # noqa: E402
 
 from Plugin.export.diagnostics import ExportDiagnostics  # noqa: E402
 from Plugin.export.payload import split_asset_payload  # noqa: E402
@@ -194,3 +194,43 @@ def test_the_payload_keeps_the_animation_timing(tmp_path):
     translate = reopened.GetPrimAtPath("/root/Moving").GetAttribute("xformOp:translate")
     assert translate.GetTimeSamples() == [1.0, 60.0]
     assert tuple(translate.Get(60)) == (10.0, 0.0, 0.0)
+
+
+def test_moved_assets_resolve_from_the_payload_directory(tmp_path):
+    path = tmp_path / "table.usda"
+    texture = tmp_path / "textures" / "albedo.png"
+    texture.parent.mkdir()
+    texture.write_bytes(b"texture")
+    dependency = Usd.Stage.CreateNew(str(tmp_path / "detail.usda"))
+    detail = UsdGeom.Xform.Define(dependency, "/Detail")
+    dependency.SetDefaultPrim(detail.GetPrim())
+    UsdGeom.Cube.Define(dependency, "/Detail/Cube")
+    dependency.GetRootLayer().Save()
+
+    stage = _stage(path, with_variants=True)
+    root = stage.GetDefaultPrim()
+    referenced = stage.DefinePrim("/root/Detail")
+    referenced.GetReferences().AddReference("./detail.usda")
+    attribute = stage.GetPrimAtPath("/root/Small").CreateAttribute(
+        "texture", Sdf.ValueTypeNames.Asset
+    )
+    attribute.Set(Sdf.AssetPath("./textures/albedo.png"))
+    attribute.Set(Sdf.AssetPath("./textures/albedo.png"), 1)
+    paths = stage.GetPrimAtPath("/root/Small").CreateAttribute(
+        "textures", Sdf.ValueTypeNames.AssetArray
+    )
+    paths.Set([Sdf.AssetPath(""), Sdf.AssetPath("./textures/albedo.png")])
+    variants = root.GetVariantSet("size")
+    with variants.GetVariantEditContext():
+        attribute.Set(Sdf.AssetPath("./textures/albedo.png"))
+
+    split_asset_payload(stage, path, _settings())
+    stage.GetRootLayer().Save()
+    reopened = Usd.Stage.Open(str(path))
+    attribute = reopened.GetPrimAtPath("/root/Small").GetAttribute("texture")
+    assert attribute.Get().resolvedPath == str(texture)
+    assert attribute.Get(1).resolvedPath == str(texture)
+    paths = reopened.GetPrimAtPath("/root/Small").GetAttribute("textures").Get()
+    assert len(paths) == 2 and paths[0].path == ""
+    assert paths[1].resolvedPath == str(texture)
+    assert reopened.GetPrimAtPath("/root/Detail/Cube")

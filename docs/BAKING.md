@@ -64,6 +64,12 @@ go through the same MaterialX rewrite as a direct export (see
 Because `LIT_IBL` keeps your sample count, a scene saved with high
 `cycles.samples` bakes much more slowly in that mode.
 
+Shape variants are included in the bake even when hidden in the view layer;
+their visibility is restored afterwards. Lighting & Shadows with shape sets
+requires **Isolate Meshes for Shadows**. Finish sets cannot be baked: use
+**Translate Materials**, or turn off variant export before baking. See
+[variant limits](EXPORT_PIPELINE.md#what-variants-cannot-do).
+
 ### Instances and the reuse cache
 
 In the two albedo modes, slots that share a key reuse one baked material, with

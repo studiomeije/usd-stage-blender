@@ -125,7 +125,7 @@ PASSES = (
     ("author_variants",
      lambda run: _author_variants(
          run.stage, run.settings, run.context, run.object_map,
-         run.prim_path_edits, run.diagnostics),
+         run.prim_path_edits, run.diagnostics, _reserved_names(run)),
      None),
     # After the variants: the bounds hint describes the selection shipped.
     ("author_asset_metadata",
@@ -283,7 +283,8 @@ def _reserve_variant_materials(stage, settings, context, diagnostics=None):
 
 
 def _author_variants(
-    stage, settings, context, object_map, prim_path_edits, diagnostics=None
+    stage, settings, context, object_map, prim_path_edits, diagnostics=None,
+    material_names=None,
 ):
     """Author the scene's declared variant sets, if it declares any."""
     plan = variants.resolve_variant_plan(context, settings)
@@ -298,6 +299,7 @@ def _author_variants(
         prim_path_edits,
         settings,
         diagnostics,
+        material_names=material_names,
     )
     if diagnostics and authored:
         diagnostics.set_variant_sets(_variant_sidecar_entries(plan, authored))

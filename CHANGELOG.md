@@ -7,6 +7,18 @@ and what you have to do differently. Internal refactors are not listed.
 
 ## Unreleased
 
+- Payload exports keep texture, reference and clip paths valid after geometry
+  moves into the payload layer.
+- Selected-only exports include the rigs and dependent variant members needed
+  by every selected shape alternative.
+- Hidden shape alternatives are baked before export, with their visibility
+  restored afterwards. Lighting & Shadows requires mesh isolation when shape
+  variants are enabled. Baking finish sets is refused: use Translate Materials
+  for finishes, or disable variant export before baking.
+- A collider uses its object's geometry without enclosing separate child
+  objects. File URLs with escaped percent signs name the correct file.
+- Finish variants keep distinct materials whose names reduce to the same USD
+  identifier, even when custom properties and Blender-name metadata are off.
 - Blender 5.3 is now the minimum supported version. Installation, command-line
   exports, release packaging and CI use this baseline. Older `.blend` files
   can still be opened in Blender 5.3.

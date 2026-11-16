@@ -121,7 +121,7 @@ def author_colliders(
                 )
             continue
 
-        bounds = _local_bounds(cache, prim)
+        bounds = _local_bounds(cache, prim, frozenset(prim_paths.values()))
         if bounds is None:
             if diagnostics:
                 diagnostics.add_warning(
@@ -145,13 +145,25 @@ def author_colliders(
     return tuple(authored)
 
 
-def _local_bounds(cache, prim):
+def _local_bounds(cache, prim, object_paths=frozenset()):
     """``(extent, centre)`` of a prim's geometry in its own space."""
     try:
-        box = cache.ComputeUntransformedBound(prim)
+        # A child Blender object is independent geometry with its own collider
+        # intent. Including it stretches the parent's box over that child.
+        if any(path != str(prim.GetPath()) and Sdf.Path(path).HasPrefix(prim.GetPath())
+               for path in object_paths):
+            bounds = Gf.Range3d()
+            iterator = iter(Usd.PrimRange(prim, Usd.TraverseInstanceProxies()))
+            for descendant in iterator:
+                if descendant != prim and str(descendant.GetPath()) in object_paths:
+                    iterator.PruneChildren()
+                    continue
+                if descendant.IsA(UsdGeom.Boundable):
+                    bounds.UnionWith(cache.ComputeRelativeBound(descendant, prim).ComputeAlignedRange())
+        else:
+            bounds = cache.ComputeUntransformedBound(prim).ComputeAlignedRange()
     except Exception:
         return None
-    bounds = box.ComputeAlignedRange()
     if bounds.IsEmpty():
         return None
     minimum, maximum = bounds.GetMin(), bounds.GetMax()

@@ -140,6 +140,20 @@ def test_centred_geometry_gets_no_pose():
     assert not stage.GetPrimAtPath("/Root/Table/Collider/Shape/pose")
 
 
+def test_parent_collider_excludes_geometry_of_a_separate_child_object():
+    stage = _stage(size=2)
+    child = UsdGeom.Xform.Define(stage, "/Root/Table/Child")
+    child.AddTranslateOp().Set((100, 0, 0))
+    UsdGeom.Cube.Define(stage, "/Root/Table/Child/Mesh")
+    plan = resolve_collider_plan(_context(_object("Table")), _settings())
+    author_colliders(stage, plan, {
+        "/Root/Table": "Table", "/Root/Table/Child": "Child",
+    })
+    shape = stage.GetPrimAtPath("/Root/Table/Collider/Shape")
+    assert tuple(shape.GetAttribute("extent").Get()) == (2, 2, 2)
+    assert not stage.GetPrimAtPath("/Root/Table/Collider/Shape/pose")
+
+
 # --------------------------------------------------------------------------
 # Honesty about what it cannot do
 # --------------------------------------------------------------------------

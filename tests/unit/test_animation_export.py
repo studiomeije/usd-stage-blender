@@ -72,6 +72,30 @@ def _settings(**values):
     return SimpleNamespace(**defaults)
 
 
+def test_variant_dependencies_close_over_other_sets_and_sibling_rigs():
+    first = _Object("First")
+    second_rig = _Object("SecondRig", "ARMATURE")
+    second = _Object("Second", modifiers=[
+        SimpleNamespace(type="ARMATURE", object=second_rig)
+    ])
+    finish_target = _Object("FinishTarget")
+    unrelated = _Object("Unrelated")
+    objects = [first, second, second_rig, finish_target, unrelated]
+    context = _scope_context(objects, [first])
+    context.scene.usd_stage_variant_sets = [
+        SimpleNamespace(name="Shape", variants=[
+            SimpleNamespace(name="First", collection=SimpleNamespace(
+                name="First", objects=[first], children=[])),
+            SimpleNamespace(name="Second", collection=SimpleNamespace(
+                name="Second", objects=[second], children=[])),
+        ]),
+        SimpleNamespace(name="Finish", kind="MATERIAL", variants=[],
+                        target_collection=SimpleNamespace(
+                            name="Targets", objects=[second, finish_target], children=[])),
+    ]
+    assert animation_export.collect_export_objects(context, _settings()) == objects[:-1]
+
+
 def test_full_scene_scope_leaves_out_objects_outside_the_view_layer():
     """An object in a collection excluded from the view layer is never exported."""
     room = _Object("Room")

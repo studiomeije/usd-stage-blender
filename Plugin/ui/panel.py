@@ -279,8 +279,8 @@ class USDStageExportSettings(PropertyGroup):
         name="Colliders",
         description=(
             "Author a RealityKit collider for every object with Blender Rigid "
-            "Body enabled, so the asset is interactive without hand-work in "
-            "Reality Composer Pro"
+            "Body enabled. Input targets and interaction behavior are set "
+            "in Reality Composer Pro or app code"
         ),
         default=True,
         update=_on_settings_changed,
