@@ -95,7 +95,7 @@ class USDSTAGE_OT_variant_set_add_from_collection(Operator):
     """Create a shape set from a collection whose child collections are the variants"""
 
     bl_idname = "usdstage.variant_set_add_from_collection"
-    bl_label = "Shape Set from Collection"
+    bl_label = "Geometry Set from Collection"
     bl_options = {'REGISTER', 'UNDO'}
 
     collection_name: StringProperty(
@@ -162,12 +162,12 @@ class USDSTAGE_OT_variant_set_add_finish(Operator):
     """Create a finish set: one variant per material of a family, rebinding a collection's objects"""
 
     bl_idname = "usdstage.variant_set_add_finish"
-    bl_label = "Finish Set"
+    bl_label = "Material Set"
     bl_options = {'REGISTER', 'UNDO'}
 
     target_name: StringProperty(
         name="Applies To",
-        description="The collection whose objects each finish rebinds",
+        description="The collection whose objects each material variant rebinds",
     )
     prefix: StringProperty(
         name="Materials Starting With",
@@ -195,14 +195,14 @@ class USDSTAGE_OT_variant_set_add_finish(Operator):
             found = [material.name for material in _matching_materials(self.prefix)]
             if found:
                 shown = ", ".join(found[:4]) + (", ..." if len(found) > 4 else "")
-                layout.label(text=f"{len(found)} finishes: {shown}", icon='MATERIAL')
+                layout.label(text=f"{len(found)} materials: {shown}", icon='MATERIAL')
             else:
                 layout.label(text="No material starts with that", icon='ERROR')
 
     def execute(self, context):
         target = bpy.data.collections.get(self.target_name)
         if target is None:
-            self.report({'ERROR'}, "Pick the collection the finishes apply to")
+            self.report({'ERROR'}, "Pick the collection the materials apply to")
             return {'CANCELLED'}
         materials = _matching_materials(self.prefix) if self.prefix else []
         if self.prefix and not materials:
@@ -232,7 +232,7 @@ class USDSTAGE_OT_variant_set_add_finish(Operator):
         context.scene.usd_stage_variant_sets_index = len(sets) - 1
         self.report(
             {'INFO'},
-            f"Added finish set '{variant_set.name}' with {len(materials)} finishes",
+            f"Added material set '{variant_set.name}' with {len(materials)} materials",
         )
         return {'FINISHED'}
 
@@ -358,7 +358,7 @@ class USDSTAGE_OT_variant_toggle_shape(Operator):
     """Offer this finish on a shape, or stop offering it there"""
 
     bl_idname = "usdstage.variant_toggle_shape"
-    bl_label = "Toggle Shape"
+    bl_label = "Toggle Geometry Variant"
     bl_options = {'REGISTER', 'UNDO'}
 
     shape: StringProperty()
@@ -378,7 +378,7 @@ class USDSTAGE_OT_variant_toggle_shape(Operator):
             None,
         )
         if parent is None:
-            self.report({'ERROR'}, "This set does not nest inside a shape set")
+            self.report({'ERROR'}, "This set does not nest inside a geometry set")
             return {'CANCELLED'}
 
         shapes = [child.name for child in parent.variants]
@@ -391,7 +391,7 @@ class USDSTAGE_OT_variant_toggle_shape(Operator):
             if len(offered) == 1:
                 self.report(
                     {'WARNING'},
-                    f"'{variant.name}' has to be offered on at least one shape",
+                    f"'{variant.name}' has to be offered on at least one geometry variant",
                 )
                 return {'CANCELLED'}
             offered.remove(self.shape)

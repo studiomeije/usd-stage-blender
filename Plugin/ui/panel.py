@@ -735,12 +735,12 @@ class USDSTAGE_PT_export_panel(Panel):
                     warning = export_box.column()
                     warning.alert = True
                     warning.label_multiline(
-                        text="Finish variants need Translate Materials. Switch the profile or turn off Author Variant Sets.",
+                        text="Material variants need Translate Materials. Switch the profile or turn off Author Variant Sets.",
                         icon='ERROR',
                     )
                 elif sets and route.bake_mode == 'LIT_IBL' and not settings.bake_isolate_meshes_lit:
                     export_box.label_multiline(
-                        text="Enable Isolate Meshes for Shadows below to bake shape alternatives.", icon='ERROR',
+                        text="Enable Isolate Meshes for Shadows below to bake geometry alternatives.", icon='ERROR',
                     )
 
         except Exception as exc:

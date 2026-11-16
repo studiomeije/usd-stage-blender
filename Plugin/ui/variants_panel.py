@@ -164,8 +164,8 @@ class USDStageVariant(PropertyGroup):
     applies_to: StringProperty(
         name="Offered On",
         description=(
-            "The shapes that offer this finish, set with the Offered On "
-            "toggles. Empty means every shape"
+            "The geometry variants that offer this material, set with the Offered On "
+            "toggles. Empty means every geometry variant"
         ),
     )
 
@@ -186,14 +186,14 @@ class USDStageVariantSet(PropertyGroup):
         items=[
             (
                 "GEOMETRY",
-                "Shape",
+                "Geometry",
                 "Each variant activates its own collection of objects",
                 'OUTLINER_COLLECTION',
                 0,
             ),
             (
                 "MATERIAL",
-                "Finish",
+                "Materials",
                 "Every variant keeps the same objects and rebinds their material",
                 'MATERIAL',
                 1,
@@ -205,14 +205,14 @@ class USDStageVariantSet(PropertyGroup):
     target_collection: PointerProperty(
         type=bpy.types.Collection,
         name="Applies To",
-        description="The objects a finish set rebinds",
+        description="The objects whose material assignments this set changes",
     )
     parent_set: StringProperty(
         name="Nest Inside",
         description=(
-            "A shape set to author this finish set inside, so each shape can "
-            "offer different finishes. Leave empty to offer every finish on "
-            "every shape"
+            "A geometry set to nest this material set inside, so each geometry variant can "
+            "offer different materials. Leave empty to offer every material on "
+            "every geometry variant"
         ),
     )
     variants: CollectionProperty(type=USDStageVariant)
@@ -235,7 +235,7 @@ def _nesting_problem(scene, variant_set) -> str:
     if parent == variant_set:
         return "A set cannot nest inside itself"
     if parent.kind == 'MATERIAL':
-        return "Finishes nest inside a shape set, not another finish"
+        return "Material sets nest inside a geometry set, not another material set"
     return ""
 
 
@@ -334,7 +334,7 @@ def _draw_offered_on(layout, scene, variant_set, variant) -> None:
     if stale:
         warning = layout.row()
         warning.use_property_split = False
-        warning.label_multiline(text=f"No longer a shape: {', '.join(stale)}", icon='ERROR')
+        warning.label_multiline(text=f"Unknown geometry variant: {', '.join(stale)}", icon='ERROR')
 
 
 def _draw_previews(layout, variant_set):
@@ -385,7 +385,7 @@ class USDSTAGE_UL_variant_sets(UIList):
             icon='MATERIAL' if is_finish else 'OUTLINER_COLLECTION',
         )
         count = len(item.variants)
-        kind = "Finish" if is_finish else "Shape"
+        kind = "Materials" if is_finish else "Geometry"
         row.label(text=f"{kind} · {count} variant{'s' if count != 1 else ''}")
 
 
@@ -420,8 +420,8 @@ class USDSTAGE_UL_variants(UIList):
 
 def _draw_add_buttons(layout, compact: bool) -> None:
     for idname, text, icon in (
-        ("usdstage.variant_set_add_from_collection", "Shape Set", 'OUTLINER_COLLECTION'),
-        ("usdstage.variant_set_add_finish", "Finish Set", 'MATERIAL'),
+        ("usdstage.variant_set_add_from_collection", "Geometry Set", 'OUTLINER_COLLECTION'),
+        ("usdstage.variant_set_add_finish", "Material Set", 'MATERIAL'),
         ("usdstage.variant_set_add_empty", "Empty", 'ADD'),
     ):
         layout.operator(idname, text="" if compact else text, icon=icon)
@@ -452,7 +452,7 @@ class USDSTAGE_PT_export_variants(Panel):
         if not variant_sets:
             column = layout.column(align=True)
             column.label(text="No variant sets.", icon='INFO')
-            column.label_markdown(text="**Shape** switches collections. **Finish** switches materials.")
+            column.label_markdown(text="**Geometry** switches collections of objects. **Materials** switches material assignments.")
             _draw_add_buttons(layout.column(align=True), compact=False)
             return
 
@@ -480,7 +480,9 @@ class USDSTAGE_PT_export_variants(Panel):
         set_box = column.column(align=True)
         set_box.use_property_split = True
         set_box.use_property_decorate = False
-        set_box.row().prop(variant_set, "kind", expand=True)
+        kind_row = set_box.row(align=True)
+        kind_row.use_property_split = False
+        kind_row.prop(variant_set, "kind", expand=True)
         if variant_set.kind == 'MATERIAL':
             set_box.prop(variant_set, "target_collection")
             set_box.prop_search(
@@ -517,7 +519,7 @@ class USDSTAGE_PT_export_variants(Panel):
                     preview_header, preview_body = column.panel(
                         "usdstage_selected_finish_preview", default_closed=True,
                     )
-                    preview_header.label(text="Selected Finish", icon='MATERIAL')
+                    preview_header.label(text="Selected Material", icon='MATERIAL')
                     if preview_body is not None:
                         preview_body.template_preview(variant.material, show_buttons=False)
                 if variant_set.parent_set and not _nesting_problem(scene, variant_set):

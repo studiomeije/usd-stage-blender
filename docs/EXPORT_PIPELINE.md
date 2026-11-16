@@ -311,13 +311,18 @@ sets itself, from the sets you declare in the **Variants** panel.
 
 ### What you declare
 
+The two supported types are **Geometry** (formerly Shape) and **Materials**
+(formerly Finish). Geometry switches collections of objects; Materials switches
+material assignments. Existing files and scripts keep their stored type IDs
+and variant names.
+
 A variant set is a name and a list of variants; each variant points at the
-collection whose objects it owns, or for a finish set at a material. The
+collection whose objects it owns, or for a material set at a material. The
 panel builds the common cases in one step:
 
-- **Shape Set** turns a parent collection's children into the variants. It
+- **Geometry Set** turns a parent collection's children into the variants. It
   starts from the collection selected in the Outliner.
-- **Finish Set** takes the collection the finishes apply to and the start the
+- **Material Set** takes the collection the finishes apply to and the start the
   materials' names share - `Fabric_` for `Fabric_Encre` and `Fabric_Navy` -
   and makes one variant per matching material, named after the rest of its
   name. The material the objects already wear becomes the default.
@@ -325,16 +330,16 @@ panel builds the common cases in one step:
   name from the collection or material you give it, until you name it
   yourself.
 
-Use **Previews → Refresh** to generate Blender's native collection thumbnails
-for shapes and material thumbnails for finishes. Refresh them after editing
+Use **Previews → Refresh** to generate Blender's native geometry and material
+thumbnails. Refresh them after editing
 geometry or materials; they are stored in the `.blend`. Thumbnail buttons
 select the entry to edit, without changing its exported default or the scene's
 visibility or material assignments. Use the radio button in the list to choose
-the default, or **Preview in Viewport** to show a shape in the scene. The
-collapsible **Selected Finish** section provides a larger live material preview.
+the default, or **Preview in Viewport** to show a geometry variant in the scene. The
+collapsible **Selected Material** section provides a larger live material preview.
 These previews use Blender's shading and are not a RealityKit render.
 
-Names are references - the default selection, a finish set's Nest Inside,
+Names are references - the default selection, a material set's Nest Inside,
 its Offered On toggles - so renaming a variant or a set carries the new name
 to all of them. Below the selected set the panel lists every problem the
 export would refuse or warn about, from the same validation the export runs.
@@ -384,46 +389,46 @@ it regardless.
 With **Author Variant Sets** off, neither authoring nor that staging runs, and
 the export holds exactly what the viewport shows.
 
-### Shape sets and finish sets
+### Geometry sets and material sets
 
 A variant set varies one of two things, chosen per set:
 
-| | **Shape** | **Finish** |
+| | **Geometry** | **Materials** |
 |---|---|---|
 | Each variant owns | a collection | a material |
 | The set also needs | — | the collection it applies to |
 | What it authors | `active` on the member prims | `material:binding` on the targets |
 
-A finish set leaves every object present and rebinds it, so the same objects
-can belong to a shape set *and* a finish set: the two vary different USD
+A material set leaves every object present and rebinds it, so the same objects
+can belong to a geometry set *and* a material set: the two vary different USD
 properties and neither shadows the other. That is how one file offers three
 tops and four finishes as twelve looks without twelve copies of the geometry.
 
 What is refused is two sets varying the **same** property of one object — two
-shape sets both authoring `active`, or two finish sets both rebinding. The
+geometry sets both authoring `active`, or two material sets both rebinding. The
 rule is about the property, not the object.
 
 Two consequences worth knowing:
 
 - Blender writes a `material:binding` on every mesh, and a local opinion beats
-  every variant. Authoring a finish set therefore **removes** that binding, so
+  every variant. Authoring a material set therefore **removes** that binding, so
   the variants are the only thing saying what the object wears. Every
   selection supplies one, and the preflight refuses a stray binding left
   outside.
 - The binding is rewritten on the mesh beneath each target object, where
-  Blender wrote it, including on objects a shape set hides by default. An
+  Blender wrote it, including on objects a geometry set hides by default. An
   object parented under a target is a separate object and keeps its own
-  material unless the finish set targets it too.
+  material unless the material set targets it too.
 - A finish you do not currently use is still exportable. Blender writes no
-  material prim for a material no face wears, so the finish set defines one,
+  material prim for a material no face wears, so the material set defines one,
   named the way Blender would have named it and never sharing a prim with a
   different material, and the MaterialX rewrite converts it like any other.
 
 ### Offering a finish on some shapes only
 
 Independent sets offer every combination, including ones you do not sell. When
-a finish suits only some shapes, nest the finish set inside the shape set:
-set **Nest Inside** to the shape set, and use each finish's **Offered On**
+a finish suits only some shapes, nest the material set inside the geometry set:
+set **Nest Inside** to the geometry set, and use each finish's **Offered On**
 toggles - one per shape - to say which shapes offer it. A finish offered on
 every shape needs no narrowing, and a shape added later is offered it too.
 
@@ -448,15 +453,15 @@ a style. One level of nesting is the limit.
   parented under another variant's member: deactivating the parent takes the
   child with it, so the child's variant could never compose. Both are refused
   before anything is written.
-- **A finish set over a multi-material mesh** sets every GeomSubset to one
+- **A material set over a multi-material mesh** sets every GeomSubset to one
   material, and warns that it did.
 - **A selected-only export** carries the other variants of any set the
   selection touches, along with their rigs and dependent variant members.
   Unrelated sets stay out of the export.
-- **Baking supports shape sets, not finish sets.** Hidden shape alternatives
+- **Baking supports geometry sets, not material sets.** Hidden shape alternatives
   are temporarily made available for baking and restored afterwards. Lighting
   & Shadows requires **Isolate Meshes for Shadows**, so alternatives do not
-  cast shadows on each other. Finish sets require **Translate Materials**;
+  cast shadows on each other. Material sets require **Translate Materials**;
   baking them would need a separate bake for every finish on each target.
 - **Reality Composer Pro's `.reality` compile keeps only the selection you
   shipped.** `realitytool` resolves the default selection and discards the

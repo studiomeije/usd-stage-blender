@@ -22,7 +22,7 @@ Blender's interface.
 - **Animation**: transform animation, skinned meshes, shape keys, vertex
   displacement and drivers over `frame` export
   ([docs/EXPORT_PIPELINE.md](docs/EXPORT_PIPELINE.md)).
-- **Variants**: offer an asset in several shapes and finishes from one file.
+- **Variants**: offer geometry and material alternatives from one file.
   Group the alternatives in collections or materials, declare them in the
   Variants panel, and the export writes USD variant sets
   ([docs/EXPORT_PIPELINE.md](docs/EXPORT_PIPELINE.md#5-variant-sets)).
