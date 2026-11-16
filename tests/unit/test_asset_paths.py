@@ -16,12 +16,15 @@ from Plugin.export import asset_paths, usd_assets, usd_textures
     ("/plain/a.png", "/plain/a.png"),
 ])
 def test_a_file_url_becomes_its_path(url, path):
-    assert asset_paths.normalize_file_url(url) == path
+    # File URLs decode to native paths, whose separators differ on Windows.
+    assert Path(asset_paths.normalize_file_url(url)) == Path(path)
 
 
 def test_a_network_file_url_keeps_its_server():
     """Dropping the host would name a different, local file."""
-    assert asset_paths.normalize_file_url("file://server/share/a.png") == "//server/share/a.png"
+    assert Path(asset_paths.normalize_file_url("file://server/share/a.png")) == Path(
+        "//server/share/a.png"
+    )
 
 
 @pytest.mark.parametrize("path", [

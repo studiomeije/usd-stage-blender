@@ -18,8 +18,9 @@ def test_non_finite_numbers_are_spelled_out():
 def test_a_saved_report_parses_strictly_even_with_raw_values(tmp_path):
     diag = ExportDiagnostics()
     # Stored raw, the way a setter that does not sanitize would store it.
+    output = tmp_path / "out.usdz"
     diag.set_asset_metadata({"extents_hint": [[math.nan, 0.0, 0.0], [1.0, 1.0, 1.0]],
-                             "where": Path("/tmp/out.usdz")})
+                             "where": output})
     path = tmp_path / "report.json"
     diag.save(path)
 
@@ -28,5 +29,5 @@ def test_a_saved_report_parses_strictly_even_with_raw_values(tmp_path):
 
     payload = json.loads(path.read_text(), parse_constant=refuse_constant)
     assert payload["asset_metadata"]["extents_hint"][0][0] == "NaN"
-    assert payload["asset_metadata"]["where"] == "/tmp/out.usdz"
+    assert payload["asset_metadata"]["where"] == str(output)
     assert json.loads(diag.to_json(), parse_constant=refuse_constant)
