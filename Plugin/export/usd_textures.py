@@ -1249,4 +1249,3 @@ def _referenced_texture_paths(stage, usd_dir: Path) -> set[Path]:
             if path is not None:
                 paths.add(_absolute_path(path, usd_dir))
     return paths
-
