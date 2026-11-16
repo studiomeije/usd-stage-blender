@@ -20,6 +20,15 @@ the panels below hold material, texture and advanced USD options. Experimental
 animation-library authoring lives under **Advanced USD** when Animation is on.
 Warnings and diagnostics wrap to the sidebar width, including background-job
 errors. Incompatible bake/variant combinations show guidance beside Export.
+If **Save To** is empty, Export opens a destination picker. After either a
+direct or baked export, the result card keeps the outcome, warning count,
+**Reveal File**, and **View Details** available. The details include every
+warning even when success diagnostics are not saved; **Open Full Report in
+Text Editor** displays the complete report in Blender's Text Editor, opening a
+separate window when available.
+Canceling or dismissing a background job retains its latest result and log
+without restoring an older export result. Results remain available for the
+current session; reopening the scene clears them.
 
 ## Contents
 
@@ -322,26 +331,34 @@ panel builds the common cases in one step:
 
 - **Geometry Set** turns a parent collection's children into the variants. It
   starts from the collection selected in the Outliner.
-- **Material Set** takes the collection the finishes apply to and the start the
-  materials' names share - `Fabric_` for `Fabric_Encre` and `Fabric_Navy` -
-  and makes one variant per matching material, named after the rest of its
-  name. The material the objects already wear becomes the default.
+- **Material Set** lets you pick a target collection and check the materials
+  to offer. Optional **Match Prefix** selects a material family, such as
+  `Fabric_` for `Fabric_Encre` and `Fabric_Navy`, and names each variant after
+  the remaining name. The material the objects already wear becomes the
+  default when included.
 - **Empty** starts a set to fill in by hand. A variant added there takes its
   name from the collection or material you give it, until you name it
   yourself.
 
-Use **Previews → Refresh** to generate Blender's native geometry and material
-thumbnails. Refresh them after editing
-geometry or materials; they are stored in the `.blend`. Thumbnail buttons
+The selected entry is labeled **Editing**, separately from **Export default**.
+Use **Use as Export Default** to change the selection the asset opens with.
+The **Include Variants in Export** checkbox stays visible; editing is still
+available when export inclusion is off.
+
+Expand **Previews → Refresh** to generate Blender's native geometry and material
+thumbnails. Refresh them after editing geometry or materials; they are stored
+in the `.blend`. Artist-supplied custom thumbnails are preserved. Thumbnail buttons
 select the entry to edit, without changing its exported default or the scene's
 visibility or material assignments. Use the radio button in the list to choose
 the default, or **Preview in Viewport** to show a geometry variant in the scene. The
 collapsible **Selected Material** section provides a larger live material preview.
 These previews use Blender's shading and are not a RealityKit render.
 
-Names are references - the default selection, a material set's Nest Inside,
+Names are references - the default selection, a material set's geometry parent,
 its Offered On toggles - so renaming a variant or a set carries the new name
-to all of them. Below the selected set the panel lists every problem the
+to all of them. Removing geometry updates these references; removal is refused
+when a material is offered only on that geometry, until you reassign or remove
+that material entry. Below the selected set the panel lists every problem the
 export would refuse or warn about, from the same validation the export runs.
 
 The sets are saved in the `.blend`, so the panel and the command line export
@@ -428,7 +445,7 @@ Two consequences worth knowing:
 
 Independent sets offer every combination, including ones you do not sell. When
 a finish suits only some shapes, nest the material set inside the geometry set:
-set **Nest Inside** to the geometry set, and use each finish's **Offered On**
+expand **Geometry Restrictions**, choose the geometry set, and use each finish's **Offered On**
 toggles - one per shape - to say which shapes offer it. A finish offered on
 every shape needs no narrowing, and a shape added later is offered it too.
 

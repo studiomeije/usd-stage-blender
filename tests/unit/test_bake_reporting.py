@@ -115,6 +115,7 @@ def test_runner_terminal_status_carries_warning_text(tmp_path, monkeypatch):
     assert spec is not None and spec.loader is not None
     runner = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runner)
+    monkeypatch.setattr(runner.time, "time", lambda: 1234.5)
     status_path = tmp_path / "status.json"
 
     runner._update_status(
@@ -127,3 +128,93 @@ def test_runner_terminal_status_carries_warning_text(tmp_path, monkeypatch):
 
     status = json.loads(status_path.read_text())
     assert status["warnings"] == ["The scene has no World and no light objects."]
+    assert status["time"] == 1234.5
+
+
+@pytest.mark.parametrize("existing_sidecar", [False, True])
+def test_runner_completion_preserves_all_warnings_without_success_diagnostics(
+    tmp_path, monkeypatch, existing_sidecar,
+):
+    """The terminal status is the only warning record when diagnostics are off."""
+    settings = types.SimpleNamespace(export_format="USDZ", bake_step_timeout_seconds=0)
+    monkeypatch.setitem(
+        sys.modules,
+        "bpy",
+        types.SimpleNamespace(
+            types=types.SimpleNamespace(Scene=types.SimpleNamespace(usd_stage_export_settings=True)),
+            context=types.SimpleNamespace(
+                scene=types.SimpleNamespace(usd_stage_export_settings=settings),
+            ),
+        ),
+    )
+    spec = importlib.util.spec_from_file_location("_bake_warning_completion_runner", RUNNER_PATH)
+    runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runner)
+    expected_warnings = [f"Material {index}: missing lighting contribution" for index in range(8)]
+
+    def bake(*args, **kwargs):
+        diagnostics = args[4]
+        for warning in expected_warnings:
+            diagnostics.add_warning(warning)
+        return {"restore_failures": []}
+
+    modules = {
+        "export.diagnostics": types.SimpleNamespace(ExportDiagnostics=ExportDiagnostics),
+        "api.commands.bake_export": types.SimpleNamespace(run_bake_export=bake),
+        "cli.bridge": types.SimpleNamespace(write_timeout_diagnostics=lambda *_: None),
+        "export.support_bundle": types.SimpleNamespace(
+            collect_environment=lambda *_: {}, collect_scene_snapshot=lambda *_: {},
+        ),
+    }
+
+    class ProgressReporter:
+        timed_out = False
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+        def update(self, *args):
+            pass
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(runner, "_import_package_module", modules.__getitem__)
+    monkeypatch.setattr(runner, "_BakeProgressReporter", ProgressReporter)
+    monkeypatch.setattr(runner, "_arm_crash_guard", lambda *_: None)
+    monkeypatch.setattr(runner, "_consume_loaded_scene_snapshot", lambda *_: {
+        "loaded": True, "removed": True, "cleanup_deferred": False,
+    })
+    monkeypatch.setattr(runner, "_bootstrap_plugin_package", lambda: "Plugin")
+    monkeypatch.setattr(runner, "_ensure_addon_loaded", lambda: None)
+    monkeypatch.setattr(runner, "_apply_settings", lambda *_: None)
+    monkeypatch.setattr(runner.time, "time", lambda: 2345.6)
+    diagnostics_path = tmp_path / "diagnostics.json"
+    old_report = '{"errors": ["Failure from an earlier export"]}'
+    if existing_sidecar:
+        diagnostics_path.write_text(old_report)
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text(json.dumps({
+        "job_dir": str(tmp_path),
+        "export_path": str(tmp_path / "asset.usdz"),
+        "diagnostics_path": str(diagnostics_path),
+        "success_diagnostics_enabled": False,
+    }))
+    monkeypatch.setattr(runner.sys, "argv", [str(RUNNER_PATH), "--", str(settings_path)])
+
+    assert runner.main() == 0
+
+    status = json.loads((tmp_path / "status.json").read_text())
+    assert status["state"] == "done"
+    assert status["warnings"] == expected_warnings
+    assert status["message"] == "Baked export complete - 8 warning(s)"
+    assert status["time"] == 2345.6
+    assert "diagnostics_path" not in status
+    assert status["diagnostics_available"] is False
+    if existing_sidecar:
+        assert diagnostics_path.read_text() == old_report
+    else:
+        assert not diagnostics_path.exists()

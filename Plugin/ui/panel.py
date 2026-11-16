@@ -622,6 +622,10 @@ class USDStageExportSettings(PropertyGroup):
         options={'HIDDEN'}
     )
 
+    last_export_result: StringProperty(
+        name="Last Export Result", default="", options={'HIDDEN', 'SKIP_SAVE'},
+    )
+
     background_job_dir: StringProperty(
         name="Background Job Dir",
         description="Path to the active background bake/export job",
@@ -683,8 +687,15 @@ class USDSTAGE_PT_export_panel(Panel):
             # Job monitor first: while a job runs (and everything below is
             # locked), state, progress and the cancel affordance must be
             # visible without scrolling.
-            if status:
+            if status and job_running:
                 _draw_job_monitor(layout, status, job_state, job_running)
+            if not job_running:
+                from ..ops.export_results import get_latest_result
+                result = get_latest_result(settings, background_status=status)
+                if result:
+                    _draw_export_result(layout, result)
+                if status:
+                    layout.operator("usdstage.clear_bake_job", text="Dismiss Job", icon='X')
 
             export_box = layout.column(align=False)
             export_box.enabled = not job_running
@@ -713,6 +724,21 @@ class USDSTAGE_PT_export_panel(Panel):
             scope.use_property_split = False
             scope.prop(settings, "selected_objects_only", text="Selection Only", toggle=True)
             scope.prop(settings, "export_animation", text="Animation", toggle=True)
+            if settings.export_variants:
+                from ..export.variant_scope import effective_variant_plan
+                try:
+                    plan = effective_variant_plan(context, settings)
+                    if route.pipeline != PIPELINE_DIRECT:
+                        if any(item.kind == 'MATERIAL' for item in plan.sets):
+                            warning = export_box.column()
+                            warning.alert = True
+                            warning.label_multiline(text="Material variants need Translate Materials.", icon='ERROR')
+                            warning.operator("usdstage.use_translate_materials", text="Use Translate Materials", icon='MATERIAL')
+                        elif plan.sets and route.bake_mode == 'LIT_IBL' and not settings.bake_isolate_meshes_lit:
+                            export_box.label_multiline(text="Geometry alternatives need isolated shadows for this bake.", icon='ERROR')
+                            export_box.prop(settings, "bake_isolate_meshes_lit", text="Isolate Meshes for Shadows")
+                except Exception as exc:
+                    export_box.label_multiline(text=str(exc), icon='ERROR')
             export_row = export_box.row()
             export_row.enabled = not job_running
             export_row.scale_y = 1.4
@@ -729,23 +755,36 @@ class USDSTAGE_PT_export_panel(Panel):
             if route.pipeline != PIPELINE_DIRECT:
                 operator.apply_ui_profile = True
 
-            if route.pipeline != PIPELINE_DIRECT and settings.export_variants:
-                sets = context.scene.usd_stage_variant_sets
-                if any(item.kind == 'MATERIAL' for item in sets):
-                    warning = export_box.column()
-                    warning.alert = True
-                    warning.label_multiline(
-                        text="Material variants need Translate Materials. Switch the profile or turn off Author Variant Sets.",
-                        icon='ERROR',
-                    )
-                elif sets and route.bake_mode == 'LIT_IBL' and not settings.bake_isolate_meshes_lit:
-                    export_box.label_multiline(
-                        text="Enable Isolate Meshes for Shadows below to bake geometry alternatives.", icon='ERROR',
-                    )
-
         except Exception as exc:
             layout.label_multiline(text=f"UI error: {exc}", icon='STATUS_ERROR')
             layout.operator("usdstage.export", icon='EXPORT', text="Export Scene")
+
+
+def _draw_export_result(layout, result):
+    card = layout.box()
+    state = result.get("state")
+    warnings = result.get("warnings") or []
+    title = "Export completed" if state == "done" else "Export canceled" if state == "canceled" else "Export failed"
+    if warnings and state == "done":
+        title += f" · {len(warnings)} warnings"
+    heading = card.row()
+    heading.alert = state == "error"
+    heading.label(text=title, icon='CHECKMARK' if state == "done" else 'CANCEL' if state == "canceled" else 'ERROR')
+    path = result.get("export_path") or ""
+    if path:
+        card.label_multiline(text=Path(path).name, icon='FILE')
+    message = result.get("message") or ""
+    if state == "error" and message:
+        card.label_multiline(text=message, icon='ERROR', max_lines=4)
+    actions = card.row(align=True)
+    if path and Path(path).is_file():
+        if state == "error":
+            card.label(text="An existing file is available at this path.", icon='FILE')
+        actions.operator("usdstage.reveal_export", text="Reveal File", icon='FILE_FOLDER').filepath = path
+    actions.operator("usdstage.show_diagnostics", text="View Details", icon='INFO').use_last_result = True
+    if result.get("log_path"):
+        op = card.operator("usdstage.open_support_text", text="Open Log", icon='TEXT')
+        op.filepath = result["log_path"]
 
 
 def _draw_job_monitor(layout, status, job_state, job_running):
@@ -827,6 +866,7 @@ class USDSTAGE_PT_export_material_settings(Panel):
     bl_region_type = 'UI'
     bl_category = "USD Stage"
     bl_order = 1
+    bl_options = {'DEFAULT_CLOSED'}
 
     def draw_header(self, context):
         self.layout.label(text="", icon='MATERIAL')
@@ -909,6 +949,9 @@ class USDSTAGE_PT_export_optimization(Panel):
             layout.prop(settings, "ui_source_texture_format", text="Image Format")
             if settings.ui_source_texture_resolution == 'CUSTOM':
                 layout.prop(settings, "bake_resolution_custom")
+            image_format = settings.ui_source_texture_format
+            if image_format == 'AVIF':
+                layout.label_multiline(text="AVIF is for RealityKit runtime. Reality Composer Pro cannot import it.", icon='ERROR')
             return
 
         layout.prop(settings, "bake_resolution", text="Bake Resolution")
@@ -917,9 +960,16 @@ class USDSTAGE_PT_export_optimization(Panel):
             layout.prop(settings, "bake_resolution_custom")
         layout.prop(settings, "bake_margin")
         if settings.bake_image_format == 'ORIGINAL':
-            layout.label(
+            layout.label_multiline(
                 text="Newly baked textures use PNG when Original is selected.",
                 icon='STATUS_INFO',
+            )
+        if settings.bake_image_format == 'AVIF':
+            layout.label_multiline(text="AVIF is for RealityKit runtime. Reality Composer Pro cannot import it.", icon='ERROR')
+        if settings.bake_resolution == 'ORIGINAL':
+            layout.label_multiline(
+                text="Uses each material's source texture size." if route.bake_mode != 'LIT_IBL' else "Lighting and shadows use 2048 px when no fixed size is chosen.",
+                icon='INFO',
             )
 
 
@@ -1031,16 +1081,17 @@ class USDSTAGE_PT_export_diagnostics(Panel):
         # offered whenever a report exists, whatever the toggle says.
         diag_path = _existing_diagnostics_path(settings)
         if diag_path:
-            layout.label(text=f"Path: {diag_path}", icon='FILE')
+            layout.label_multiline(text=f"Path: {diag_path}", icon='FILE')
         else:
             layout.label(text="Failures always write diagnostics.", icon='STATUS_INFO')
         actions = layout.row(align=True)
         actions.enabled = bool(diag_path)
-        actions.operator(
+        details = actions.operator(
             "usdstage.show_diagnostics",
             icon='STATUS_INFO',
             text="Show Diagnostics",
         )
+        details.filepath = diag_path
         actions.operator(
             "usdstage.create_support_bundle",
             icon='FILE_FOLDER',
@@ -1057,18 +1108,8 @@ class USDSTAGE_PT_export_diagnostics(Panel):
 
 def _existing_diagnostics_path(settings) -> str:
     """The newest diagnostics report for this scene's exports, if one exists."""
-    status = _read_background_job_status(settings)
-    candidates = [
-        (status or {}).get("diagnostics_path"),
-        getattr(settings, "last_diagnostics_path", ""),
-    ]
-    filepath = str(getattr(settings, "filepath", "") or "").strip()
-    if filepath:
-        candidates.append(str(Path(filepath).with_suffix(".diagnostics.json")))
-    for candidate in candidates:
-        if candidate and Path(str(candidate)).is_file():
-            return str(candidate)
-    return ""
+    from ..ops.export_results import resolve_diagnostics_path
+    return resolve_diagnostics_path(settings, background_status=_read_background_job_status(settings)) or ""
 
 
 def register():
@@ -1202,6 +1243,7 @@ def _clear_background_job_state_on_load(_dummy) -> None:
         settings = getattr(scene, "usd_stage_export_settings", None)
         if settings is None:
             continue
+        settings.last_export_result = ""
         _warn_about_orphaned_background_job(settings)
         _clear_background_job_state(settings)
 

@@ -163,6 +163,7 @@ def _update_status(
     stage: str | None = None,
     timeout_seconds: int | None = None,
     warnings: list | None = None,
+    diagnostics_available: bool | None = None,
 ) -> None:
     if state in ("done", "error"):
         # Terminal state reached normally: the crash guard is no longer needed.
@@ -182,6 +183,8 @@ def _update_status(
         payload["export_path"] = export_path
     if diagnostics_path:
         payload["diagnostics_path"] = diagnostics_path
+    if diagnostics_available is not None:
+        payload["diagnostics_available"] = bool(diagnostics_available)
     if step_elapsed_seconds is not None:
         payload["step_elapsed_seconds"] = int(step_elapsed_seconds)
     if error_code:
@@ -600,7 +603,7 @@ def main() -> int:
         terminal_status = {
             "state": "done",
             "message": completion,
-            "warnings": done_warnings[:5],
+            "warnings": done_warnings,
         }
     except Exception as exc:
         restore_failures = list(getattr(exc, "restore_failures", []) or [])
@@ -639,6 +642,9 @@ def main() -> int:
             else None
         ),
         warnings=terminal_status.get("warnings"),
+        diagnostics_available=(
+            False if terminal_status["state"] == "done" and not success_diagnostics_enabled else None
+        ),
     )
     return 0 if terminal_status["state"] == "done" else 1
 

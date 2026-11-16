@@ -10,8 +10,8 @@ are already the variants.
 from __future__ import annotations
 
 import bpy
-from bpy.props import IntProperty, StringProperty
-from bpy.types import Operator
+from bpy.props import BoolProperty, CollectionProperty, EnumProperty, IntProperty, StringProperty
+from bpy.types import Menu, Operator, PropertyGroup, UIList
 
 from ..export.variants import (
     finish_name_from_material,
@@ -80,6 +80,26 @@ def _find_layer_collection(layer_collection, collection):
         if found is not None:
             return found
     return None
+
+
+def _layer_collection_chain(root, collection):
+    if root.collection == collection:
+        return [root]
+    for child in root.children:
+        found = _layer_collection_chain(child, collection)
+        if found:
+            return [root, *found]
+    return []
+
+
+class USDStageMaterialChoice(PropertyGroup):
+    material_name: StringProperty()
+    selected: BoolProperty(name="Include Material", default=False)
+
+
+class USDSTAGE_UL_material_choices(UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_property, index):
+        layout.prop(item, "selected", text=item.material_name, icon='MATERIAL')
 
 
 def _is_visible(context, collection) -> bool:
@@ -176,6 +196,15 @@ class USDSTAGE_OT_variant_set_add_finish(Operator):
             "named after the rest of its name. Leave empty to add variants by hand"
         ),
     )
+    material_choices: CollectionProperty(type=USDStageMaterialChoice, options={'SKIP_SAVE'})
+    material_choice_index: IntProperty(options={'SKIP_SAVE'})
+    picker_initialized: BoolProperty(default=False, options={'HIDDEN', 'SKIP_SAVE'})
+    selection_mode: EnumProperty(
+        name="Choose Materials",
+        items=[('PICK', "Pick Materials", "Choose materials without renaming them"),
+               ('PREFIX', "Match Prefix", "Include materials whose names share a prefix")],
+        default='PICK', options={'SKIP_SAVE'},
+    )
 
     def invoke(self, context, event):
         target = _active_collection(context)
@@ -185,13 +214,26 @@ class USDSTAGE_OT_variant_set_add_finish(Operator):
             worn = _worn_material(bpy.data.collections.get(self.target_name))
             if worn is not None:
                 self.prefix = guess_finish_prefix(worn.name)
-        return context.window_manager.invoke_props_dialog(self, width=360)
+        self.material_choices.clear()
+        worn = _worn_material(bpy.data.collections.get(self.target_name))
+        for material in _matching_materials(""):
+            choice = self.material_choices.add()
+            choice.material_name = material.name
+            choice.selected = material == worn
+        self.picker_initialized = True
+        return context.window_manager.invoke_props_dialog(self, width=420)
 
     def draw(self, context):
         layout = self.layout
         layout.prop_search(self, "target_name", bpy.data, "collections", text="Applies To")
-        layout.prop(self, "prefix")
-        if self.prefix:
+        layout.row().prop(self, "selection_mode", expand=True)
+        if self.selection_mode == 'PICK':
+            layout.template_list("USDSTAGE_UL_material_choices", "", self, "material_choices", self, "material_choice_index", rows=6)
+            count = sum(choice.selected and bpy.data.materials.get(choice.material_name) is not None for choice in self.material_choices)
+            layout.label(text=f"{count} materials selected")
+        else:
+            layout.prop(self, "prefix")
+        if self.selection_mode == 'PREFIX' and self.prefix:
             found = [material.name for material in _matching_materials(self.prefix)]
             if found:
                 shown = ", ".join(found[:4]) + (", ..." if len(found) > 4 else "")
@@ -204,21 +246,26 @@ class USDSTAGE_OT_variant_set_add_finish(Operator):
         if target is None:
             self.report({'ERROR'}, "Pick the collection the materials apply to")
             return {'CANCELLED'}
-        materials = _matching_materials(self.prefix) if self.prefix else []
-        if self.prefix and not materials:
+        picked = self.picker_initialized and self.selection_mode == 'PICK'
+        materials = ([bpy.data.materials[choice.material_name] for choice in self.material_choices if choice.selected and choice.material_name in bpy.data.materials]
+                     if picked else _matching_materials(self.prefix) if self.prefix else [])
+        if picked and not materials:
+            self.report({'ERROR'}, "Choose at least one material")
+            return {'CANCELLED'}
+        if not picked and self.prefix and not materials:
             self.report({'ERROR'}, f"No material starts with '{self.prefix}'")
             return {'CANCELLED'}
 
         sets = _variant_sets(context)
         variant_set = sets.add()
         variant_set.kind = 'MATERIAL'
-        base = self.prefix.strip("_.- ") or f"{target.name}_Finish"
-        variant_set.name = _unique_name(sets[:-1], suggest_identifier(base, "Finish"))
+        base = (self.prefix.strip("_.- ") if not picked else "") or f"{target.name}_Materials"
+        variant_set.name = _unique_name(sets[:-1], suggest_identifier(base, "Materials"))
         variant_set.target_collection = target
         for material in materials:
             variant = variant_set.variants.add()
             variant.name = _unique_name(
-                variant_set.variants[:-1], finish_name_from_material(material.name, self.prefix)
+                variant_set.variants[:-1], finish_name_from_material(material.name, "" if picked else self.prefix)
             )
             variant.material = material
 
@@ -323,7 +370,18 @@ class USDSTAGE_OT_variant_remove(Operator):
         if not 0 <= index < len(variant_set.variants):
             return {'CANCELLED'}
         removed = variant_set.variants[index].name
+        dependents = [entry for entry in _variant_sets(context) if entry.parent_set == variant_set.name]
+        exclusive = [f"{entry.name}/{variant.name}" for entry in dependents for variant in entry.variants
+                     if {name.strip() for name in variant.applies_to.split(',') if name.strip()} == {removed}]
+        if exclusive:
+            self.report({'WARNING'}, "Cannot remove this geometry: assign or remove materials offered only on it first (" + ", ".join(exclusive) + ")")
+            return {'CANCELLED'}
         variant_set.variants.remove(index)
+        for entry in dependents:
+            for variant in entry.variants:
+                if variant.applies_to:
+                    variant.applies_to = ','.join(name.strip() for name in variant.applies_to.split(',')
+                                                if name.strip() and name.strip() != removed)
         variant_set.variants_index = max(0, min(index, len(variant_set.variants) - 1))
         # The default selection has to name a variant that still exists.
         if variant_set.default_variant == removed:
@@ -350,8 +408,48 @@ class USDSTAGE_OT_variant_set_default(Operator):
         )
         if not 0 <= index < len(sets):
             return {'CANCELLED'}
+        if not any(variant.name == self.variant for variant in sets[index].variants):
+            self.report({'WARNING'}, "Choose an existing variant as the export default")
+            return {'CANCELLED'}
         sets[index].default_variant = self.variant
         return {'FINISHED'}
+
+
+class USDSTAGE_OT_variant_set_parent(Operator):
+    """Choose the geometry set that determines which materials are offered"""
+
+    bl_idname = "usdstage.variant_set_parent"
+    bl_label = "Set Geometry Parent"
+    bl_options = {'REGISTER', 'UNDO'}
+    parent: StringProperty()
+
+    def execute(self, context):
+        entry = _active_set(context)
+        if entry is None or entry.kind != 'MATERIAL':
+            return {'CANCELLED'}
+        parent = next((candidate for candidate in _variant_sets(context)
+                       if candidate.name == self.parent and candidate.kind == 'GEOMETRY'), None)
+        if self.parent and parent is None:
+            self.report({'WARNING'}, "Choose an existing geometry set")
+            return {'CANCELLED'}
+        if entry.parent_set == self.parent:
+            return {'FINISHED'}
+        entry.parent_set = self.parent
+        # Restrictions belong to the old parent; retaining names can silently
+        # target different geometry in a new parent.
+        for variant in entry.variants:
+            variant.applies_to = ""
+        return {'FINISHED'}
+
+
+class USDSTAGE_MT_geometry_parents(Menu):
+    bl_label = "Geometry Set"
+
+    def draw(self, context):
+        self.layout.operator("usdstage.variant_set_parent", text="All Geometry (Independent)").parent = ""
+        for candidate in _variant_sets(context):
+            if candidate.kind == 'GEOMETRY':
+                self.layout.operator("usdstage.variant_set_parent", text=candidate.name, icon='OUTLINER_COLLECTION').parent = candidate.name
 
 
 class USDSTAGE_OT_variant_toggle_shape(Operator):
@@ -435,9 +533,18 @@ class USDSTAGE_OT_variant_generate_previews(Operator):
     def execute(self, context):
         variant_set = _active_set(context)
         generated = 0
+        preserved = 0
+        seen = set()
         for variant in variant_set.variants:
             source = variant.material if variant_set.kind == 'MATERIAL' else variant.collection
             if source is None:
+                continue
+            if source.as_pointer() in seen:
+                continue
+            seen.add(source.as_pointer())
+            preview = source.preview
+            if preview and (preview.is_image_custom or preview.is_icon_custom):
+                preserved += 1
                 continue
             try:
                 source.asset_generate_preview()
@@ -445,9 +552,12 @@ class USDSTAGE_OT_variant_generate_previews(Operator):
             except (RuntimeError, TypeError) as exc:
                 self.report({'WARNING'}, f"{variant.name}: {exc}")
         if not generated:
+            if preserved:
+                self.report({'INFO'}, f"Preserved {preserved} custom preview(s)")
+                return {'FINISHED'}
             self.report({'WARNING'}, "Assign collections or materials before generating previews")
             return {'CANCELLED'}
-        self.report({'INFO'}, f"Updating {generated} preview(s)")
+        self.report({'INFO'}, f"Updating {generated} preview(s); preserved {preserved} custom preview(s)")
         return {'FINISHED'}
 
 
@@ -467,24 +577,75 @@ class USDSTAGE_OT_variant_preview(Operator):
     def execute(self, context):
         variant_set = _active_set(context)
         root = context.view_layer.layer_collection
-        shown = False
-        for variant in variant_set.variants:
-            if variant.collection is None:
-                continue
-            layer_collection = _find_layer_collection(root, variant.collection)
-            if layer_collection is None:
-                continue
-            wanted = variant.name == self.variant
-            layer_collection.exclude = not wanted
-            shown = shown or wanted
-        if not shown:
-            self.report({'WARNING'}, f"'{self.variant}' has no collection to show")
+        selected = next((variant for variant in variant_set.variants if variant.name == self.variant), None)
+        chain = _layer_collection_chain(root, selected.collection) if selected and selected.collection else []
+        if not chain:
+            self.report({'WARNING'}, f"'{self.variant}' has no collection in this view layer to show")
             return {'CANCELLED'}
-        context.view_layer.update()
+        changes = []
+
+        def assign(owner, name, value):
+            previous = getattr(owner, name)
+            if previous != value:
+                changes.append((owner, name, previous))
+                setattr(owner, name, value)
+
+        # Validate first, then reveal ancestors and the chosen collection.
+        # A failure restores every changed flag, including child excludes
+        # Blender resets when its parent is re-enabled.
+        all_layers = []
+        stack = [root]
+        while stack:
+            layer = stack.pop()
+            all_layers.append((layer, layer.exclude))
+            stack.extend(layer.children)
+        touched_layers = set()
+        try:
+            for layer in chain:
+                touched_layers.add(layer.as_pointer())
+                assign(layer, 'exclude', False)
+                assign(layer.collection, 'hide_viewport', False)
+            stack = list(chain[-1].children)
+            while stack:
+                layer = stack.pop()
+                touched_layers.add(layer.as_pointer())
+                assign(layer, 'exclude', False)
+                assign(layer.collection, 'hide_viewport', False)
+                stack.extend(layer.children)
+            for variant in variant_set.variants:
+                if variant.collection is None:
+                    continue
+                layer_collection = _find_layer_collection(root, variant.collection)
+                if layer_collection is not None:
+                    touched_layers.add(layer_collection.as_pointer())
+                    assign(layer_collection, 'exclude', variant != selected)
+            for layer, excluded in all_layers:
+                if layer.as_pointer() not in touched_layers:
+                    assign(layer, 'exclude', excluded)
+            for obj in selected.collection.all_objects:
+                assign(obj, 'hide_viewport', False)
+                hidden = obj.hide_get()
+                if hidden:
+                    changes.append((obj, 'hide_set', hidden))
+                    obj.hide_set(False)
+            context.view_layer.update()
+        except Exception as exc:
+            for owner, name, previous in reversed(changes):
+                if name == 'hide_set':
+                    owner.hide_set(previous)
+                else:
+                    setattr(owner, name, previous)
+            for layer, excluded in all_layers:
+                layer.exclude = excluded
+            context.view_layer.update()
+            self.report({'WARNING'}, f"Could not preview '{self.variant}': {exc}")
+            return {'CANCELLED'}
         return {'FINISHED'}
 
 
 _CLASSES = (
+    USDStageMaterialChoice,
+    USDSTAGE_UL_material_choices,
     USDSTAGE_OT_variant_set_add_from_collection,
     USDSTAGE_OT_variant_set_add_finish,
     USDSTAGE_OT_variant_set_add_empty,
@@ -492,6 +653,8 @@ _CLASSES = (
     USDSTAGE_OT_variant_add,
     USDSTAGE_OT_variant_remove,
     USDSTAGE_OT_variant_set_default,
+    USDSTAGE_OT_variant_set_parent,
+    USDSTAGE_MT_geometry_parents,
     USDSTAGE_OT_variant_select,
     USDSTAGE_OT_variant_generate_previews,
     USDSTAGE_OT_variant_toggle_shape,

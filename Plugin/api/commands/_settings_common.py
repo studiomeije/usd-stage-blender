@@ -27,6 +27,7 @@ INTERNAL_KEYS = frozenset({
     "name",
     "history_applied",
     "last_diagnostics_path",
+    "last_export_result",
     "persist_suspended",
     "background_job_dir",
     "background_job_pid",

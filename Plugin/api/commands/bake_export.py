@@ -492,30 +492,25 @@ def run_bake_export(
     diagnostics_path: str | None,
     on_step=lambda _progress, _message: None,
 ) -> dict:
-    """Stage all shape alternatives before baking, then restore visibility."""
-    from ...export import animation_export, variants
-    from ...export.object_scope import rna_identity
+    """Stage all geometry alternatives before baking, then restore visibility."""
+    from ...export import variants
+    from ...export.variant_scope import effective_variant_plan
 
-    plan = variants.resolve_variant_plan(context, settings)
-    if bool(getattr(settings, "selected_objects_only", False)):
-        objects = animation_export.collect_export_objects(context, settings)
-        plan = variants.VariantPlan(sets=plan.sets_touching(
-            rna_identity(obj) for obj in objects
-        ))
+    plan = effective_variant_plan(context, settings)
     variants.require_valid_variant_plan(plan, diag)
     if any(item.kind == variants.MATERIAL for item in plan.sets):
         raise CommandError(
-            "Baking finish variants is not supported: each finish needs its "
+            "Baking material variants is not supported: each material needs its "
             "own bake on the target geometry. Use Translate Materials for "
-            "finish sets, or disable variant export before baking.",
+            "material sets, or disable variant export before baking.",
             code="BAKE_FINISH_VARIANTS_UNSUPPORTED", stage="validation",
         )
     if (not plan.is_empty
             and str(getattr(settings, "bake_mode", "LIT_IBL")) == "LIT_IBL"
             and not bool(getattr(settings, "bake_isolate_meshes_lit", False))):
         raise CommandError(
-            "Lighting & Shadows with shape variants requires Isolate Meshes "
-            "While Baking, so hidden alternatives cannot cast shadows on "
+            "Lighting & Shadows with geometry variants requires Isolate Meshes "
+            "for Shadows, so hidden alternatives cannot cast shadows on "
             "each other. Enable isolation or use a material-color bake mode.",
             code="BAKE_VARIANTS_REQUIRE_ISOLATION", stage="validation",
         )

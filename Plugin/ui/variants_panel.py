@@ -340,7 +340,7 @@ def _draw_offered_on(layout, scene, variant_set, variant) -> None:
 def _draw_previews(layout, variant_set):
     """Native collection/material thumbnails; generation is an explicit action."""
     heading = layout.row(align=True)
-    heading.label(text="Previews", icon='RESTRICT_RENDER_OFF')
+    heading.label(text="Thumbnails", icon='RESTRICT_RENDER_OFF')
     heading.operator("usdstage.variant_generate_previews", text="Refresh", icon='FILE_REFRESH')
     grid = layout.grid_flow(row_major=True, columns=2, even_columns=True, even_rows=True)
     missing = False
@@ -365,7 +365,7 @@ def _draw_previews(layout, variant_set):
         if variant.name == variant_set.default_variant:
             card.label(text="Default", icon='CHECKMARK')
     if missing:
-        layout.label_multiline(text="Refresh builds previews from your current collections and materials.", icon='INFO')
+        layout.label_multiline(text="Refresh builds thumbnails and preserves custom previews.", icon='INFO')
 
 
 # --------------------------------------------------------------------------
@@ -448,6 +448,9 @@ class USDSTAGE_PT_export_variants(Panel):
         settings = scene.usd_stage_export_settings
         layout.enabled = not _is_job_running(settings)
         variant_sets = scene.usd_stage_variant_sets
+        layout.prop(settings, "export_variants", text="Include Variants in Export")
+        if not settings.export_variants:
+            layout.label_multiline(text="Variants are excluded from export. You can still edit them below.", icon='INFO')
 
         if not variant_sets:
             column = layout.column(align=True)
@@ -456,10 +459,7 @@ class USDSTAGE_PT_export_variants(Panel):
             _draw_add_buttons(layout.column(align=True), compact=False)
             return
 
-        layout.prop(settings, "export_variants")
-
         column = layout.column()
-        column.enabled = bool(getattr(settings, "export_variants", True))
 
         row = column.row()
         row.template_list(
@@ -482,20 +482,12 @@ class USDSTAGE_PT_export_variants(Panel):
         set_box.use_property_decorate = False
         kind_row = set_box.row(align=True)
         kind_row.use_property_split = False
+        kind_row.enabled = not variant_set.variants
         kind_row.prop(variant_set, "kind", expand=True)
+        if variant_set.variants:
+            set_box.label_multiline(text="Remove this set's entries before changing its type.", icon='INFO')
         if variant_set.kind == 'MATERIAL':
             set_box.prop(variant_set, "target_collection")
-            set_box.prop_search(
-                variant_set, "parent_set", scene, "usd_stage_variant_sets",
-                text="Nest Inside",
-            )
-            problem = (
-                _nesting_problem(scene, variant_set) if variant_set.parent_set else ""
-            )
-            if problem:
-                set_box.label_multiline(text=problem, icon='ERROR')
-
-        _draw_previews(column, variant_set)
 
         row = column.row()
         row.template_list(
@@ -509,6 +501,10 @@ class USDSTAGE_PT_export_variants(Panel):
         variant_index = variant_set.variants_index
         if 0 <= variant_index < len(variant_set.variants):
             variant = variant_set.variants[variant_index]
+            column.label(text=f"Editing: {variant.name}", icon='GREASEPENCIL')
+            use_default = column.row()
+            use_default.enabled = variant.name != variant_set.default_variant
+            use_default.operator("usdstage.variant_set_default", text="Use as Export Default", icon='CHECKMARK').variant = variant.name
             # The selected variant's own settings.
             variant_box = column.column(align=True)
             variant_box.use_property_split = True
@@ -522,8 +518,6 @@ class USDSTAGE_PT_export_variants(Panel):
                     preview_header.label(text="Selected Material", icon='MATERIAL')
                     if preview_body is not None:
                         preview_body.template_preview(variant.material, show_buttons=False)
-                if variant_set.parent_set and not _nesting_problem(scene, variant_set):
-                    _draw_offered_on(variant_box, scene, variant_set, variant)
             else:
                 variant_box.prop(variant, "collection")
                 preview = column.operator("usdstage.variant_preview", icon='HIDE_OFF')
@@ -533,9 +527,27 @@ class USDSTAGE_PT_export_variants(Panel):
             column.label(text="No default selection chosen", icon='ERROR')
         else:
             for line in _ships_as(scene, variant_set):
-                column.label(text=line)
+                column.label_multiline(text=line.replace("Ships as:", "Export default:"))
+
+        if variant_set.kind == 'MATERIAL':
+            header, advanced = column.panel("usdstage_variant_nesting", default_closed=True)
+            header.label(text="Geometry Restrictions", icon='OUTLINER_COLLECTION')
+            if advanced is not None:
+                advanced.menu("USDSTAGE_MT_geometry_parents", text=variant_set.parent_set or "All Geometry (Independent)")
+                advanced.label_multiline(text="Changing the geometry set resets material restrictions to all its variants.", icon='INFO')
+                if variant_set.parent_set:
+                    problem = _nesting_problem(scene, variant_set)
+                    if problem:
+                        advanced.label_multiline(text=problem, icon='ERROR')
+                    elif 0 <= variant_index < len(variant_set.variants):
+                        _draw_offered_on(advanced, scene, variant_set, variant_set.variants[variant_index])
 
         _draw_issues(column, context, variant_set)
+        preview_header, preview_body = column.panel("usdstage_variant_previews", default_closed=True)
+        preview_header.label(text="Previews", icon='RESTRICT_RENDER_OFF')
+        if preview_body is not None:
+            preview_body.label_multiline(text="Choose a thumbnail to edit it. The export default changes only with Use as Export Default.", icon='INFO')
+            _draw_previews(preview_body, variant_set)
 
 
 @bpy.app.handlers.persistent
