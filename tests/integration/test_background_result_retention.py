@@ -79,6 +79,16 @@ with tempfile.TemporaryDirectory() as directory:
         assert outcome == {'CANCELLED'}
         assert settings.background_job_dir == str(job)
         assert settings.background_job_pid == 123
+    # Missing status does not authorize detaching a still-running worker.
+    (job/'status.json').unlink()
+    for operation in (bpy.ops.usdstage.cancel_bake_export, bpy.ops.usdstage.clear_bake_job):
+        try:
+            outcome = operation()
+        except RuntimeError:
+            outcome = {'CANCELLED'}
+        assert outcome == {'CANCELLED'}
+        assert settings.background_job_dir == str(job)
+        assert settings.background_job_pid == 123
 
 Plugin.unregister()
 print('BACKGROUND_RESULT_RETENTION_OK')

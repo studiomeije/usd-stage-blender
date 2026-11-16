@@ -398,6 +398,11 @@ class USDSTAGE_OT_cancel_bake_export(Operator):
 
         status_path = Path(job_dir) / "status.json"
         status = read_job_status(job_dir)
+        if (not status or status.get("state") in ACTIVE_JOB_STATES) and (
+            not status or status_pid(status) != pid
+        ) and pid_is_running(pid):
+            self.report({'ERROR'}, "The worker is still running, but its status cannot verify ownership. Job state was kept.")
+            return {'CANCELLED'}
         if not status or status.get("state") not in ACTIVE_JOB_STATES:
             retain_background_result(settings, status)
             _cleanup_scene_snapshot(job_dir)
@@ -463,11 +468,10 @@ class USDSTAGE_OT_clear_bake_job(Operator):
         job_dir = getattr(settings, "background_job_dir", "")
         status = read_job_status(job_dir)
         pid = status_pid(status or {})
+        attached_pid = safe_int(getattr(settings, "background_job_pid", 0))
         if (
-            status
-            and status.get("state") in ACTIVE_JOB_STATES
-            and pid is not None
-            and pid_is_running(pid)
+            (not status or status.get("state") in ACTIVE_JOB_STATES)
+            and any(candidate and pid_is_running(candidate) for candidate in (pid, attached_pid))
         ):
             self.report({'ERROR'}, "Background job is active. Cancel it instead.")
             return {'CANCELLED'}
