@@ -7,7 +7,6 @@ This page is the index of the USD Stage for Blender documentation. Use it to fin
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Which module owns what, how an export moves through the code, and where to start when extending it |
 | [CLI.md](CLI.md) | Every command, flag, exit code, and the JSON envelope |
 | [SETTINGS.md](SETTINGS.md) | What every toggle changes, and which ones override each other |
-| [BLENDER_5_3.md](BLENDER_5_3.md) | Collection Importer workflows and which Blender 5.3 USD improvements our export uses |
 | [FEATURE_SUPPORT.md](FEATURE_SUPPORT.md) | Which Blender features survive an export, and which are refused or dropped |
 | [APPLE_PLATFORM_CONTRACT.md](APPLE_PLATFORM_CONTRACT.md) | Which USD and MaterialX features Reality Composer Pro and RealityKit accept |
 | [MATERIAL_TRANSLATION.md](MATERIAL_TRANSLATION.md) | How a Blender shader graph becomes a RealityKit MaterialX graph: the surface, color space, textures |

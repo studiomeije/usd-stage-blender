@@ -12,8 +12,9 @@ and what you have to do differently. Internal refactors are not listed.
   can still be opened in Blender 5.3.
 - Exports use Blender 5.3's native normal representation and preserve matrix
   mesh attributes. Reloadable geometry from Blender's USD Collection Importer
-  can be exported through the normal pipeline; see `docs/BLENDER_5_3.md` for
-  the workflow and material round-trip limits.
+  can be exported through the normal pipeline; see the
+  [export guide](docs/EXPORT_PIPELINE.md#reloadable-usd-source-collections)
+  for the workflow and material round-trip limits.
 
 - An asset referenced through a network `file://server/share/...` URL is now
   copied from that server. The server name used to be dropped, so the export

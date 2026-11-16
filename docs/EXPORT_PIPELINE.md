@@ -132,6 +132,25 @@ process an object that does not reach the file:
 | Disabled in Viewports (`hide_viewport`), on the object or a collection | exported | left out |
 | Hidden with the Outliner's eye | exported | exported |
 
+### Reloadable USD source collections
+
+Blender's **Collection Properties → Importers** panel can attach a USD source
+and its import settings to a collection. Import it there, then use **Reload**
+when the source changes. The path and settings are saved in the `.blend`;
+USD Stage exports the currently loaded geometry through its normal pipeline.
+It does not automatically reload sources before exporting.
+
+Imported objects are linked/read-only. Use **Make Local** before editing their
+geometry or materials; local copies no longer follow source reloads. Keep
+additional authored content in separate local collections when you need the
+source to remain reloadable.
+
+Integration coverage verifies geometry reload, settings persistence across
+save/reopen, and re-export. It does not establish a RealityKit MaterialX or
+USD variant round trip, or baking of linked materials. Blender's Gaussian
+splat importer also does not change the exporter's exclusion of point clouds
+and volumes.
+
 ## 3. Geometry decisions
 
 ### Root prim and mesh options
@@ -155,6 +174,14 @@ process an object that does not reach the file:
   that references a prototype under an abstract `class "prototypes"` subtree,
   so the mesh data appears once. An ordinary composed-stage traversal cannot
   reach that subtree, which is why mesh normalization edits raw `Sdf` specs.
+
+### Normals and matrix attributes
+
+Native export preserves Blender's point, face or corner normal representation.
+A smooth cube exports eight vertex normals for eight points, avoiding repeated
+face-corner values. Mesh matrix attributes survive post-processing as
+`matrix4d[]` primvars for downstream USD tools; this does not establish that
+RealityKit materials can read them.
 
 ### Prim naming and sanitization
 
@@ -182,7 +209,10 @@ never edited, so a surviving external `true` fails preflight with
 
 ## 4. Animation
 
-Animation export is off by default (`export_animation`).
+Animation export is off by default (`export_animation`). The exported
+`framesPerSecond` and `timeCodesPerSecond` preserve the scene's playback rate;
+integration coverage verifies both at 30 fps. Payload layers preserve that
+rate too.
 
 ### What counts as an animated take
 

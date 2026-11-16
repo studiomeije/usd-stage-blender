@@ -45,8 +45,8 @@ Blender's interface.
   the exports.
 
 Blender 5.3's Collection Importer can keep source USD assets reloadable inside
-your scene. See [Blender 5.3 workflows](docs/BLENDER_5_3.md) for the tested
-geometry path, native export improvements, and material round-trip limits.
+your scene. See [reloadable USD source collections](docs/EXPORT_PIPELINE.md#reloadable-usd-source-collections)
+for the workflow and material round-trip limits.
 
 ## Install
 
