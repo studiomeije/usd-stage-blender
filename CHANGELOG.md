@@ -7,6 +7,14 @@ and what you have to do differently. Internal refactors are not listed.
 
 ## Unreleased
 
+- Blender 5.3 is now the minimum supported version. Installation, command-line
+  exports, release packaging and CI use this baseline. Older `.blend` files
+  can still be opened in Blender 5.3.
+- Exports use Blender 5.3's native normal representation and preserve matrix
+  mesh attributes. Reloadable geometry from Blender's USD Collection Importer
+  can be exported through the normal pipeline; see `docs/BLENDER_5_3.md` for
+  the workflow and material round-trip limits.
+
 - An asset referenced through a network `file://server/share/...` URL is now
   copied from that server. The server name used to be dropped, so the export
   looked for the path on your own disk instead. Upper-case `FILE://` URLs are

@@ -5,7 +5,7 @@ MaterialX ShaderGraph, including every place where it substitutes, infers, or
 drops something on your behalf. Read it to predict what a material exports as,
 and to know which Blender controls survive the trip.
 
-*Applies to: Blender 5.2; Reality Composer Pro 3.0.*
+*Applies to: Blender 5.3 and newer; Reality Composer Pro 3.0.*
 
 Function names in parentheses point at the code that makes each decision. Related:
 [ARCHITECTURE.md](ARCHITECTURE.md), [CLI.md](CLI.md).

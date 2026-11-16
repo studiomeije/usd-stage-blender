@@ -22,7 +22,7 @@ env:
   # the repository root holds the rule set.
   RUFF_VERSION: "0.16.7"
   USD_CORE_VERSION: "26.8"
-  # Matches the numpy bundled with Blender 5.2 LTS. Plugin.export.bake_textures
+  # Matches the numpy bundled with Blender 5.3. Plugin.export.bake_textures
   # uses numpy for pixel-buffer work; without it those tests cannot run.
   NUMPY_VERSION: "2.3.4"
   # test_workflow_trust_policy.py parses the workflow YAML; without PyYAML the
@@ -32,10 +32,10 @@ env:
   # pixel checks importorskip themselves, so the bake lane went unverified in
   # every environment - nobody had it installed.
   PILLOW_VERSION: "12.3.0"
-  BLENDER_VERSION: "5.2.0"
-  BLENDER_ARCHIVE_NAME: blender-5.2.0-linux-x64.tar.xz
-  BLENDER_DOWNLOAD_URL: https://download.blender.org/release/Blender5.2/blender-5.2.0-linux-x64.tar.xz
-  BLENDER_DOWNLOAD_SHA256: 96f6c181a30f4950607839dc84d42a354b250d8a0231b098b59b7bc69c351c48
+  BLENDER_VERSION: "5.3.0"
+  BLENDER_ARCHIVE_NAME: blender-5.3.0-linux-x64.tar.xz
+  BLENDER_DOWNLOAD_URL: https://download.blender.org/release/Blender5.3/blender-5.3.0-linux-x64.tar.xz
+  BLENDER_DOWNLOAD_SHA256: dacb8264197a3f7fda6001285a5a506fc97ee943881261c2c3bd63c882f22e05
 
 jobs:
   unit-tests:
@@ -133,7 +133,7 @@ jobs:
           manifest = tomllib.loads(Path("Plugin/blender_manifest.toml").read_text())
           assert manifest["schema_version"] == "1.0.0"
           assert manifest["id"] == "usd_stage"
-          assert manifest["blender_version_min"] == "5.2.0"
+          assert manifest["blender_version_min"] == "5.3.0"
           assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", manifest["version"])
           assert get_version() == manifest["version"]
           PY
@@ -273,8 +273,8 @@ jobs:
           retention-days: 7
           compression-level: 0
 
-  blender-5-2-integration:
-    name: Blender 5.2 integration and installed archive
+  blender-5-3-integration:
+    name: Blender 5.3 integration and installed archive
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -288,9 +288,9 @@ jobs:
 
       - name: Configure isolated Blender paths
         run: |
-          echo "BLENDER_ARCHIVE_PATH=$RUNNER_TOOL_CACHE/blender-downloads/blender-5.2.0-linux-x64.tar.xz" >> "$GITHUB_ENV"
-          echo "BLENDER_ROOT=$RUNNER_TEMP/blender-5.2.0-linux-x64" >> "$GITHUB_ENV"
-          echo "USDSTAGE_BLENDER=$RUNNER_TEMP/blender-5.2.0-linux-x64/blender" >> "$GITHUB_ENV"
+          echo "BLENDER_ARCHIVE_PATH=$RUNNER_TOOL_CACHE/blender-downloads/blender-5.3.0-linux-x64.tar.xz" >> "$GITHUB_ENV"
+          echo "BLENDER_ROOT=$RUNNER_TEMP/blender-5.3.0-linux-x64" >> "$GITHUB_ENV"
+          echo "USDSTAGE_BLENDER=$RUNNER_TEMP/blender-5.3.0-linux-x64/blender" >> "$GITHUB_ENV"
           echo "BLENDER_USER_RESOURCES=$RUNNER_TEMP/blender-test-resources" >> "$GITHUB_ENV"
 
       - name: Set up Python
@@ -326,7 +326,7 @@ jobs:
         id: blender-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.tool_cache }}/blender-downloads/blender-5.2.0-linux-x64.tar.xz
+          path: ${{ runner.tool_cache }}/blender-downloads/blender-5.3.0-linux-x64.tar.xz
           key: blender-${{ env.BLENDER_VERSION }}-linux-x64-${{ env.BLENDER_DOWNLOAD_SHA256 }}
 
       - name: Download pinned Blender
@@ -343,7 +343,7 @@ jobs:
           tar -xf "$BLENDER_ARCHIVE_PATH" -C "$RUNNER_TEMP"
           test -x "$USDSTAGE_BLENDER"
           "$USDSTAGE_BLENDER" --version | tee blender-version.txt
-          grep -Eq '^Blender 5\.2\.0([[:space:]]|$)' blender-version.txt
+          grep -Eq '^Blender 5\.3\.0([[:space:]]|$)' blender-version.txt
 
       - name: Verify shipped node-group parity
         run: |
@@ -392,7 +392,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: blender-5.2-test-results
+          name: blender-5.3-test-results
           path: |
             test-results/blender-integration.xml
             blender-version.txt

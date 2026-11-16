@@ -3,7 +3,7 @@
 This page tells you which Blender features survive an export, and what happens
 to the ones that don't. Read it before you build a scene you intend to ship.
 
-*Applies to: Blender 5.2 LTS; Reality Composer Pro 3; macOS 27, iOS 27,
+*Applies to: Blender 5.3 and newer; Reality Composer Pro 3; macOS 27, iOS 27,
 iPadOS 27, tvOS 27, visionOS 27.*
 
 USD Stage for Blender writes USD — `.usda`, `.usdc`, or `.usdz`. Blender's USD exporter

@@ -5,7 +5,7 @@ survive an export". This page answers the other direction: of the USD that
 RealityKit can consume, how much does this exporter author, and what is left
 on the table.
 
-*Applies to: Blender 5.2 LTS; Reality Composer Pro 3; macOS 27, iOS 27,
+*Applies to: Blender 5.3 and newer; Reality Composer Pro 3; macOS 27, iOS 27,
 iPadOS 27, tvOS 27, visionOS 27; Apple USD Tools 0.25.11.*
 
 ## How to read the tables

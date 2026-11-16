@@ -39,10 +39,14 @@ Blender's interface.
 
 ## Requirements
 
-- Blender 5.2 LTS.
+- Blender 5.3 or newer.
 - `python3`, for the command line.
 - Reality Composer Pro 3, or RealityKit on visionOS, iOS or macOS 27, to open
   the exports.
+
+Blender 5.3's Collection Importer can keep source USD assets reloadable inside
+your scene. See [Blender 5.3 workflows](docs/BLENDER_5_3.md) for the tested
+geometry path, native export improvements, and material round-trip limits.
 
 ## Install
 

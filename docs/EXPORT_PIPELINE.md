@@ -4,7 +4,7 @@ This page explains what happens to geometry, animation, and packaging between
 pressing Export and getting a file. Read it to understand what the exporter
 decides on your behalf, and why re-exporting to the same path is safe.
 
-*Applies to: Blender 5.2 LTS.*
+*Applies to: Blender 5.3 and newer.*
 
 Material translation and texture baking have their own pages
 ([`MATERIAL_TRANSLATION.md`](MATERIAL_TRANSLATION.md), [`BAKING.md`](BAKING.md)).

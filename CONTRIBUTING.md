@@ -13,7 +13,7 @@ says how to create one. Search the open issues first.
 
 ## Setting up a checkout
 
-You need Blender 5.2 LTS, Python 3.13, and [Git LFS](https://git-lfs.com): the
+You need Blender 5.3, Python 3.13, and [Git LFS](https://git-lfs.com): the
 bundled node-group library and the test scenes are LFS files, and without LFS
 they check out as pointer files that Blender cannot open.
 
@@ -57,7 +57,7 @@ The unit tests run without Blender, in a few seconds:
 ```
 
 The integration tests drive a real Blender in the background. They are skipped
-unless `USDSTAGE_BLENDER` names a Blender 5.2 executable:
+unless `USDSTAGE_BLENDER` names a Blender 5.3 executable:
 
 ```bash
 USDSTAGE_BLENDER=/Applications/Blender.app/Contents/MacOS/Blender .venv/bin/python -m pytest tests/integration -q
@@ -79,7 +79,7 @@ material survived.
 ## Making a change
 
 - Branch from `dev` and open the pull request against `dev`.
-- Blender 5.2 LTS is the only supported version. Do not add compatibility code
+- Blender 5.3 is the minimum supported version. Do not add compatibility code
   for older releases.
 - An export that cannot be translated faithfully stops with an error that names
   the node or setting and the fix. Do not add silent fallbacks.

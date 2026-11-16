@@ -87,7 +87,7 @@ second_removed = not second_path.exists() and not second_session.exists()
 
 results = {
     "checks": {
-        "blender_5_2": tuple(bpy.app.version[:2]) == (5, 2),
+        "supported_blender": tuple(bpy.app.version[:2]) >= (5, 3),
         "same_process_same_datablock": same_pointer,
         "first_image_was_dirty": first_was_dirty,
         "first_export_used_dirty_pixels": first_pixel[2] > first_pixel[0],

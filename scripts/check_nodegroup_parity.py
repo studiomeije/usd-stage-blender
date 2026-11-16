@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the shipped node-group library matches a fresh Blender 5.2 build.
+"""Verify the shipped node-group library matches a fresh Blender 5.3 build.
 
 This script must be run by Blender so it can inspect the semantic contents of
 ``.blend`` libraries.  It deliberately compares normalized graph signatures,
@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
 
-REQUIRED_BLENDER_SERIES = (5, 2)
+REQUIRED_BLENDER_SERIES = (5, 3)
 
 # Properties that affect node evaluation.  Socket defaults and graph links are
 # captured separately.  Keeping this list explicit avoids unstable editor-only
@@ -243,7 +243,7 @@ def _property_signature(value: Any, property_names: Iterable[str]) -> Dict[str, 
 def _interface_signature(node_tree: Any) -> List[Dict[str, Any]]:
     interface = getattr(node_tree, "interface", None)
     if interface is None:
-        raise ParityError(f"{node_tree.name}: missing Blender 5.2 node interface")
+        raise ParityError(f"{node_tree.name}: missing Blender 5.3 node interface")
 
     signature: List[Dict[str, Any]] = []
     for item in interface.items_tree:
@@ -596,13 +596,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         import bpy
     except ModuleNotFoundError as exc:  # pragma: no cover - exercised by Blender
         raise SystemExit(
-            "check_nodegroup_parity.py must run inside Blender 5.2"
+            "check_nodegroup_parity.py must run inside Blender 5.3"
         ) from exc
 
     args = _parse_script_args(sys.argv if argv is None else argv)
     if tuple(bpy.app.version[:2]) != REQUIRED_BLENDER_SERIES:
         raise SystemExit(
-            "Node-group parity requires Blender 5.2.x; "
+            "Node-group parity requires Blender 5.3.x; "
             f"found {bpy.app.version_string}"
         )
 

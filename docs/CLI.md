@@ -116,7 +116,7 @@ usdstage version
 ```
 
 ```json
-{"plugin": "1.0.0", "blender": "5.2.0", "python": "3.13.13"}
+{"plugin": "1.0.0", "blender": "5.3.0", "python": "3.13.13"}
 ```
 
 `version` does not load the add-on, so it is the quickest check that

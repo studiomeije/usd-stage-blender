@@ -8,7 +8,7 @@ is in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Design rules
 
-- **Blender 5.2 only.** Older Blender compatibility paths are not retained.
+- **Blender 5.3 minimum.** Older Blender compatibility paths are not retained.
 - **Strict first.** If a material graph cannot be translated deterministically,
   the export fails with an actionable error instead of silently falling back.
 - **One implementation per decision.** The Export button, the command line

@@ -274,18 +274,18 @@ def test_export_operator_records_new_window_manager_warning(monkeypatch):
     assert warnings == ["Blender USD export: Material was simplified"]
 
 
-@pytest.mark.parametrize("version", [(5, 2, 0), (5, 2, 7), (6, 0, 0)])
-def test_runtime_version_gate_accepts_blender_52_and_newer(monkeypatch, version):
+@pytest.mark.parametrize("version", [(5, 3, 0), (5, 3, 7), (6, 0, 0)])
+def test_runtime_version_gate_accepts_blender_53_and_newer(monkeypatch, version):
     monkeypatch.setattr(plugin_package, "bpy", SimpleNamespace(app=SimpleNamespace(version=version)))
 
     assert plugin_package.require_supported_blender_version() == version
 
 
-@pytest.mark.parametrize("version", [(4, 5, 9), (5, 1, 0)])
+@pytest.mark.parametrize("version", [(4, 5, 9), (5, 1, 0), (5, 2, 0), (5, 2, 9)])
 def test_runtime_version_gate_rejects_older_blender(monkeypatch, version):
     monkeypatch.setattr(plugin_package, "bpy", SimpleNamespace(app=SimpleNamespace(version=version)))
 
-    with pytest.raises(RuntimeError, match=r"requires Blender 5\.2\.0 or newer"):
+    with pytest.raises(RuntimeError, match=r"requires Blender 5\.3\.0 or newer"):
         plugin_package.require_supported_blender_version()
 
 
