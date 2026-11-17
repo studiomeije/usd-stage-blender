@@ -38,7 +38,8 @@ _LINK = re.compile(r'(\]\(|src="|href=")([^)"\s#]+)(#[^)"\s]*)?')
 
 #: Fenced code blocks, then inline code spans: never rewritten.
 _FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})[^\n]*\n.*?^[ \t]*\1[ \t]*$", re.M | re.S)
-_CODE_SPAN = re.compile(r"(`+)(?!`).*?(?<!`)\1", re.S)
+# A code span may wrap onto the next line but never crosses a blank line.
+_CODE_SPAN = re.compile(r"(`+)(?!`)(?:(?!\n[ \t]*\n).)*?(?<!`)\1", re.S)
 
 #: A logger under ``mkdocs.`` so --strict counts its warnings.
 log = logging.getLogger("mkdocs.hooks.docs_site")

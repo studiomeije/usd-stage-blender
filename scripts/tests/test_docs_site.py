@@ -101,6 +101,14 @@ def test_code_is_never_rewritten():
     assert missing == []
 
 
+def test_a_stray_backtick_does_not_hide_a_later_paragraph():
+    """A code span ends at a blank line, as in CommonMark."""
+    source = 'A stray ` tick.\n\n<img src="images/a.png">\n\nThen `code`.\n'
+    text, _ = rewrite(source)
+
+    assert '<img src="../images/a.png">' in text
+
+
 def test_a_link_to_a_missing_file_is_reported():
     text, missing = rewrite(
         '<img src="images/user-guide/typo.png"> [gone](../NOPE.md) [ok](SETTINGS.md)',
@@ -112,7 +120,8 @@ def test_a_link_to_a_missing_file_is_reported():
 
 @pytest.mark.parametrize("source", [
     "README.md", "CONTRIBUTING.md", "CHANGELOG.md",
-    *sorted(str(p.relative_to(REPOSITORY_ROOT)) for p in (REPOSITORY_ROOT / "docs").glob("*.md")),
+    # POSIX form on every platform: on Windows str() would give docs\\X.md.
+    *sorted(p.relative_to(REPOSITORY_ROOT).as_posix() for p in (REPOSITORY_ROOT / "docs").glob("*.md")),
 ])
 def test_every_link_in_the_published_pages_resolves(source):
     """The hook's own check, over the real pages, without needing MkDocs."""
