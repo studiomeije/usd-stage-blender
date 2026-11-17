@@ -1,0 +1,85 @@
+# The documentation site, published to GitHub Pages by .github/workflows/docs.yml.
+# The pages are the Markdown in docs/ plus README.md, CONTRIBUTING.md and
+# CHANGELOG.md, which scripts/docs_site.py brings in and cross-links.
+site_name: USD Stage for Blender
+site_description: USD export for RealityKit and Reality Composer Pro
+site_url: https://studiomeije.github.io/usd-stage-blender/
+repo_url: https://github.com/studiomeije/usd-stage-blender
+repo_name: studiomeije/usd-stage-blender
+edit_uri: ""
+copyright: Copyright &copy; 2026 Studio Meije
+
+docs_dir: docs
+site_dir: site
+
+hooks:
+  - scripts/docs_site.py
+
+# mkdocs serve reloads on these too; the root pages live outside docs/.
+watch:
+  - README.md
+  - CONTRIBUTING.md
+  - CHANGELOG.md
+  - scripts/docs_site.py
+
+theme:
+  name: material
+  logo: images/usd-stage-for-blender.png
+  favicon: images/usd-stage-for-blender.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - toc.follow
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - tables
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+      # GitHub's anchor rules, so a #heading link means the same on both.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.superfences
+
+# A link or anchor that does not resolve fails the --strict build.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - User guide: USER_GUIDE.md
+  - Reference:
+      - Documentation index: documentation.md
+      - Settings: SETTINGS.md
+      - Feature support: FEATURE_SUPPORT.md
+      - Command line: CLI.md
+      - Export pipeline: EXPORT_PIPELINE.md
+      - Material translation: MATERIAL_TRANSLATION.md
+      - Baking: BAKING.md
+  - Apple platforms:
+      - Platform contract: APPLE_PLATFORM_CONTRACT.md
+      - Apple conformance: APPLE_CONFORMANCE.md
+      - RealityKit USD support: REALITYKIT_USD_SUPPORT.md
+  - Contributing:
+      - Architecture: ARCHITECTURE.md
+      - Contributing: contributing.md
+  - Changelog: changelog.md

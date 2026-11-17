@@ -151,6 +151,10 @@ folder redacted. What else to attach to a report is in
 
 ## Documentation
 
+The documentation is published at
+[studiomeije.github.io/usd-stage-blender](https://studiomeije.github.io/usd-stage-blender/),
+built from the pages below.
+
 - [docs/USER_GUIDE.md](docs/USER_GUIDE.md) walks through the everyday tasks:
   a first export, choosing a Profile, fixing a refused material, variants,
   colliders and payloads, and reading the result.

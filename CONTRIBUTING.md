@@ -95,6 +95,20 @@ A change in behaviour updates the page that describes it and adds an entry to
 [CHANGELOG.md](CHANGELOG.md) written for users: what now works, what now stops
 the export, and what they have to do differently.
 
+The same Markdown is published as a site with MkDocs: `docs/` plus
+`README.md`, `CONTRIBUTING.md` and `CHANGELOG.md`, whose links
+`scripts/docs_site.py` maps to site pages. Keep links relative to the file they
+are in, as they work on GitHub; the site build rewrites them. To preview it,
+with the versions `.github/workflows/docs.yml` pins:
+
+```bash
+python -m pip install mkdocs==1.6.1 mkdocs-material==9.6.14
+mkdocs serve
+```
+
+`mkdocs build --strict` fails on a link or anchor that does not resolve, and
+runs on every pull request that touches the documentation.
+
 ## License
 
 By contributing you agree that your contribution is licensed under the
