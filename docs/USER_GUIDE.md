@@ -56,6 +56,8 @@ Authoring** inserts RealityKit PBR or Unlit node groups.
    **Animation** to include animation.
 6. Press **Export**.
 
+<img src="images/user-guide/export.png" alt="The USD Stage Export panel after a successful export: the result card with Reveal File and View Details, then Save To, Format, the Profile and method buttons, Selection Only, Animation and Export, with the collapsed sections below" width="300">
+
 A translate export runs in the foreground and takes seconds. A bake export
 runs in a second Blender process, so you can keep working: a **Background
 Job** card shows its progress and a cancel button, and the panel's settings
@@ -100,6 +102,8 @@ export:
    **Incompatible**, and lists every issue.
 3. Press **Select Offending Nodes** to select the nodes to fix.
 
+<img src="images/user-guide/compatibility.png" alt="The RealityKit Compatibility panel in the Shader Editor reporting an incompatible material: a Wireframe node is not supported, with Validate RealityKit Material and Select Offending Nodes buttons" width="300">
+
 Warnings do not stop the export; they mark something that exports
 differently from Cycles. [FEATURE_SUPPORT.md](FEATURE_SUPPORT.md) lists every
 node and how it exports, and [MATERIAL_TRANSLATION.md](MATERIAL_TRANSLATION.md)
@@ -133,6 +137,8 @@ Open **USD Stage Export ▸ Variants** to declare them.
 You can keep working with the alternatives you are not editing hidden or
 excluded from the view layer. The export brings every variant's objects in
 for its own run and puts your view layer back exactly as it was afterwards.
+
+<img src="images/user-guide/variants-geometry.png" alt="The Variants section with a geometry set TopShape selected: its Round and Square variants, Editing: Square, Use as Export Default, the Square collection, Preview in Viewport, and Previews with a thumbnail of each shape" width="300">
 
 ### Make a material set
 
@@ -186,6 +192,8 @@ Changing the geometry set resets every finish to all of its shapes. Objects
 that no shape owns, such as a frame every shape shares, take the finish under
 every shape.
 
+<img src="images/user-guide/variants-material.png" alt="The Variants section with a material set Finish selected: Applies To Tops, the Oak and Walnut variants, Editing: Walnut, and Geometry Restrictions set to TopShape with Walnut offered on Square only" width="300">
+
 ### Variants and baking
 
 A bake export supports geometry sets, not material sets.
@@ -205,6 +213,8 @@ What variants cannot do, and how they are written, is in
 ## Getting an asset ready for an app
 
 These settings are in **Advanced USD ▸ General**.
+
+<img src="images/user-guide/advanced.png" alt="Advanced USD, General section: Root Prim, Asset Kind set to Component, Colliders, Payload Geometry, Custom Properties, Namespace, Blender Names, Allow Unicode, Use Settings for and Instancing" width="300">
 
 - **Asset Kind** marks the root as a USD asset component, and writes its name
   and bounds. Another scene can then reference the asset and lay it out
