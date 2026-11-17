@@ -16,6 +16,7 @@ on:
       - "CHANGELOG.md"
       - "mkdocs.yml"
       - "scripts/docs_site.py"
+      - "scripts/tests/test_docs_site.py"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -24,7 +25,8 @@ permissions:
 
 concurrency:
   group: docs-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push supersedes a pull request build, but a deploy runs to the end.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   PYTHON_VERSION: "3.13"
@@ -34,7 +36,8 @@ env:
 jobs:
   build:
     name: Build documentation site
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -68,7 +71,8 @@ jobs:
     name: Publish to GitHub Pages
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       pages: write
       id-token: write

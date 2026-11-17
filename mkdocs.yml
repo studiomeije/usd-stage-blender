@@ -15,6 +15,13 @@ site_dir: site
 hooks:
   - scripts/docs_site.py
 
+# mkdocs serve reloads on these too; the root pages live outside docs/.
+watch:
+  - README.md
+  - CONTRIBUTING.md
+  - CHANGELOG.md
+  - scripts/docs_site.py
+
 theme:
   name: material
   logo: images/usd-stage-for-blender.png
@@ -44,6 +51,10 @@ markdown_extensions:
   - md_in_html
   - toc:
       permalink: true
+      # GitHub's anchor rules, so a #heading link means the same on both.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
   - pymdownx.superfences
 
 # A link or anchor that does not resolve fails the --strict build.
