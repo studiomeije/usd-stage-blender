@@ -1905,10 +1905,10 @@ def _read_color_attribute(read: _SocketRead):
             "kind": "unresolved",
             "provenance": list(provenance),
             "reason": (
-                f"Color attribute '{layer_name}' was not found on a mesh "
-                "using this material, so the exported USD would carry no "
-                f"primvars:{layer_name} for the geompropvalue read; add "
-                "the attribute or fix the node's name"
+                f"Color attribute '{layer_name}' is not on "
+                f"{_lacking_meshes(from_node, _carries_color_attribute(layer_name))}, "
+                f"so the exported USD would carry no primvars:{layer_name} there "
+                "for the geompropvalue read; add the attribute or fix the node's name"
             ),
         }
     # MaterialX has a dedicated vertex-colour reader, and it is what
@@ -4334,9 +4334,10 @@ def uv_set_resolution(node, uv_map: Optional[str]) -> Tuple[str, Optional[str]]:
         layers = getattr(mesh, "uv_layers", None)
         if layers is None or layers.get(name) is None:
             return name, (
-                f"UV map '{name}' is not on the mesh '{getattr(mesh, 'name', '?')}', which uses "
-                "this material or is offered it by a finish variant, so the export has no such coordinates to read; add the UV map "
-                "or pick one every mesh has"
+                f"UV map '{name}' is not on "
+                f"{_lacking_meshes(node, _carries_uv_map(name))}, "
+                "so the export has no such coordinates to read; add the UV map or pick one "
+                "every mesh has"
             )
         resolved.add("UV0" if _render_uv_layer_name(mesh) == name else name)
     if len(resolved) > 1:
@@ -4480,6 +4481,8 @@ from .readers import (  # noqa: E402,F401
     _READER_NODE_TYPES,
     _attribute_description,
     _attribute_node_expr,
+    _carries_color_attribute,
+    _carries_uv_map,
     _box_projection_expr,
     _broadcast_color3,
     _camera_data_expr,
@@ -4498,6 +4501,7 @@ from .readers import (  # noqa: E402,F401
     _gamma_expr,
     _geometry_reader_expr,
     _image_read_refusal,
+    _lacking_meshes,
     _layer_weight_expr,
     _mapping_vector_expr,
     _material_meshes,

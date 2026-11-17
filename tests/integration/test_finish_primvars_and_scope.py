@@ -581,4 +581,6 @@ def test_a_finish_target_without_the_colour_attribute_is_refused(tmp_path):
     result = _export(blend, output)
 
     assert result.returncode != 0
-    assert "Paint" in result.stdout + result.stderr
+    output_text = result.stdout + result.stderr
+    # The refusal names the object the user can find, not its mesh data.
+    assert "Color attribute 'Paint' is not on object 'Back'" in output_text, output_text

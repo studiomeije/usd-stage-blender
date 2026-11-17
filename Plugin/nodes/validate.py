@@ -651,10 +651,16 @@ def _vertex_color_issues(node) -> List[str]:
             "digit); rename the attribute."
         )
     elif not _color_attribute_reaches_export(node, layer_name):
+        from ..export.materials.extract.readers import (
+            _carries_color_attribute,
+            _lacking_meshes,
+        )
+
         issues.append(
-            f"Color attribute '{layer_name}' was not found on a mesh using "
-            "this material; the exported USD would carry no "
-            f"primvars:{layer_name} for the export to read."
+            f"Color attribute '{layer_name}' is not on "
+            f"{_lacking_meshes(node, _carries_color_attribute(layer_name))}; "
+            f"the exported USD would carry no primvars:{layer_name} there for "
+            "the export to read."
         )
     return issues
 
@@ -749,7 +755,25 @@ def validate_material(
     strict: bool = False,
     clamp_specular_tint: bool = False,
 ) -> Dict[str, object]:
-    """Validate a Blender material against RealityKit compatibility rules."""
+    """Validate a Blender material against RealityKit compatibility rules.
+
+    The meshes a finish variant offers a material are resolved once for the
+    whole material, or once for a whole pass when the caller holds
+    :func:`finish_meshes_resolved` around its loop.
+    """
+    from ..export.materials.extract.readers import finish_meshes_resolved
+
+    with finish_meshes_resolved():
+        return _validate_material(
+            material, only_connected, strict, clamp_specular_tint)
+
+
+def _validate_material(
+    material,
+    only_connected: bool,
+    strict: bool,
+    clamp_specular_tint: bool,
+) -> Dict[str, object]:
     result = {
         "material": getattr(material, "name", "Unknown"),
         "ok": True,

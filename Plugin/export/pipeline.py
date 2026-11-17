@@ -138,25 +138,27 @@ def validate_materials(context, settings, objects, diag) -> None:
         materials_of(objects) if objects is not None
         else rk_validate.collect_scene_materials(context)
     )
-    for material in materials:
-        result = rk_validate.validate_material(
-            material, strict=True, clamp_specular_tint=clamp_specular_tint,
-        )
-        for issue in result["warnings"]:
-            diag.add_validation_issue(material.name, issue, severity="warning")
-            diag.add_warning(
-                f"{material.name}: {issue.get('message', 'Material export warning.')}"
+    from .materials.extract.readers import finish_meshes_resolved
+    with finish_meshes_resolved(context):
+        for material in materials:
+            result = rk_validate.validate_material(
+                material, strict=True, clamp_specular_tint=clamp_specular_tint,
             )
-        if result["errors"]:
-            for issue in result["errors"]:
-                diag.add_validation_issue(material.name, issue, severity="error")
-            raise ExportRefused(
-                f"Unsupported nodes in material '{material.name}'.",
-                code="UNSUPPORTED_MATERIAL_NODES",
-                stage="validation",
-                material=material.name,
-                issues=result["errors"],
-            )
+            for issue in result["warnings"]:
+                diag.add_validation_issue(material.name, issue, severity="warning")
+                diag.add_warning(
+                    f"{material.name}: {issue.get('message', 'Material export warning.')}"
+                )
+            if result["errors"]:
+                for issue in result["errors"]:
+                    diag.add_validation_issue(material.name, issue, severity="error")
+                raise ExportRefused(
+                    f"Unsupported nodes in material '{material.name}'.",
+                    code="UNSUPPORTED_MATERIAL_NODES",
+                    stage="validation",
+                    material=material.name,
+                    issues=result["errors"],
+                )
 
 
 def write_export(context, settings, filepath: str, export_format: str, diag, *,

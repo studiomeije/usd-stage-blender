@@ -20,6 +20,8 @@ and what you have to do differently. Internal refactors are not listed.
   for finishes, or disable variant export before baking.
 - A collider uses its object's geometry without enclosing separate child
   objects. File URLs with escaped percent signs name the correct file.
+- A material refused because a UV map or attribute it reads is missing now
+  names the scene objects that lack it, instead of the mesh data's name.
 - A finish nothing wears reads the UV maps and colour attributes of the meshes
   its set targets, so a renamed render UV map still reads as `st` and a colour
   attribute it reads is no longer refused.

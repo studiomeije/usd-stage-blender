@@ -211,20 +211,22 @@ def collect_validation_snapshot(context=None) -> dict:
         entries = []
         total_errors = 0
         total_warnings = 0
-        for material in materials:
-            result = rk_validate.validate_material(
-                material,
-                strict=True,
-                clamp_specular_tint=clamp_specular_tint,
-            )
-            total_errors += len(result.get("errors", []))
-            total_warnings += len(result.get("warnings", []))
-            entries.append({
-                "name": result.get("material", material.name),
-                "ok": result.get("ok", False),
-                "errors": result.get("errors", []),
-                "warnings": result.get("warnings", []),
-            })
+        from .materials.extract.readers import finish_meshes_resolved
+        with finish_meshes_resolved(context):
+            for material in materials:
+                result = rk_validate.validate_material(
+                    material,
+                    strict=True,
+                    clamp_specular_tint=clamp_specular_tint,
+                )
+                total_errors += len(result.get("errors", []))
+                total_warnings += len(result.get("warnings", []))
+                entries.append({
+                    "name": result.get("material", material.name),
+                    "ok": result.get("ok", False),
+                    "errors": result.get("errors", []),
+                    "warnings": result.get("warnings", []),
+                })
         return _json_safe({
             "ok": total_errors == 0,
             "error_count": total_errors,
