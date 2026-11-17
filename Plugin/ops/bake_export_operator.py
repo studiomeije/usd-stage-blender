@@ -39,6 +39,7 @@ _SERIALIZED_SETTINGS_SKIP_KEYS = {
     "name",
     "history_applied",
     "last_diagnostics_path",
+    "last_export_result",
     "persist_suspended",
     "background_job_dir",
     "background_job_pid",
@@ -64,6 +65,9 @@ def _write_prelaunch_failure_diagnostics(
     if not filepath:
         return None
     diagnostics_path = Path(filepath).with_suffix(".diagnostics.json")
+    from .export_results import record_result
+    record_result(settings, state="error", export_path=filepath,
+                  message=str(message), data={"errors": [str(message)]})
     try:
         from ..export.diagnostics import ExportDiagnostics
         from ..export.support_bundle import collect_environment, collect_scene_snapshot
@@ -87,6 +91,8 @@ def _write_prelaunch_failure_diagnostics(
         diag.set_artifact("diagnostics_path", str(diagnostics_path))
         diag.save(diagnostics_path)
         settings.last_diagnostics_path = str(diagnostics_path)
+        record_result(settings, state="error", export_path=filepath,
+                      diagnostics_path=str(diagnostics_path), message=str(message), data=diag.data)
         return str(diagnostics_path)
     except Exception:
         return None
@@ -128,6 +134,10 @@ class USDSTAGE_OT_bake_export_background(Operator, ExportHelper):
         settings = context.scene.usd_stage_export_settings
         _apply_persisted_settings(context, settings)
         export_format = settings.export_format
+        if not str(settings.filepath or "").strip():
+            self.filename_ext = {"USDA": ".usda", "USDC": ".usdc", "USDZ": ".usdz"}.get(export_format, ".usdz")
+            self._choosing_destination = True
+            return ExportHelper.invoke(self, context, event)
         try:
             self.filepath = _resolve_output_path_from_settings(context, settings, export_format)
         except OutputPathError as exc:
@@ -138,6 +148,9 @@ class USDSTAGE_OT_bake_export_background(Operator, ExportHelper):
     def execute(self, context):
         settings = context.scene.usd_stage_export_settings
         _apply_persisted_settings(context, settings)
+        if getattr(self, "_choosing_destination", False):
+            settings.filepath = self.filepath
+            self._choosing_destination = False
         if not self._apply_ui_profile(settings):
             return {'CANCELLED'}
 
@@ -161,7 +174,9 @@ class USDSTAGE_OT_bake_export_background(Operator, ExportHelper):
                 return {'CANCELLED'}
 
         try:
-            objects_to_export = _collect_export_objects(context, settings)
+            from ..export.animation_export import collect_export_objects
+
+            objects_to_export = collect_export_objects(context, settings)
         except Exception as exc:
             message = str(exc)
             _write_prelaunch_failure_diagnostics(
@@ -374,6 +389,7 @@ class USDSTAGE_OT_cancel_bake_export(Operator):
 
     def execute(self, context):
         settings = context.scene.usd_stage_export_settings
+        from .export_results import retain_background_result
         pid = int(getattr(settings, "background_job_pid", 0))
         job_dir = getattr(settings, "background_job_dir", "")
         if not pid or not job_dir:
@@ -382,7 +398,13 @@ class USDSTAGE_OT_cancel_bake_export(Operator):
 
         status_path = Path(job_dir) / "status.json"
         status = read_job_status(job_dir)
+        if (not status or status.get("state") in ACTIVE_JOB_STATES) and (
+            not status or status_pid(status) != pid
+        ) and pid_is_running(pid):
+            self.report({'ERROR'}, "The worker is still running, but its status cannot verify ownership. Job state was kept.")
+            return {'CANCELLED'}
         if not status or status.get("state") not in ACTIVE_JOB_STATES:
+            retain_background_result(settings, status)
             _cleanup_scene_snapshot(job_dir)
             settings.background_job_pid = 0
             settings.background_job_dir = ""
@@ -391,6 +413,7 @@ class USDSTAGE_OT_cancel_bake_export(Operator):
 
         recorded_pid = status_pid(status)
         if recorded_pid is None or recorded_pid != pid:
+            retain_background_result(settings, status, stale_message="Background job is no longer attached to this Blender session.")
             _cleanup_scene_snapshot(job_dir)
             settings.background_job_pid = 0
             settings.background_job_dir = ""
@@ -399,19 +422,31 @@ class USDSTAGE_OT_cancel_bake_export(Operator):
 
         if pid_is_running(pid):
             _terminate_process(pid)
+            if pid_is_running(pid):
+                self.report({'ERROR'}, "Background job could not be stopped. It remains attached; try canceling again.")
+                return {'CANCELLED'}
         else:
+            retain_background_result(settings, status)
             _cleanup_scene_snapshot(job_dir)
             settings.background_job_pid = 0
             settings.background_job_dir = ""
             self.report({'INFO'}, "Cleared stale background job state.")
             return {'FINISHED'}
 
+        canceled = dict(status)
+        canceled.update(state="canceled", time=time.time(), progress=1.0,
+                        message="Canceled by user", diagnostics_available=False)
+        retain_background_result(settings, canceled)
         _write_status(
             status_path,
             state="canceled",
             progress=1.0,
             message="Canceled by user",
             pid=pid,
+            log_path=status.get("log_path"),
+            export_path=status.get("export_path"),
+            warnings=status.get("warnings"),
+            diagnostics_available=False,
         )
 
         settings.background_job_pid = 0
@@ -429,18 +464,19 @@ class USDSTAGE_OT_clear_bake_job(Operator):
 
     def execute(self, context):
         settings = context.scene.usd_stage_export_settings
+        from .export_results import retain_background_result
         job_dir = getattr(settings, "background_job_dir", "")
         status = read_job_status(job_dir)
         pid = status_pid(status or {})
+        attached_pid = safe_int(getattr(settings, "background_job_pid", 0))
         if (
-            status
-            and status.get("state") in ACTIVE_JOB_STATES
-            and pid is not None
-            and pid_is_running(pid)
+            (not status or status.get("state") in ACTIVE_JOB_STATES)
+            and any(candidate and pid_is_running(candidate) for candidate in (pid, attached_pid))
         ):
             self.report({'ERROR'}, "Background job is active. Cancel it instead.")
             return {'CANCELLED'}
         if job_dir:
+            retain_background_result(settings, status)
             _cleanup_scene_snapshot(job_dir)
         settings.background_job_dir = ""
         settings.background_job_pid = 0
@@ -582,31 +618,30 @@ def _terminate_process(pid: int) -> None:
         os.kill(pid, signal.SIGTERM)
     except Exception:
         return
-    deadline = time.time() + 2.0
-    while time.time() < deadline:
-        if not pid_is_running(pid):
-            return
-        time.sleep(0.1)
+    if _wait_for_exit(pid, 2.0):
+        return
     try:
         os.kill(pid, signal.SIGKILL)
     except Exception:
-        pass
+        return
+    # SIGKILL is asynchronous: give the kernel a moment to reap the process
+    # so the caller's liveness check doesn't report a kill that succeeded.
+    _wait_for_exit(pid, 1.0)
+
+
+def _wait_for_exit(pid: int, timeout: float) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not pid_is_running(pid):
+            return True
+        time.sleep(0.1)
+    return not pid_is_running(pid)
 
 
 def _extract_step_elapsed_seconds(status: dict) -> int | None:
     if not isinstance(status, dict) or status.get("step_elapsed_seconds") is None:
         return None
     return safe_int(status.get("step_elapsed_seconds"))
-
-
-def _collect_export_objects(context, settings):
-    # Centralized with the direct USD export path so selected-only behavior is
-    # identical for UI, CLI, and background jobs.  In particular an empty
-    # selection stays empty (and fails) rather than exporting the whole scene,
-    # while selected skinned meshes include their deforming armature.
-    from ..export.animation_export import collect_export_objects
-
-    return collect_export_objects(context, settings)
 
 
 def _collect_materials_from_objects(objects):
@@ -621,35 +656,6 @@ def _collect_materials_from_objects(objects):
     return materials
 
 
-def _ensure_object_mode(context) -> None:
-    active = context.view_layer.objects.active
-    if active and active.mode != 'OBJECT':
-        bpy.ops.object.mode_set(mode='OBJECT')
-
-
-def _set_render_engine(scene, engine: str) -> None:
-    try:
-        scene.render.engine = engine
-    except Exception:
-        pass
-
-
-def _restore_selection(context, selection, active) -> None:
-    try:
-        for obj in context.view_layer.objects:
-            obj.select_set(False)
-    except Exception:
-        pass
-    for obj in selection:
-        try:
-            obj.select_set(True)
-        except Exception:
-            pass
-    if active:
-        try:
-            context.view_layer.objects.active = active
-        except Exception:
-            pass
 def _serialize_settings(
     settings,
     *,
@@ -1052,6 +1058,8 @@ def _write_status(
     export_path: str | None = None,
     diagnostics_path: str | None = None,
     pid: int | None = None,
+    warnings: list | None = None,
+    diagnostics_available: bool | None = None,
 ) -> None:
     payload = {
         "state": state,
@@ -1069,24 +1077,14 @@ def _write_status(
         payload["diagnostics_path"] = diagnostics_path
     if pid is not None:
         payload["pid"] = int(pid)
+    if warnings:
+        payload["warnings"] = list(warnings)
+    if diagnostics_available is not None:
+        payload["diagnostics_available"] = bool(diagnostics_available)
     try:
         tmp_path = path.with_suffix(".json.tmp")
         tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         tmp_path.replace(path)
-    except Exception:
-        pass
-
-
-def _restore_mode(context, active, mode: str) -> None:
-    if not active:
-        return
-    try:
-        context.view_layer.objects.active = active
-    except Exception:
-        return
-    try:
-        if mode and active.mode != mode:
-            bpy.ops.object.mode_set(mode=mode)
     except Exception:
         pass
 

@@ -18,6 +18,7 @@ from .materials.mapping import (
     authored_texture_mapping_contract,
     mapping_contract_details,
 )
+from .stage_prims import composed_prims
 
 try:
     from pxr import UsdSkel
@@ -267,6 +268,7 @@ def validate_stage(
     report = RealityKitPreflightReport(asset_path=asset_path)
 
     _check_stage_metadata(stage, report)
+    _check_variant_activation_is_unopposed(stage, report)
     prims = _preflight_prims(stage)
     variant_sites = _variant_sites(prims)
     if variant_sites:
@@ -282,6 +284,85 @@ def validate_stage(
     if diagnostics is not None:
         _record_diagnostics(diagnostics, report)
     return report
+
+
+def _check_variant_activation_is_unopposed(stage, report) -> None:
+    """Refuse an opinion that would silently beat the variants.
+
+    Variants sit low in composition strength, so an opinion on the same field
+    in the local layer stack wins and the variant appears to do nothing -
+    Houdini warns about this; here it is fatal, because a variant set that
+    cannot switch is worse than one that was never authored.
+
+    Both properties variants vary are checked: ``active``, which a geometry
+    set switches, and ``material:binding``, which a material set rebinds. The
+    binding matters most in practice, because Blender writes one on every mesh
+    by default; authoring a material variant means removing that first.
+
+    Only authored, non-variant opinions count. The check reads the layers as
+    raw Sdf specs rather than the composed stage: inside a variant the opinion
+    lives under a variant spec, so the two are distinguishable only here.
+    """
+    for layer in stage.GetLayerStack(includeSessionLayers=False):
+        for prim_path, varied in sorted(_variant_varied_properties(layer)):
+            spec = layer.GetPrimAtPath(prim_path)
+            if spec is None or not _has_base_opinion(spec, varied):
+                continue
+            report.add(
+                "error",
+                "VARIANT_OPINION_SHADOWED",
+                (
+                    f"{prim_path} carries a {varied!r} opinion outside its "
+                    "variants, which is stronger than the variant opinions and "
+                    "would stop the variant set switching it."
+                ),
+                prim_path=prim_path,
+                layer=getattr(layer, "identifier", None),
+                varied_property=varied,
+            )
+
+
+def _has_base_opinion(spec, varied: str) -> bool:
+    """Whether this non-variant prim spec authors the varied property."""
+    if varied == "active":
+        return bool(spec.HasInfo("active"))
+    return spec.relationships.get(varied) is not None
+
+
+def _variant_varied_properties(layer) -> set:
+    """``(prim path, property)`` pairs some variant in this layer authors."""
+    varied: set = set()
+
+    def visit(prim_spec) -> None:
+        for variant_set_spec in prim_spec.variantSets.values():
+            for variant_spec in variant_set_spec.variants.values():
+                for descendant in _walk_prim_specs(variant_spec.primSpec):
+                    # Strip the variant selection from the path, leaving the
+                    # prim the opinion lands on once composed.
+                    path = descendant.path.StripAllVariantSelections()
+                    if descendant.HasInfo("active"):
+                        varied.add((path, "active"))
+                    if descendant.relationships.get("material:binding") is not None:
+                        varied.add((path, "material:binding"))
+        for child in prim_spec.nameChildren.values():
+            visit(child)
+
+    root = layer.pseudoRoot
+    for child in root.nameChildren.values():
+        visit(child)
+    return varied
+
+
+def _walk_prim_specs(prim_spec):
+    """``prim_spec`` and every prim spec beneath it, variants included."""
+    stack = [prim_spec]
+    while stack:
+        current = stack.pop()
+        yield current
+        stack.extend(current.nameChildren.values())
+        for variant_set_spec in current.variantSets.values():
+            for variant_spec in variant_set_spec.variants.values():
+                stack.append(variant_spec.primSpec)
 
 
 def _check_composed_stage(
@@ -687,101 +768,10 @@ def _report_variant_limit(
 
 
 def _preflight_prims(stage) -> list[Any]:
-    """Return each composed prim that can affect a RealityKit asset once.
-
-    ``UsdStage.Traverse()`` deliberately stops at instance roots.  Blender's
-    default instanceable-reference export therefore hides the mesh, material,
-    and texture prims below every instance from an ordinary traversal.  Visit
-    each shared prototype exactly once in addition to the ordinary namespace:
-    validating every instance proxy would report the same asset defect once per
-    instance, while omitting prototypes would let those defects ship.
-
-    Blender 5.2 also authors collection definitions below an abstract
-    ``class \"prototypes\"`` prim. ``TraverseAll()`` is required to see that
-    namespace at all. Include only active, loaded, defined class subtrees that
-    an ordinary prim actually references; an unused class must not fail an
-    export. When an internal class reference also creates an OpenUSD prototype,
-    validate the authored class subtree and skip that equivalent prototype so
-    the same defect is not reported twice.
-
-    ``GetPrototypes()`` also returns nested and external-reference prototypes.
-    De-duplicating composed prim paths keeps the helper robust if OpenUSD
-    exposes a nested prototype from more than one range in a future release.
-    """
-    prims: list[Any] = []
-    seen_paths: set[str] = set()
-
-    def append_range(prim_range) -> None:
-        for prim in prim_range:
-            path = str(prim.GetPath())
-            if path in seen_paths:
-                continue
-            seen_paths.add(path)
-            prims.append(prim)
-
-    ordinary_prims = list(stage.Traverse())
-    append_range(ordinary_prims)
-
-    all_namespace_prims = [
-        prim
-        for prim in stage.TraverseAll()
-        if prim.IsActive() and prim.IsLoaded() and prim.IsDefined()
-    ]
-    abstract_roots, class_backed_prototypes = _referenced_abstract_roots(
-        stage,
-        all_namespace_prims,
-    )
-    for abstract_root in abstract_roots:
-        append_range(
-            prim
-            for prim in all_namespace_prims
-            if prim.IsAbstract() and prim.GetPath().HasPrefix(abstract_root.GetPath())
-        )
-
-    for prototype in stage.GetPrototypes():
-        if str(prototype.GetPath()) in class_backed_prototypes:
-            continue
-        append_range(Usd.PrimRange(prototype))
-    return prims
+    """Every prim the preflight judges; see :func:`stage_prims.composed_prims`."""
+    return composed_prims(stage)
 
 
-def _referenced_abstract_roots(stage, prims) -> tuple[list[Any], set[str]]:
-    """Return used internal class roots and prototypes already backed by them."""
-    roots: dict[str, Any] = {}
-    class_backed_prototypes: set[str] = set()
-
-    for prim in prims:
-        if prim.IsAbstract():
-            continue
-        try:
-            references = prim.GetMetadata("references")
-        except Exception:
-            references = None
-        if not references:
-            continue
-        try:
-            items = list(references.GetAddedOrExplicitItems())
-        except Exception:
-            items = []
-
-        for reference in items:
-            if str(getattr(reference, "assetPath", "") or ""):
-                continue
-            target_path = getattr(reference, "primPath", None)
-            if not target_path or bool(getattr(target_path, "isEmpty", False)):
-                continue
-            target = stage.GetPrimAtPath(target_path)
-            if not target or not target.IsAbstract():
-                continue
-            if not (target.IsActive() and target.IsLoaded() and target.IsDefined()):
-                continue
-            roots[str(target.GetPath())] = target
-            if prim.IsInstance():
-                prototype = prim.GetPrototype()
-                if prototype:
-                    class_backed_prototypes.add(str(prototype.GetPath()))
-
-    return list(roots.values()), class_backed_prototypes
 
 
 def _check_stage_metadata(stage, report: RealityKitPreflightReport) -> None:

@@ -255,7 +255,7 @@ def test_export_panel_has_one_artist_facing_export_action_and_contextual_options
     assert 'label(text="Profile")' not in source
     assert 'label(text="Processing")' not in source
     assert 'label(text="Appearance")' not in source
-    assert "column(heading=\"Include\"" in source
+    assert 'text="Selection Only", toggle=True' in source
     assert "export_row.scale_y = 1.4" in source
     assert "_export_route_summary" not in source
     assert "icon='STATUS_WARNING'" in source

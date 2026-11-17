@@ -1,8 +1,13 @@
-"""
-USD post-processing pipeline for RealityKit compatibility.
+"""Post-processing an exported stage for RealityKit.
 
-Runs scene normalization, material rewriting, and texture preparation.
+Blender's exporter writes the geometry; this turns that stage into a
+RealityKit asset: assets localized into the export, names and units
+normalized, materials rewritten as MaterialX, variants, colliders and asset
+metadata authored, and the result checked. Each step is a pass in
+:data:`PASSES`, so adding one is adding an entry there.
 """
+
+from dataclasses import dataclass, field
 
 from .materials.rewrite import rewrite_materials
 from .materials.extract import (
@@ -15,139 +20,202 @@ from .realitykit_preflight import (
     validate_stage,
 )
 from .usd_scene import normalize_scene, _normalize_owned_double_sided_mesh_specs
+from . import asset_metadata
+from . import colliders
+from . import payload
+from . import usd_hook
+from . import variant_authoring
+from . import variant_scope
+from . import variants
 from .usd_assets import prepare_assets
 from .usd_utils import Usd, require_pxr
 
 
+@dataclass
+class _Run:
+    """One post-process run: its inputs, and what each pass leaves for later ones."""
+
+    stage: object
+    usd_path: str
+    settings: object
+    context: object
+    diagnostics: object
+    #: The layers this export owns and may edit, from asset localization.
+    writable_layer_paths: tuple = ()
+    #: Prim renames normalization made, to translate paths captured earlier.
+    prim_path_edits: tuple = ()
+    #: ``{prim path: Blender object name}`` the export hook captured.
+    object_map: dict | None = None
+    #: ``{prim path: (prim, Blender material name)}`` for variant finishes.
+    reserved_materials: dict = field(default_factory=dict)
+    #: The variant sets this export writes; resolved once, by :func:`_variant_plan`.
+    variant_plan: object = None
+    #: ``{mesh path: material paths}`` its finishes offer; see :func:`_finish_materials`.
+    finish_materials: dict | None = None
+
+
+def _reserved_prims(run):
+    return tuple(prim for prim, _name in (run.reserved_materials or {}).values())
+
+
+def _reserved_names(run):
+    return {path: name for path, (_prim, name) in (run.reserved_materials or {}).items()}
+
+
+def _variant_plan(run):
+    """The sets this export writes: in a selected-only export, those it touches.
+
+    Every pass that acts on variants reads this one plan, so a set the export
+    leaves out reserves no material, ships no texture and refuses nothing.
+    """
+    if run.variant_plan is None:
+        run.variant_plan = variant_scope.effective_variant_plan(run.context, run.settings)
+    return run.variant_plan
+
+
+def _finish_materials(run):
+    """``{mesh path: material paths a finish may bind there}``, found once."""
+    if run.finish_materials is None:
+        run.finish_materials = _finish_materials_by_mesh(
+            run.stage, _variant_plan(run), run.object_map, run.prim_path_edits,
+            _reserved_names(run))
+    return run.finish_materials
+
+
+def _rewrite_materials(run):
+    """The MaterialX rewrite, with finish meshes resolved from this run's plan."""
+    from .materials.extract.readers import finish_mesh_scope
+
+    with finish_mesh_scope(_variant_plan(run)):
+        return rewrite_materials(
+            run.stage, run.settings, run.context, run.diagnostics,
+            _reserved_prims(run), _reserved_names(run))
+
+
+#: The passes, in the order they run: ``(phase name, pass, result kept as)``.
+#: The phase name is what the diagnostics report records. A pass reads the run
+#: and returns a value; when it is kept, later passes find it on the run.
+#: Passes look their functions up when they run, so each can be replaced alone.
+#:
+#: The order is the design. Assets are localized while external layers still
+#: resolve against their own anchors; everything after edits only layers the
+#: export owns. Materials are rewritten before anything that reads them, and
+#: variants are authored last, over finished work, so every earlier pass saw
+#: every variant's content and the preflight then judges each selection.
+PASSES = (
+    # Copy every layer and asset the stage depends on into the export, and
+    # record which layers it now owns.
+    ("localize_source_dependencies",
+     lambda run: _prepare_assets(run.stage, run.usd_path, run.settings, run.diagnostics),
+     "writable_layer_paths"),
+    # Up axis, units, prim identifiers. Returns the renames it made.
+    ("normalize_scene",
+     lambda run: _normalize_localized_scene(
+         run.stage, run.settings, run.writable_layer_paths, run.diagnostics),
+     "prim_path_edits"),
+    # Persist the localized layers before any later pass recomposes them.
+    ("save_localized_layers", lambda run: _save_stage(run.stage), None),
+    # A finish may offer a material nothing wears, which Blender writes no
+    # prim for; reserving one lets the rewrite convert it like any other.
+    ("reserve_variant_materials",
+     lambda run: _reserve_variant_materials(
+         run.stage, _variant_plan(run), run.settings, run.diagnostics) or {},
+     "reserved_materials"),
+    ("rewrite_materials", lambda run: _rewrite_materials(run), None),
+    ("author_animation_library",
+     lambda run: author_animation_library(run.stage, run.settings, run.diagnostics),
+     None),
+    # Localize again: material and animation authoring may add asset paths.
+    # This pass's set of owned layers is the authoritative one.
+    ("finalize_assets",
+     lambda run: _prepare_assets(run.stage, run.usd_path, run.settings, run.diagnostics),
+     "writable_layer_paths"),
+    ("normalize_finalized_meshes",
+     lambda run: _normalize_finalized_meshes(
+         run.stage, run.writable_layer_paths, run.diagnostics),
+     None),
+    ("retag_unmapped_color_spaces",
+     lambda run: _retag_unmapped_color_space_names(run.stage, run.diagnostics), None),
+    # These three write what a mesh's materials read, and a mesh's materials
+    # include every finish it can be given, not only the one it wears now.
+    ("author_object_random",
+     lambda run: _author_object_random(run.stage, run.diagnostics, _finish_materials(run)),
+     None),
+    ("author_uv_derivatives",
+     lambda run: _author_uv_derivatives(run.stage, run.diagnostics, _finish_materials(run)),
+     None),
+    ("publish_vertex_colors_as_display_color",
+     lambda run: _publish_vertex_colors_as_display_color(
+         run.stage, run.diagnostics, run.context, _finish_materials(run)),
+     None),
+    ("complete_blend_shape_weights",
+     lambda run: _complete_blend_shape_weights(run.stage, run.diagnostics), None),
+    # Before the variants: a collider is a child of its object's prim, so
+    # authoring it while every variant member still composes gives each one.
+    ("author_colliders",
+     lambda run: _author_colliders(
+         run.stage, run.settings, run.context, run.object_map,
+         run.prim_path_edits, run.diagnostics),
+     None),
+    ("author_variants",
+     lambda run: _author_variants(
+         run.stage, _variant_plan(run), run.settings, run.object_map,
+         run.prim_path_edits, run.diagnostics, _reserved_names(run)),
+     None),
+    # After the variants: the bounds hint describes the selection shipped.
+    ("author_asset_metadata",
+     lambda run: asset_metadata.author_asset_metadata(
+         run.stage, run.usd_path, run.settings, run.diagnostics),
+     None),
+    ("realitykit_preflight",
+     lambda run: _require_realitykit_preflight(
+         run.stage, run.usd_path, run.settings, run.diagnostics),
+     None),
+    # Last: the split only moves where things live, after the preflight has
+    # judged the whole composed asset.
+    ("split_asset_payload",
+     lambda run: payload.split_asset_payload(
+         run.stage, run.usd_path, run.settings, run.diagnostics),
+     None),
+)
+
+
 def process_usd_stage(usd_path: str, settings, context, diagnostics=None) -> None:
-    """Post-process a USD stage for RealityKit compatibility."""
+    """Post-process an exported stage for RealityKit, pass by pass, then save it.
+
+    A pass that raises stops the run; its phase is recorded as failed in the
+    diagnostics report.
+    """
     require_pxr()
 
     stage = Usd.Stage.Open(usd_path, Usd.Stage.LoadAll)
     if not stage:
         raise RuntimeError(f"Failed to open USD stage: {usd_path}")
 
-    # Material extraction may snapshot dirty/generated image pixels to disk.
-    # Keep those files alive through the final texture localization, then clear
-    # every export-local cache entry and temp file even if a later phase fails.
+    # Material extraction may snapshot generated image pixels to disk. Keep
+    # those files alive through the final asset localization, then clear them
+    # even if a pass fails.
     begin_image_staging_session(diagnostics)
     try:
-        # Resolve asset opinions while external source layers still retain their
-        # original resolver anchors. Composition layers are then copied into the
-        # export-owned namespace before any namespace or schema mutation occurs.
-        writable_layer_paths = _run_step(
-            diagnostics,
-            "localize_source_dependencies",
-            _prepare_assets,
-            stage,
-            usd_path,
-            settings,
-            diagnostics,
+        run = _Run(
+            stage=stage,
+            usd_path=usd_path,
+            settings=settings,
+            context=context,
+            diagnostics=diagnostics,
+            # Read once: reading clears it, and two passes need the same map.
+            object_map=usd_hook.consume_captured_object_map(),
         )
-        _run_step(
-            diagnostics,
-            "normalize_scene",
-            _normalize_localized_scene,
-            stage,
-            settings,
-            writable_layer_paths,
-            diagnostics,
-        )
-
-        # Persist the localized, normalized layer stack before later passes can
-        # add or rewrite composition arcs. Even a semantically identical Sdf
-        # arc edit may trigger recomposition; no such reload may resurrect the
-        # pre-normalized bytes copied from an external source layer.
-        _run_step(
-            diagnostics,
-            "save_localized_layers",
-            _save_stage,
-            stage,
-        )
-
-        _run_step(diagnostics, "rewrite_materials", rewrite_materials, stage, settings, context, diagnostics)
-
-        _run_step(diagnostics, "author_animation_library", author_animation_library, stage, settings, diagnostics)
-
-        # Catch any asset opinions authored by material/animation post-processing.
-        # All composition arcs already point to output-owned layers at this point.
-        final_writable_layer_paths = _run_step(
-            diagnostics,
-            "finalize_assets",
-            _prepare_assets,
-            stage,
-            usd_path,
-            settings,
-            diagnostics,
-        )
-        # Material/animation authoring normally adds only root-layer schemas,
-        # but the final localization pass is the authoritative ownership set.
-        # Re-run the raw Sdf normalization over that exact set so a newly
-        # discovered inactive USD-valued asset cannot bypass the portable
-        # double-sided contract. Already-normalized owners do not warn twice.
-        _run_step(
-            diagnostics,
-            "normalize_finalized_meshes",
-            _normalize_finalized_meshes,
-            stage,
-            final_writable_layer_paths,
-            diagnostics,
-        )
-        _run_step(
-            diagnostics,
-            "retag_unmapped_color_spaces",
-            _retag_unmapped_color_space_names,
-            stage,
-            diagnostics,
-        )
-        _run_step(
-            diagnostics,
-            "author_object_random",
-            _author_object_random,
-            stage,
-            diagnostics,
-        )
-        _run_step(
-            diagnostics,
-            "author_uv_derivatives",
-            _author_uv_derivatives,
-            stage,
-            diagnostics,
-        )
-        _run_step(
-            diagnostics,
-            "publish_vertex_colors_as_display_color",
-            _publish_vertex_colors_as_display_color,
-            stage,
-            diagnostics,
-            context,
-        )
-        _run_step(
-            diagnostics,
-            "complete_blend_shape_weights",
-            _complete_blend_shape_weights,
-            stage,
-            diagnostics,
-        )
-        _run_step(
-            diagnostics,
-            "realitykit_preflight",
-            _require_realitykit_preflight,
-            stage,
-            usd_path,
-            settings,
-            diagnostics,
-        )
+        for name, run_pass, keep_as in PASSES:
+            result = _run_step(diagnostics, name, run_pass, run)
+            if keep_as:
+                setattr(run, keep_as, result)
 
         if diagnostics:
             diagnostics.begin_phase("stage_save", {"usd_path": usd_path})
         stage.Save()
         if diagnostics:
             diagnostics.end_phase("stage_save")
-
-        if diagnostics:
-            # A progress note, not a warning: it fires on every successful
-            # export and consumed one of the few user-visible warning slots.
             diagnostics.add_info("USD stage post-processed for RealityKit compatibility")
     finally:
         cleanup_image_staging_session(diagnostics)
@@ -216,6 +284,94 @@ def _run_step(diagnostics, name: str, func, *args):
     if diagnostics:
         diagnostics.end_phase(name)
     return result
+
+
+def _author_colliders(
+    stage, settings, context, object_map, prim_path_edits, diagnostics=None
+):
+    """Author RealityKit collider components for Blender's rigid bodies.
+
+    Before the variants, not after: a collider is a child of the object's
+    prim, so authoring it while everything is still composed gives every
+    variant member one, and deactivating a member later takes its collider
+    with it. Afterwards, a member outside the default selection has no prim
+    to measure and would silently go without.
+    """
+    members = colliders.resolve_collider_plan(context, settings)
+    if not members:
+        return ()
+    return colliders.author_colliders(
+        stage, members, object_map, prim_path_edits, diagnostics
+    )
+
+
+def _reserve_variant_materials(stage, plan, settings, diagnostics=None):
+    """Define a Material prim for every finish in ``plan``, ahead of the rewrite.
+
+    ``plan`` is the export's own scope: a set a selected-only export leaves
+    out reserves nothing, so its materials are neither converted nor shipped.
+
+    Returns ``{prim path: (prim, Blender material name)}``.
+    """
+    if plan.is_empty:
+        return {}
+    variants.require_valid_variant_plan(plan, diagnostics)
+    return variant_authoring.reserve_variant_materials(stage, plan, settings)
+
+
+def _author_variants(
+    stage, plan, settings, object_map, prim_path_edits, diagnostics=None,
+    material_names=None,
+):
+    """Author the variant sets in the export's scope, if there are any."""
+    if plan.is_empty:
+        return ()
+
+    # Already validated by reserve_variant_materials, which runs first.
+    authored = variant_authoring.author_variants(
+        stage,
+        plan,
+        object_map,
+        prim_path_edits,
+        settings,
+        diagnostics,
+        material_names=material_names,
+    )
+    if diagnostics and authored:
+        diagnostics.set_variant_sets(_variant_sidecar_entries(plan, authored))
+    return authored
+
+
+def _variant_sidecar_entries(plan, authored) -> list:
+    """What each authored set holds, for the diagnostics sidecar."""
+    entries = []
+    for variant_set in plan.sets:
+        if variant_set.name not in authored:
+            continue
+        entry = {
+            "name": variant_set.name,
+            "kind": variant_set.kind,
+            "default_variant": variant_set.default_variant,
+        }
+        if variant_set.kind == variants.MATERIAL:
+            entry["targets"] = list(variant_set.target_object_names)
+            if variant_set.parent_set:
+                entry["nested_in"] = variant_set.parent_set
+            entry["variants"] = [
+                {"name": variant.name, "material": variant.material_name}
+                for variant in variant_set.variants
+            ]
+        else:
+            entry["variants"] = [
+                {
+                    "name": variant.name,
+                    "collection": variant.collection_name,
+                    "objects": list(variant.object_names),
+                }
+                for variant in variant_set.variants
+            ]
+        entries.append(entry)
+    return entries
 
 
 def _normalize_localized_scene(stage, settings, writable_layer_paths, diagnostics=None):
@@ -352,8 +508,53 @@ def _corner_uvs(prim, corner_count):
     return None
 
 
-def _meshes_reading_primvar(stage, primvar_name):
-    """Mesh prims whose bound material, or a face subset's, reads ``primvar_name``."""
+def _finish_materials_by_mesh(
+    stage, plan, object_map, prim_path_edits, material_names
+) -> dict:
+    """``{mesh path: material paths}`` each finish set may bind on that mesh.
+
+    A finish is bound later, inside the variant that offers it, so until then
+    the stage shows only the material a mesh wears now. The passes that write
+    what a material reads ask this too, or a finish whose Bump, Object Random
+    or vertex colours the worn material lacks would read nothing.
+
+    The meshes are the ones :mod:`variant_authoring` binds, found the same
+    way; a finish's material is the prim reserved for it.
+    """
+    from pxr import Sdf, UsdGeom
+
+    if plan.is_empty or not object_map:
+        return {}
+    by_name = {name: Sdf.Path(path) for path, name in (material_names or {}).items()}
+
+    offered: dict = {}
+    for variant_set in plan.sets:
+        if variant_set.kind != variants.MATERIAL:
+            continue
+        materials = {
+            by_name[variant.material_name]
+            for variant in variant_set.variants
+            if variant.has_material and variant.material_name in by_name
+        }
+        if not materials:
+            continue
+        for bound in variant_authoring.finish_binding_paths(
+            stage, object_map, prim_path_edits, variant_set.target_objects
+        ):
+            prim = stage.GetPrimAtPath(bound)
+            if prim and prim.IsA(UsdGeom.Subset):
+                prim = prim.GetParent()
+            if prim and prim.IsA(UsdGeom.Mesh):
+                offered.setdefault(prim.GetPath(), set()).update(materials)
+    return {path: frozenset(found) for path, found in offered.items()}
+
+
+def _meshes_reading_primvar(stage, primvar_name, finish_materials=None):
+    """Mesh prims whose material reads ``primvar_name``.
+
+    A mesh's materials are its own binding, its face subsets', and any
+    ``finish_materials`` offers it (``{mesh path: material paths}``).
+    """
     from pxr import UsdGeom, UsdShade
 
     reading = set()
@@ -383,7 +584,9 @@ def _meshes_reading_primvar(stage, primvar_name):
         if not prim.IsA(UsdGeom.Mesh):
             continue
         subsets = [child for child in prim.GetChildren() if child.IsA(UsdGeom.Subset)]
-        if bound(prim) or any(bound(subset) for subset in subsets):
+        offered = (finish_materials or {}).get(prim.GetPath(), ())
+        if (bound(prim) or any(bound(subset) for subset in subsets)
+                or any(path in reading for path in offered)):
             meshes.append(prim)
     return meshes
 
@@ -421,8 +624,11 @@ def _uv_derivatives(points, counts, indices, uvs):
     return dpdu, dpdv
 
 
-def _author_uv_derivatives(stage, diagnostics=None) -> None:
+def _author_uv_derivatives(stage, diagnostics=None, finish_materials=None) -> None:
     """Write dP/du and dP/dv on each mesh whose material has a Bump.
+
+    A material a finish offers the mesh counts (``finish_materials``, as
+    :func:`_meshes_reading_primvar` takes it).
 
     The Bump translation differences its height along the UV parametrization
     and needs the surface's metric there to turn that into a gradient. These
@@ -433,7 +639,7 @@ def _author_uv_derivatives(stage, diagnostics=None) -> None:
     from .materials.extract.core import UV_DERIVATIVE_PRIMVARS
 
     written, missing = [], []
-    for prim in _meshes_reading_primvar(stage, UV_DERIVATIVE_PRIMVARS[0]):
+    for prim in _meshes_reading_primvar(stage, UV_DERIVATIVE_PRIMVARS[0], finish_materials):
         mesh = UsdGeom.Mesh(prim)
         points = mesh.GetPointsAttr().Get()
         counts = mesh.GetFaceVertexCountsAttr().Get()
@@ -471,8 +677,11 @@ def _blender_object_name(prim):
     return None
 
 
-def _author_object_random(stage, diagnostics=None) -> None:
+def _author_object_random(stage, diagnostics=None, finish_materials=None) -> None:
     """Write Cycles' Object Info Random on each mesh whose material reads it.
+
+    A material a finish offers the mesh counts (``finish_materials``, as
+    :func:`_meshes_reading_primvar` takes it).
 
     The value is ``cycles_object_random`` of the Blender object's name, which
     the USD exporter records as a custom property on the object's prim, and it
@@ -484,7 +693,7 @@ def _author_object_random(stage, diagnostics=None) -> None:
     from .materials.extract.core import OBJECT_RANDOM_PRIMVAR, cycles_object_random
 
     written, unnamed = [], []
-    for prim in _meshes_reading_primvar(stage, OBJECT_RANDOM_PRIMVAR):
+    for prim in _meshes_reading_primvar(stage, OBJECT_RANDOM_PRIMVAR, finish_materials):
         name = _blender_object_name(prim)
         if name is None:
             unnamed.append(str(prim.GetPath()))
@@ -549,11 +758,15 @@ def _blender_first_color_attribute(prim, context) -> "str | None":
         return None
 
 
-def _publish_vertex_colors_as_display_color(stage, diagnostics=None, context=None) -> None:
+def _publish_vertex_colors_as_display_color(
+    stage, diagnostics=None, context=None, finish_materials=None
+) -> None:
     """Copy a mesh's first colour attribute into displayColor/displayOpacity.
 
-    Only meshes whose bound material actually reads vertex colours are
-    touched, and an already-populated displayColor is never overwritten.
+    Only meshes whose material actually reads vertex colours are touched, and
+    an already-populated displayColor is never overwritten. A material a
+    finish offers the mesh counts (``finish_materials``, ``{mesh path:
+    material paths}``): it is bound later, and would otherwise read nothing.
 
     "Bound" includes materials reached through a GeomSubset. Blender writes a
     multi-material mesh as one Mesh whose direct binding is slot 0 plus a
@@ -581,7 +794,10 @@ def _publish_vertex_colors_as_display_color(stage, diagnostics=None, context=Non
             material = binding.ComputeBoundMaterial()[0]
             if reads_vertex_color(material.GetPrim() if material else None):
                 return True
-        return False
+        return any(
+            reads_vertex_color(stage.GetPrimAtPath(path))
+            for path in (finish_materials or {}).get(prim.GetPath(), ())
+        )
 
     published = []
     for prim in stage.Traverse():

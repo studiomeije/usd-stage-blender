@@ -1,5 +1,7 @@
 """Surface readers: nodes that read the surface, the view or the mesh."""
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 import math
 import re
 from typing import Any, Dict, Optional
@@ -1683,13 +1685,19 @@ _ATTRIBUTE_READABLE_DOMAINS = frozenset({"POINT", "CORNER"})
 
 
 def _material_meshes(node):
-    """Meshes that use the material owning ``node``; None outside Blender."""
+    """Meshes that use the material owning ``node``; None outside Blender.
+
+    A material a finish variant offers counts the meshes of that set's
+    targets too: it is bound there inside the variant, so the UV maps and
+    attributes it reads must be found on them, not guessed.
+    """
     try:
         import bpy
         meshes = bpy.data.meshes
         materials = bpy.data.materials
     except Exception:
         return None
+    context = getattr(bpy, "context", None)
     node_tree = getattr(node, "id_data", None)
     owners = [material for material in materials if getattr(material, "node_tree", None) == node_tree]
     found = []
@@ -1697,32 +1705,262 @@ def _material_meshes(node):
         mesh_materials = [m for m in (getattr(mesh, "materials", []) or []) if m is not None]
         if any(any(candidate == owner for owner in owners) for candidate in mesh_materials):
             found.append(mesh)
+    for mesh in _finish_target_meshes(context, owners):
+        if not any(mesh == existing for existing in found):
+            found.append(mesh)
     return found
+
+
+#: The finish meshes in force: ``{material name: meshes}`` a finish may bind
+#: each material on, set for an export run by :func:`finish_mesh_scope`, or a
+#: :class:`_LazyFinishMeshes` set for a validation pass by
+#: :func:`finish_meshes_resolved`. None outside both.
+_FINISH_MESHES: ContextVar = ContextVar("usdstage_finish_meshes", default=None)
+
+
+@contextmanager
+def finish_mesh_scope(plan):
+    """Resolve the finish meshes once, from the export's own variant plan.
+
+    The material rewrite asks for a material's meshes once per node that
+    reads mesh data; resolving the plan each time would repeat the work and
+    could disagree with the scope the rest of the export uses.
+    """
+    token = _FINISH_MESHES.set(_finish_meshes_by_material(plan))
+    try:
+        yield
+    finally:
+        _FINISH_MESHES.reset(token)
+
+
+class _LazyFinishMeshes:
+    """Finish meshes resolved on the first lookup that needs them, then kept."""
+
+    def __init__(self, context):
+        self.context = context
+        self.by_material = None
+
+    def get(self) -> dict:
+        if self.by_material is None:
+            self.by_material = _resolve_finish_meshes(self.context)
+        return self.by_material
+
+
+@contextmanager
+def finish_meshes_resolved(context=None):
+    """Resolve the finish meshes at most once for everything inside.
+
+    For validation outside an export, which checks material after material
+    and node after node. Nothing is resolved until a node actually reads
+    mesh data, so a material that reads none costs nothing. Re-entrant:
+    inside an export's :func:`finish_mesh_scope`, or an outer call of this,
+    it changes nothing.
+    """
+    if _FINISH_MESHES.get() is not None:
+        yield
+        return
+    if context is None:
+        try:
+            import bpy
+            context = bpy.context
+        except Exception:
+            context = None
+    token = _FINISH_MESHES.set(_LazyFinishMeshes(context))
+    try:
+        yield
+    finally:
+        _FINISH_MESHES.reset(token)
+
+
+def _resolve_finish_meshes(context) -> dict:
+    """``{material name: meshes}`` for the export ``context`` would run.
+
+    Uses the export's effective scope. Validation must still answer when
+    that scope cannot be worked out - a selected-only scene whose rig is
+    broken, say, which the export itself refuses on its own - so it falls
+    back to every declared set: a wider check, never a narrower one.
+    """
+    scene = getattr(context, "scene", None)
+    settings = getattr(scene, "usd_stage_export_settings", None)
+    if settings is None:
+        return {}
+    from ...variant_scope import effective_variant_plan
+    from ...variants import resolve_variant_plan
+
+    try:
+        plan = effective_variant_plan(context, settings)
+    except RuntimeError:
+        plan = resolve_variant_plan(context, settings)
+    return _finish_meshes_by_material(plan)
+
+
+def _finish_meshes_by_material(plan) -> dict:
+    """``{material name: meshes}`` from :func:`variants.finish_material_targets`.
+
+    An instancing target contributes the meshes of the collection it shows,
+    since those are what the finish rebinds.
+    """
+    from ...object_scope import rna_identity
+    from ...variants import finish_material_targets
+
+    by_material = {}
+    for name, targets in finish_material_targets(plan).items():
+        meshes, seen = [], set()
+        stack = list(targets)
+        while stack:
+            obj = stack.pop()
+            if rna_identity(obj) in seen:
+                continue
+            seen.add(rna_identity(obj))
+            if getattr(obj, "type", None) == "MESH" and getattr(obj, "data", None) is not None:
+                meshes.append(obj.data)
+            collection = getattr(obj, "instance_collection", None)
+            if getattr(obj, "instance_type", None) == "COLLECTION" and collection is not None:
+                stack.extend(getattr(collection, "all_objects", None) or ())
+        by_material[name] = meshes
+    return by_material
+
+
+def _finish_target_meshes(context, owners) -> list:
+    """Meshes a finish may bind one of ``owners`` on, in the export's scope."""
+    scoped = _FINISH_MESHES.get()
+    if scoped is None:
+        by_material = _resolve_finish_meshes(context)
+    elif isinstance(scoped, _LazyFinishMeshes):
+        by_material = scoped.get()
+    else:
+        by_material = scoped
+    found = []
+    for owner in owners:
+        found.extend(by_material.get(str(getattr(owner, "name", "")), ()))
+    return found
+
+
+#: How many objects or meshes a refusal names before "and N more".
+_NAMED_IN_REFUSAL = 3
+
+
+def _objects_by_mesh() -> dict:
+    """``{mesh pointer: sorted object names}`` over the current scene."""
+    try:
+        import bpy
+        scene = getattr(bpy.context, "scene", None)
+        objects = scene.objects if scene is not None else bpy.data.objects
+    except Exception:
+        return {}
+    users: dict = {}
+    for obj in objects:
+        data = getattr(obj, "data", None)
+        if data is not None:
+            users.setdefault(_mesh_key(data), []).append(obj.name)
+    return {key: sorted(names) for key, names in users.items()}
+
+
+def _mesh_key(mesh) -> int:
+    try:
+        return int(mesh.as_pointer())
+    except Exception:
+        return id(mesh)
+
+
+def _named(names: list) -> str:
+    shown = ", ".join(f"'{name}'" for name in names[:_NAMED_IN_REFUSAL])
+    extra = len(names) - _NAMED_IN_REFUSAL
+    return f"{shown} and {extra} more" if extra > 0 else shown
+
+
+def _mesh_names(mesh, users: dict) -> list:
+    """The scene objects using ``mesh``, or none when no scene object does."""
+    return users.get(_mesh_key(mesh)) or []
+
+
+def _lacking_meshes(node, carries) -> str:
+    """Where a refused read is missing, phrased to follow "is not on".
+
+    Names the scene objects whose meshes use (or are offered) this node's
+    material and fail ``carries`` - at most a few, then a count - or says no
+    mesh uses the material.
+    """
+    meshes = _core._material_meshes(node)
+    lacking = [mesh for mesh in (meshes or ()) if not carries(mesh)]
+    if not lacking:
+        return "any mesh using this material"
+    users = _objects_by_mesh()
+    objects, unnamed = [], []
+    for mesh in lacking:
+        names = _mesh_names(mesh, users)
+        if names:
+            # _material_meshes lists each mesh once, and an object has one
+            # mesh, so no name can repeat.
+            objects.extend(names)
+        else:
+            unnamed.append(str(getattr(mesh, "name", "?")))
+    parts = []
+    if objects:
+        parts.append(f"{'object' if len(objects) == 1 else 'objects'} {_named(objects)}")
+    if unnamed:
+        parts.append(f"{'mesh' if len(unnamed) == 1 else 'meshes'} {_named(unnamed)}")
+    single = len(objects) + len(unnamed) == 1
+    verb = "uses" if single else "use"
+    offered = "is" if single else "are"
+    return (
+        " and ".join(parts)
+        + f", which {verb} this material or {offered} offered it by a finish variant"
+    )
+
+
+def _carries_uv_map(name: str):
+    def carries(mesh) -> bool:
+        layers = getattr(mesh, "uv_layers", None)
+        return layers is not None and layers.get(name) is not None
+    return carries
+
+
+def _carries_color_attribute(name: str):
+    def carries(mesh) -> bool:
+        attributes = getattr(mesh, "color_attributes", None)
+        return attributes is not None and attributes.get(name) is not None
+    return carries
+
+
+def _carries_attribute(name: str):
+    def carries(mesh) -> bool:
+        uv_layers = getattr(mesh, "uv_layers", None)
+        if uv_layers is not None and uv_layers.get(name) is not None:
+            return True
+        attributes = getattr(mesh, "attributes", None)
+        return attributes is not None and attributes.get(name) is not None
+    return carries
 
 
 def _attribute_description(node, name: str):
     """What ``name`` is on the meshes using this material.
 
     ``("uv", None, "CORNER")``, ``("color", data_type, domain)``,
-    ``("generic", data_type, domain)``, or None when no such mesh carries it.
+    ``("generic", data_type, domain)``, or None unless every such mesh -
+    including one a finish variant offers the material - carries it: a mesh
+    without it would read nothing. The first mesh says what it is.
     Outside a live Blender session the graph is trusted as a float attribute.
     """
     meshes = _core._material_meshes(node)
     if meshes is None:
         return ("generic", "FLOAT", "POINT")
+    description = None
     for mesh in meshes:
         uv_layers = getattr(mesh, "uv_layers", None)
         if uv_layers is not None and uv_layers.get(name) is not None:
-            return ("uv", None, "CORNER")
+            description = description or ("uv", None, "CORNER")
+            continue
         attributes = getattr(mesh, "attributes", None)
         attribute = attributes.get(name) if attributes is not None else None
         if attribute is None:
-            continue
-        data_type = (getattr(attribute, "data_type", "") or "").upper()
-        domain = (getattr(attribute, "domain", "") or "").upper()
-        kind = "color" if data_type in _ATTRIBUTE_COLOR_TYPES else "generic"
-        return (kind, data_type, domain)
-    return None
+            return None
+        if description is None:
+            data_type = (getattr(attribute, "data_type", "") or "").upper()
+            domain = (getattr(attribute, "domain", "") or "").upper()
+            kind = "color" if data_type in _ATTRIBUTE_COLOR_TYPES else "generic"
+            description = (kind, data_type, domain)
+    return description
 
 
 def _attribute_node_expr(node, from_socket, provenance) -> Dict[str, Any]:
@@ -1758,8 +1996,8 @@ def _attribute_node_expr(node, from_socket, provenance) -> Dict[str, Any]:
     found = _core._attribute_description(node, name)
     if found is None:
         return refuse(
-            f"Attribute '{name}' was not found on a mesh using this material, so the export "
-            f"carries no primvars:{name}; add the attribute or fix the name"
+            f"Attribute '{name}' is not on {_lacking_meshes(node, _carries_attribute(name))}, "
+            f"so the export carries no primvars:{name} there; add the attribute or fix the name"
         )
     kind, data_type, domain = found
     one = _expr._constant_expr(1.0)

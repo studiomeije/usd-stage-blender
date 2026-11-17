@@ -56,36 +56,38 @@ def handle(args: dict) -> dict:
     total_errors = 0
     total_warnings = 0
 
-    for mat in materials:
-        result = rk_validate.validate_material(
-            mat,
-            strict=True,
-            clamp_specular_tint=clamp_specular_tint,
-        )
-        entry = {
-            "name": result["material"],
-            "ok": result["ok"],
-            "errors": [
-                {
-                    "node_name": e.get("node_name", ""),
-                    "node_type": e.get("node_type", ""),
-                    "message": e.get("message", ""),
-                }
-                for e in result["errors"]
-            ],
-        }
-        if not only_errors:
-            entry["warnings"] = [
-                {
-                    "node_name": w.get("node_name", ""),
-                    "node_type": w.get("node_type", ""),
-                    "message": w.get("message", ""),
-                }
-                for w in result["warnings"]
-            ]
-            total_warnings += len(result["warnings"])
-        total_errors += len(result["errors"])
-        results.append(entry)
+    from ...export.materials.extract.readers import finish_meshes_resolved
+    with finish_meshes_resolved(bpy.context):
+        for mat in materials:
+            result = rk_validate.validate_material(
+                mat,
+                strict=True,
+                clamp_specular_tint=clamp_specular_tint,
+            )
+            entry = {
+                "name": result["material"],
+                "ok": result["ok"],
+                "errors": [
+                    {
+                        "node_name": e.get("node_name", ""),
+                        "node_type": e.get("node_type", ""),
+                        "message": e.get("message", ""),
+                    }
+                    for e in result["errors"]
+                ],
+            }
+            if not only_errors:
+                entry["warnings"] = [
+                    {
+                        "node_name": w.get("node_name", ""),
+                        "node_type": w.get("node_type", ""),
+                        "message": w.get("message", ""),
+                    }
+                    for w in result["warnings"]
+                ]
+                total_warnings += len(result["warnings"])
+            total_errors += len(result["errors"])
+            results.append(entry)
 
     all_ok = total_errors == 0
     summary = {

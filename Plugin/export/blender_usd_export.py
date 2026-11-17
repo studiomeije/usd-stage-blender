@@ -30,6 +30,7 @@ from ..apple_contract import (
 )
 from . import animation_export
 from . import usd_hook
+from . import variants
 from .staging_namespace import (
     forget_native_texture_copies,
     record_native_texture_copies,
@@ -359,6 +360,7 @@ def export_blender_scene(
     original_selection = list(context.selected_objects)
     original_active = context.active_object
     animation_state = None
+    variant_visibility_state = None
     export_completed = False
 
     try:
@@ -370,6 +372,16 @@ def export_blender_scene(
 
         # Orientation and units are fixed by the Apple spatial contract in
         # ``_build_export_kwargs``; they are not scene settings.
+
+        # Open every variant member's path into the view layer first. The
+        # variant an artist is not looking at is usually hidden, and Blender's
+        # exporter would leave it out - including from the scope
+        # ``prepare_animation_export`` is about to collect, which is why this
+        # runs before it rather than after.
+        variant_visibility_state = variants.prepare_variant_visibility(
+            context,
+            variants.resolve_variant_plan(context, settings),
+        )
 
         # If exporting animations, ensure all actions are serialized into a single NLA
         # track so downstream tools (Reality Composer Pro) can clip the timeline.
@@ -406,6 +418,10 @@ def export_blender_scene(
     finally:
         if animation_state is not None:
             animation_export.restore_animation_export(animation_state)
+        # Staged last, restored first: the user's view layer goes back exactly
+        # as it was even when the export raised.
+        if variant_visibility_state is not None:
+            variants.restore_variant_visibility(variant_visibility_state)
 
         # Restore selection
         try:

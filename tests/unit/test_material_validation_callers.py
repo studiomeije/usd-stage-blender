@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -76,6 +77,9 @@ class _FakeDiagnostics:
 
     def add_validation_issue(self, *_args, **_kwargs):
         return None
+
+    def add_error(self, message):
+        self.data.setdefault("errors", []).append(message)
 
     def begin_phase(self, *_args, **_kwargs):
         return None
@@ -425,6 +429,7 @@ def _load_export_operator_with_blender_stubs(monkeypatch):
         pass
 
     bpy_props.StringProperty = lambda **_kwargs: None
+    bpy_props.BoolProperty = lambda **_kwargs: None
     bpy_types.Operator = Operator
     bpy.types = bpy_types
 
@@ -575,6 +580,114 @@ def test_ui_export_fails_selected_only_empty_before_export(monkeypatch, tmp_path
     )
 
 
+def test_first_export_opens_destination_picker(monkeypatch):
+    module = _load_export_operator_with_blender_stubs(monkeypatch)
+    settings = _settings(export_format="USDA", filepath="")
+    context = SimpleNamespace(scene=SimpleNamespace(usd_stage_export_settings=settings))
+    monkeypatch.setattr(module, "_apply_persisted_settings", lambda *_args: None)
+    called = []
+    helper = module.USDSTAGE_OT_export.__mro__[2]
+    monkeypatch.setattr(helper, "invoke", lambda operator, *_: called.append(operator.filename_ext) or {'RUNNING_MODAL'}, raising=False)
+    operator = module.USDSTAGE_OT_export()
+    assert operator.invoke(context, None) == {'RUNNING_MODAL'}
+    assert called == [".usda"]
+    assert operator._choosing_destination
+
+
+def test_full_result_text_keeps_all_warnings_without_sidecar(monkeypatch):
+    module = _load_export_operator_with_blender_stubs(monkeypatch)
+    warnings = [f"Warning {number}" for number in range(20)]
+    settings = _settings(last_export_result="")
+    module.record_result(settings, state="done", export_path="/tmp/asset.usdz", data={"warnings": warnings}, timestamp=10)
+    stored = SimpleNamespace(content="")
+    stored.clear = lambda: setattr(stored, "content", "")
+    stored.write = lambda value: setattr(stored, "content", value)
+    module.bpy.data = SimpleNamespace(texts=SimpleNamespace(get=lambda _name: stored))
+    monkeypatch.setattr(module, "_display_text", lambda *_args: False)
+    monkeypatch.setattr(module, "_latest_result", lambda _context: module.get_latest_result(settings))
+    operator = module.USDSTAGE_OT_open_result_text()
+    operator.text_json = ""
+    context = SimpleNamespace(scene=SimpleNamespace(usd_stage_export_settings=settings))
+    assert operator.execute(context) == {'FINISHED'}
+    document = json.loads(stored.content)
+    assert document["diagnostics"]["warnings"] == warnings
+    assert document["result"]["export_path"] == "/tmp/asset.usdz"
+    assert "Loaded text datablock" in operator.reports[-1][1]
+
+
+def test_result_dialog_omits_unavailable_counts_and_offers_full_report(monkeypatch):
+    module = _load_export_operator_with_blender_stubs(monkeypatch)
+    ui = ModuleType("Plugin.ui")
+    ui.__path__ = [str(_REPO_ROOT / "Plugin" / "ui")]
+    monkeypatch.setitem(sys.modules, "Plugin.ui", ui)
+    labels = []
+    actions = []
+
+    class Layout:
+        def label(self, **kwargs):
+            labels.append(kwargs.get("text"))
+        label_multiline = label
+        def box(self):
+            return self
+        def row(self):
+            return self
+        def column(self, **_kwargs):
+            return self
+        def operator(self, name, **_kwargs):
+            action = SimpleNamespace()
+            actions.append((name, action))
+            return action
+
+    operator = module.USDSTAGE_OT_show_diagnostics()
+    operator.layout = Layout()
+    operator._diag_path = ""
+    operator._diag_data = {"warnings": [f"Warning {number}" for number in range(20)]}
+    operator._result_metadata = {"export_path": "/tmp/asset.usdz", "time": 10}
+    operator.draw(None)
+    assert "Output: /tmp/asset.usdz" in labels
+    assert not any("Materials converted" in label for label in labels)
+    assert "... 12 more" in labels
+    action = next(action for name, action in actions if name == "usdstage.open_result_text")
+    assert len(json.loads(action.text_json)["diagnostics"]["warnings"]) == 20
+
+
+def test_details_and_full_text_use_process_aware_worker_failure(monkeypatch, tmp_path):
+    module = _load_export_operator_with_blender_stubs(monkeypatch)
+    normalized = {
+        "state": "error", "time": 20,
+        "message": "Background job is no longer attached to this Blender session.",
+    }
+    ui = ModuleType("Plugin.ui")
+    ui.__path__ = []
+    panel = ModuleType("Plugin.ui.panel")
+    panel._read_background_job_status = lambda _settings: normalized
+    monkeypatch.setitem(sys.modules, "Plugin.ui", ui)
+    monkeypatch.setitem(sys.modules, "Plugin.ui.panel", panel)
+    settings = _settings(last_export_result="")
+    module.record_result(settings, state="done", timestamp=10)
+    context = SimpleNamespace(
+        scene=SimpleNamespace(usd_stage_export_settings=settings),
+        window_manager=SimpleNamespace(invoke_props_dialog=lambda *_args, **_kwargs: {'RUNNING_MODAL'}),
+    )
+    details = module.USDSTAGE_OT_show_diagnostics()
+    details.filepath = ""
+    details.use_last_result = True
+    assert details.invoke(context, None) == {'RUNNING_MODAL'}
+    assert details._result_metadata["state"] == "error"
+    assert details._diag_data["errors"] == [normalized["message"]]
+    assert module._resolve_diagnostics_path(context) is None
+
+    stored = SimpleNamespace(content="")
+    stored.clear = lambda: setattr(stored, "content", "")
+    stored.write = lambda value: setattr(stored, "content", value)
+    module.bpy.data = SimpleNamespace(texts=SimpleNamespace(get=lambda _name: stored))
+    monkeypatch.setattr(module, "_display_text", lambda *_args: False)
+    full = module.USDSTAGE_OT_open_result_text()
+    full.text_json = ""
+    assert full.execute(context) == {'FINISHED'}
+    assert json.loads(stored.content)["diagnostics"]["errors"] == [normalized["message"]]
+
+
 def test_ui_selected_export_ignores_unselected_unsupported_material(
     monkeypatch,
     tmp_path,
@@ -673,6 +786,9 @@ def test_ui_full_scene_export_still_rejects_unselected_unsupported_material(
 
     assert operator.execute(context) == {'CANCELLED'}
     assert validated == ["SelectedPrincipled", "UnselectedGlass"]
+    result = json.loads(settings.last_export_result)
+    assert result["state"] == "error"
+    assert "UnselectedGlass" in result["errors"][0]
     assert any(
         "UnselectedGlass" in message
         for _levels, message in operator.reports

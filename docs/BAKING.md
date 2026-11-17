@@ -21,7 +21,7 @@ not say whether it will bake. `resolve_ui_export_route` in
 panel then puts `usdstage.export` or `usdstage.bake_export_background`
 behind the button.
 
-| Profile (`ui_material_type`) | Material Settings option | Route | `bake_mode` |
+| Profile (`ui_material_type`) | Option below the profile | Route | `bake_mode` |
 |---|---|---|---|
 | RealityKit PBR | Processing: Translate Materials (`ui_pbr_processing = TRANSLATE`) | **no bake**, direct export | none |
 | RealityKit PBR | Processing: Bake Materials (`ui_pbr_processing = BAKE`) | bake | `LIT_ALBEDO` |
@@ -30,6 +30,10 @@ behind the button.
 
 Only *RealityKit PBR → Translate Materials* skips the bake. **RealityKit Unlit
 always bakes**, because an Unlit material still needs a color texture.
+
+The profile and its processing or appearance choices sit together above
+**Export**. **Material Settings** below holds the selected route's additional
+options, such as roughness, lighting source and mesh isolation.
 
 `bake_mode` (default `LIT_IBL`) is not drawn in the panel. The Export button
 sets `apply_ui_profile` on the bake operator, which **overwrites**
@@ -63,6 +67,12 @@ go through the same MaterialX rewrite as a direct export (see
 [`MATERIAL_TRANSLATION.md`](MATERIAL_TRANSLATION.md#no-usdpreviewsurface-network)).
 Because `LIT_IBL` keeps your sample count, a scene saved with high
 `cycles.samples` bakes much more slowly in that mode.
+
+Geometry variants are included in the bake even when hidden in the view layer;
+their visibility is restored afterwards. Lighting & Shadows with geometry sets
+requires **Isolate Meshes for Shadows**. Material sets cannot be baked: use
+**Translate Materials**, or turn off variant export before baking. See
+[variant limits](EXPORT_PIPELINE.md#what-variants-cannot-do).
 
 ### Instances and the reuse cache
 
@@ -122,7 +132,12 @@ from its own source textures") when `export_texture_settings_enabled` is off or
 toggle on; the CLI sets it with `--resolution`, `--image-format` or `--margin`.
 With the defaults, both bake source-keyed.
 
-Source-keyed sizing (`_material_source_resolution`) walks upstream from the
+For baked textures, **Keep Original** means source-driven sizing: it creates
+new baked images sized from the source materials, rather than preserving their
+existing image dimensions exactly. For direct exports, **Keep Original** leaves
+existing texture dimensions unchanged.
+
+Source-driven sizing (`_material_source_resolution`) walks upstream from the
 Principled **Base Color**, **Roughness** and **Alpha** inputs, takes the largest
 image dimension, and returns at least **512**, because a small tiling texture
 needs more texels once flattened into a bake. Images on channels that are not

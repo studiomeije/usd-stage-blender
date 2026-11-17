@@ -17,7 +17,7 @@ from pathlib import Path
 import bpy
 
 
-REQUIRED_BLENDER_SERIES = (5, 2)
+REQUIRED_BLENDER_SERIES = (5, 3)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -37,7 +37,7 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     if tuple(bpy.app.version[:2]) != REQUIRED_BLENDER_SERIES:
         raise SystemExit(
-            "Node groups must be built with Blender 5.2.x; "
+            "Node groups must be built with Blender 5.3.x; "
             f"found {bpy.app.version_string}"
         )
 

@@ -155,9 +155,9 @@ def validate_manifest(
         raise ReleaseCheckError("manifest type must be exactly add-on")
     if not (source_dir / "__init__.py").is_file():
         raise ReleaseCheckError("the extension has no Plugin/__init__.py")
-    if fields["blender_version_min"] != "5.2.0":
+    if fields["blender_version_min"] != "5.3.0":
         raise ReleaseCheckError(
-            "manifest blender_version_min must be exactly 5.2.0"
+            "manifest blender_version_min must be exactly 5.3.0"
         )
 
     maintainer = fields["maintainer"].strip()
