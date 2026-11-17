@@ -157,7 +157,9 @@ def _payload_asset_path(path: str, payload_dir: str) -> str:
     interface's, in POSIX form and without ``..``. A path into the payload's
     own generation comes out as ``./<name>``; anything else climbs out of it.
     """
-    if not path or asset_scheme(path) or Path(path).is_absolute():
+    # USD asset paths are POSIX-style; pathlib would call "/abs" relative
+    # on Windows, where it has no drive.
+    if not path or asset_scheme(path) or path.startswith(("/", "\\")):
         return path
     # A Windows absolute path must also stay absolute on a POSIX test host.
     if len(path) >= 2 and path[1] == ":":
