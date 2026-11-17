@@ -69,11 +69,13 @@ repository.
 
 ## Where to find it in Blender
 
+New to the add-on? Start with the [user guide](docs/USER_GUIDE.md).
+
 - **3D Viewport ▸ Sidebar ▸ USD Stage**: the export panel with the Profile,
   the Export button, material, texture and USD settings, the background job
   monitor, and diagnostics.
 - **3D Viewport ▸ Sidebar ▸ USD Stage ▸ Variants**: declare the asset's
-  variant sets.
+  geometry and material variant sets, preview them and pick the default.
 - **Shader Editor ▸ Sidebar ▸ USD Stage ▸ RealityKit Compatibility**:
   check the active material against the chosen Profile and select the nodes
   that block translation.
@@ -149,6 +151,9 @@ folder redacted. What else to attach to a report is in
 
 ## Documentation
 
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md) walks through the everyday tasks:
+  a first export, choosing a Profile, fixing a refused material, variants,
+  colliders and payloads, and reading the result.
 - [docs/README.md](docs/README.md) indexes every documentation page.
 - [CONTRIBUTING.md](CONTRIBUTING.md) covers setting up a checkout, running the
   tests, and extending the add-on.

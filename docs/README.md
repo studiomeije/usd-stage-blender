@@ -4,6 +4,7 @@ This page is the index of the USD Stage for Blender documentation. Use it to fin
 
 | Document | Read it when you want to know |
 |---|---|
+| [USER_GUIDE.md](USER_GUIDE.md) | How to do the everyday tasks: a first export, choosing a Profile, fixing a refused material, offering variants, colliders and payloads, and reading the result |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Which module owns what, how an export moves through the code, and where to start when extending it |
 | [CLI.md](CLI.md) | Every command, flag, exit code, and the JSON envelope |
 | [SETTINGS.md](SETTINGS.md) | What every toggle changes, and which ones override each other |

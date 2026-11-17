@@ -407,7 +407,7 @@ prototypes and the rig that deforms it. Afterwards your view layer is put back
 exactly as it was, even if the export fails. Only the outliner's eye never
 mattered: Blender exports through it regardless.
 
-With **Author Variant Sets** off, neither authoring nor that staging runs, and
+With **Include Variants in Export** off, neither authoring nor that staging runs, and
 the export holds exactly what the viewport shows.
 
 ### Geometry sets and material sets
