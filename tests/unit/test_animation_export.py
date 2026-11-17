@@ -160,6 +160,40 @@ def test_full_scene_scope_matches_blender_usd_export_visibility(evaluation_mode,
     assert [obj.name for obj in result] == expected
 
 
+def test_an_included_child_of_an_excluded_collection_is_in_scope():
+    """``exclude`` is not inherited: Blender exports an included child's objects.
+
+    Variant staging relies on this, leaving a member's parent collections
+    excluded and including only the collection that holds it.
+    """
+    loose = _Object("Loose")
+    member = _Object("Member")
+    sibling = _Object("Sibling")
+    root = _collection(
+        "Scene Collection",
+        [],
+        children=[
+            _collection(
+                "Variants",
+                [loose],
+                exclude=True,
+                children=[
+                    _collection("Fabric", [member]),
+                    _collection("Leather", [sibling], exclude=True),
+                ],
+            ),
+        ],
+    )
+    context = _scope_context([loose, member, sibling], [])
+    context.view_layer.layer_collection = root
+
+    result = animation_export.collect_export_objects(
+        context, _settings(selected_objects_only=False)
+    )
+
+    assert [obj.name for obj in result] == ["Member"]
+
+
 def test_empty_selected_only_scope_stays_empty():
     scene = [_Object("Cube")]
     assert animation_export.collect_export_objects(

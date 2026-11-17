@@ -618,15 +618,24 @@ def _terminate_process(pid: int) -> None:
         os.kill(pid, signal.SIGTERM)
     except Exception:
         return
-    deadline = time.time() + 2.0
-    while time.time() < deadline:
-        if not pid_is_running(pid):
-            return
-        time.sleep(0.1)
+    if _wait_for_exit(pid, 2.0):
+        return
     try:
         os.kill(pid, signal.SIGKILL)
     except Exception:
-        pass
+        return
+    # SIGKILL is asynchronous: give the kernel a moment to reap the process
+    # so the caller's liveness check doesn't report a kill that succeeded.
+    _wait_for_exit(pid, 1.0)
+
+
+def _wait_for_exit(pid: int, timeout: float) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not pid_is_running(pid):
+            return True
+        time.sleep(0.1)
+    return not pid_is_running(pid)
 
 
 def _extract_step_elapsed_seconds(status: dict) -> int | None:

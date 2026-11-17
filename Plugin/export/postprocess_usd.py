@@ -25,6 +25,7 @@ from . import colliders
 from . import payload
 from . import usd_hook
 from . import variant_authoring
+from . import variant_scope
 from . import variants
 from .usd_assets import prepare_assets
 from .usd_utils import Usd, require_pxr
@@ -47,6 +48,10 @@ class _Run:
     object_map: dict | None = None
     #: ``{prim path: (prim, Blender material name)}`` for variant finishes.
     reserved_materials: dict = field(default_factory=dict)
+    #: The variant sets this export writes; resolved once, by :func:`_variant_plan`.
+    variant_plan: object = None
+    #: ``{mesh path: material paths}`` its finishes offer; see :func:`_finish_materials`.
+    finish_materials: dict | None = None
 
 
 def _reserved_prims(run):
@@ -55,6 +60,26 @@ def _reserved_prims(run):
 
 def _reserved_names(run):
     return {path: name for path, (_prim, name) in (run.reserved_materials or {}).items()}
+
+
+def _variant_plan(run):
+    """The sets this export writes: in a selected-only export, those it touches.
+
+    Every pass that acts on variants reads this one plan, so a set the export
+    leaves out reserves no material, ships no texture and refuses nothing.
+    """
+    if run.variant_plan is None:
+        run.variant_plan = variant_scope.effective_variant_plan(run.context, run.settings)
+    return run.variant_plan
+
+
+def _finish_materials(run):
+    """``{mesh path: material paths a finish may bind there}``, found once."""
+    if run.finish_materials is None:
+        run.finish_materials = _finish_materials_by_mesh(
+            run.stage, _variant_plan(run), run.object_map, run.prim_path_edits,
+            _reserved_names(run))
+    return run.finish_materials
 
 
 #: The passes, in the order they run: ``(phase name, pass, result kept as)``.
@@ -84,7 +109,7 @@ PASSES = (
     # prim for; reserving one lets the rewrite convert it like any other.
     ("reserve_variant_materials",
      lambda run: _reserve_variant_materials(
-         run.stage, run.settings, run.context, run.diagnostics) or {},
+         run.stage, _variant_plan(run), run.settings, run.diagnostics) or {},
      "reserved_materials"),
     ("rewrite_materials",
      lambda run: rewrite_materials(
@@ -105,13 +130,17 @@ PASSES = (
      None),
     ("retag_unmapped_color_spaces",
      lambda run: _retag_unmapped_color_space_names(run.stage, run.diagnostics), None),
+    # These three write what a mesh's materials read, and a mesh's materials
+    # include every finish it can be given, not only the one it wears now.
     ("author_object_random",
-     lambda run: _author_object_random(run.stage, run.diagnostics), None),
+     lambda run: _author_object_random(run.stage, run.diagnostics, _finish_materials(run)),
+     None),
     ("author_uv_derivatives",
-     lambda run: _author_uv_derivatives(run.stage, run.diagnostics), None),
+     lambda run: _author_uv_derivatives(run.stage, run.diagnostics, _finish_materials(run)),
+     None),
     ("publish_vertex_colors_as_display_color",
      lambda run: _publish_vertex_colors_as_display_color(
-         run.stage, run.diagnostics, run.context),
+         run.stage, run.diagnostics, run.context, _finish_materials(run)),
      None),
     ("complete_blend_shape_weights",
      lambda run: _complete_blend_shape_weights(run.stage, run.diagnostics), None),
@@ -124,7 +153,7 @@ PASSES = (
      None),
     ("author_variants",
      lambda run: _author_variants(
-         run.stage, run.settings, run.context, run.object_map,
+         run.stage, _variant_plan(run), run.settings, run.object_map,
          run.prim_path_edits, run.diagnostics, _reserved_names(run)),
      None),
     # After the variants: the bounds hint describes the selection shipped.
@@ -270,12 +299,14 @@ def _author_colliders(
     )
 
 
-def _reserve_variant_materials(stage, settings, context, diagnostics=None):
-    """Define a Material prim for every finish, ahead of the rewrite.
+def _reserve_variant_materials(stage, plan, settings, diagnostics=None):
+    """Define a Material prim for every finish in ``plan``, ahead of the rewrite.
+
+    ``plan`` is the export's own scope: a set a selected-only export leaves
+    out reserves nothing, so its materials are neither converted nor shipped.
 
     Returns ``{prim path: (prim, Blender material name)}``.
     """
-    plan = variants.resolve_variant_plan(context, settings)
     if plan.is_empty:
         return {}
     variants.require_valid_variant_plan(plan, diagnostics)
@@ -283,11 +314,10 @@ def _reserve_variant_materials(stage, settings, context, diagnostics=None):
 
 
 def _author_variants(
-    stage, settings, context, object_map, prim_path_edits, diagnostics=None,
+    stage, plan, settings, object_map, prim_path_edits, diagnostics=None,
     material_names=None,
 ):
-    """Author the scene's declared variant sets, if it declares any."""
-    plan = variants.resolve_variant_plan(context, settings)
+    """Author the variant sets in the export's scope, if there are any."""
     if plan.is_empty:
         return ()
 
@@ -472,8 +502,53 @@ def _corner_uvs(prim, corner_count):
     return None
 
 
-def _meshes_reading_primvar(stage, primvar_name):
-    """Mesh prims whose bound material, or a face subset's, reads ``primvar_name``."""
+def _finish_materials_by_mesh(
+    stage, plan, object_map, prim_path_edits, material_names
+) -> dict:
+    """``{mesh path: material paths}`` each finish set may bind on that mesh.
+
+    A finish is bound later, inside the variant that offers it, so until then
+    the stage shows only the material a mesh wears now. The passes that write
+    what a material reads ask this too, or a finish whose Bump, Object Random
+    or vertex colours the worn material lacks would read nothing.
+
+    The meshes are the ones :mod:`variant_authoring` binds, found the same
+    way; a finish's material is the prim reserved for it.
+    """
+    from pxr import Sdf, UsdGeom
+
+    if plan.is_empty or not object_map:
+        return {}
+    by_name = {name: Sdf.Path(path) for path, name in (material_names or {}).items()}
+
+    offered: dict = {}
+    for variant_set in plan.sets:
+        if variant_set.kind != variants.MATERIAL:
+            continue
+        materials = {
+            by_name[variant.material_name]
+            for variant in variant_set.variants
+            if variant.has_material and variant.material_name in by_name
+        }
+        if not materials:
+            continue
+        for bound in variant_authoring.finish_binding_paths(
+            stage, object_map, prim_path_edits, variant_set.target_objects
+        ):
+            prim = stage.GetPrimAtPath(bound)
+            if prim and prim.IsA(UsdGeom.Subset):
+                prim = prim.GetParent()
+            if prim and prim.IsA(UsdGeom.Mesh):
+                offered.setdefault(prim.GetPath(), set()).update(materials)
+    return {path: frozenset(found) for path, found in offered.items()}
+
+
+def _meshes_reading_primvar(stage, primvar_name, finish_materials=None):
+    """Mesh prims whose material reads ``primvar_name``.
+
+    A mesh's materials are its own binding, its face subsets', and any
+    ``finish_materials`` offers it (``{mesh path: material paths}``).
+    """
     from pxr import UsdGeom, UsdShade
 
     reading = set()
@@ -503,7 +578,9 @@ def _meshes_reading_primvar(stage, primvar_name):
         if not prim.IsA(UsdGeom.Mesh):
             continue
         subsets = [child for child in prim.GetChildren() if child.IsA(UsdGeom.Subset)]
-        if bound(prim) or any(bound(subset) for subset in subsets):
+        offered = (finish_materials or {}).get(prim.GetPath(), ())
+        if (bound(prim) or any(bound(subset) for subset in subsets)
+                or any(path in reading for path in offered)):
             meshes.append(prim)
     return meshes
 
@@ -541,8 +618,11 @@ def _uv_derivatives(points, counts, indices, uvs):
     return dpdu, dpdv
 
 
-def _author_uv_derivatives(stage, diagnostics=None) -> None:
+def _author_uv_derivatives(stage, diagnostics=None, finish_materials=None) -> None:
     """Write dP/du and dP/dv on each mesh whose material has a Bump.
+
+    A material a finish offers the mesh counts (``finish_materials``, as
+    :func:`_meshes_reading_primvar` takes it).
 
     The Bump translation differences its height along the UV parametrization
     and needs the surface's metric there to turn that into a gradient. These
@@ -553,7 +633,7 @@ def _author_uv_derivatives(stage, diagnostics=None) -> None:
     from .materials.extract.core import UV_DERIVATIVE_PRIMVARS
 
     written, missing = [], []
-    for prim in _meshes_reading_primvar(stage, UV_DERIVATIVE_PRIMVARS[0]):
+    for prim in _meshes_reading_primvar(stage, UV_DERIVATIVE_PRIMVARS[0], finish_materials):
         mesh = UsdGeom.Mesh(prim)
         points = mesh.GetPointsAttr().Get()
         counts = mesh.GetFaceVertexCountsAttr().Get()
@@ -591,8 +671,11 @@ def _blender_object_name(prim):
     return None
 
 
-def _author_object_random(stage, diagnostics=None) -> None:
+def _author_object_random(stage, diagnostics=None, finish_materials=None) -> None:
     """Write Cycles' Object Info Random on each mesh whose material reads it.
+
+    A material a finish offers the mesh counts (``finish_materials``, as
+    :func:`_meshes_reading_primvar` takes it).
 
     The value is ``cycles_object_random`` of the Blender object's name, which
     the USD exporter records as a custom property on the object's prim, and it
@@ -604,7 +687,7 @@ def _author_object_random(stage, diagnostics=None) -> None:
     from .materials.extract.core import OBJECT_RANDOM_PRIMVAR, cycles_object_random
 
     written, unnamed = [], []
-    for prim in _meshes_reading_primvar(stage, OBJECT_RANDOM_PRIMVAR):
+    for prim in _meshes_reading_primvar(stage, OBJECT_RANDOM_PRIMVAR, finish_materials):
         name = _blender_object_name(prim)
         if name is None:
             unnamed.append(str(prim.GetPath()))
@@ -669,11 +752,15 @@ def _blender_first_color_attribute(prim, context) -> "str | None":
         return None
 
 
-def _publish_vertex_colors_as_display_color(stage, diagnostics=None, context=None) -> None:
+def _publish_vertex_colors_as_display_color(
+    stage, diagnostics=None, context=None, finish_materials=None
+) -> None:
     """Copy a mesh's first colour attribute into displayColor/displayOpacity.
 
-    Only meshes whose bound material actually reads vertex colours are
-    touched, and an already-populated displayColor is never overwritten.
+    Only meshes whose material actually reads vertex colours are touched, and
+    an already-populated displayColor is never overwritten. A material a
+    finish offers the mesh counts (``finish_materials``, ``{mesh path:
+    material paths}``): it is bound later, and would otherwise read nothing.
 
     "Bound" includes materials reached through a GeomSubset. Blender writes a
     multi-material mesh as one Mesh whose direct binding is slot 0 plus a
@@ -701,7 +788,10 @@ def _publish_vertex_colors_as_display_color(stage, diagnostics=None, context=Non
             material = binding.ComputeBoundMaterial()[0]
             if reads_vertex_color(material.GetPrim() if material else None):
                 return True
-        return False
+        return any(
+            reads_vertex_color(stage.GetPrimAtPath(path))
+            for path in (finish_materials or {}).get(prim.GetPath(), ())
+        )
 
     published = []
     for prim in stage.Traverse():

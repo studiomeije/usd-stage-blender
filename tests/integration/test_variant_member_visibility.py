@@ -77,7 +77,7 @@ context = SimpleNamespace(
                 SimpleNamespace(name="Leather", collection=leather),
             ],
         )
-    ]),
+    ], objects=bpy.context.scene.objects, usd_stage_export_settings=settings),
     view_layer=bpy.context.view_layer,
 )
 

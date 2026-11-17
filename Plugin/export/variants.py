@@ -13,8 +13,14 @@ declares on the scene.  This module owns the Blender half of that: it resolves
 each declared set into concrete object sets and refuses the ones that cannot be
 authored deterministically.
 
-It runs before anything is written, so a refusal costs the user nothing, and it
-imports no OpenUSD and touches no stage - resolution here, authoring later.
+Resolution runs before Blender's own exporter, because visibility staging needs
+it to bring every variant member into the export.  Validation runs later: a
+direct export validates the plan in post-processing, after Blender has written
+the staging copy but before anything is published to the output path, so a
+refused plan costs the export time and leaves the user's file untouched.  A
+bake export validates before it bakes, and the variants panel shows the same
+issues as the user edits.  This module imports no OpenUSD and touches no
+stage: resolution here, authoring later.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from .object_scope import is_exportable_object, rna_identity
+from .object_scope import is_exportable_object, rna_identity, view_layer_objects
 from .realitykit_preflight import MAX_VARIANT_COMBINATIONS
 
 # USD identifiers are ASCII ``[A-Za-z_][A-Za-z0-9_]*``.  ``allow_unicode`` is
@@ -792,16 +798,36 @@ def prepare_variant_visibility(context, plan: VariantPlan) -> dict:
     skipped, and so is anything whose ``hide_render`` or ``hide_viewport`` flag
     the active ``evaluation_mode`` consults.  Only the outliner's eye is
     ignored.  Every variant has to be in the export for the authoring pass to
-    switch between them, so staging opens each member's path into the view
-    layer for the length of the export.
+    switch between them, so staging brings each member into the view layer for
+    the length of the export, and nothing else.
+
+    Setting ``exclude`` on a layer collection sets the same value on its whole
+    subtree, while an included collection under an excluded parent still
+    contributes its objects.  So staging includes only the layer collections
+    that hold a member, leaves their ancestors as they are, and puts back every
+    descendant the cascade changed - a non-member sibling or child stays out of
+    the export.  Collection hide flags are inherited down the tree, so those
+    are cleared along each member's whole path.
 
     The returned state must be passed to :func:`restore_variant_visibility`,
     which puts every flag back exactly as it was.
     """
-    state: dict = {"restores": [], "context": context}
+    state: dict = {"restores": [], "excludes": [], "context": context}
     if plan.is_empty:
         return state
 
+    try:
+        _stage_variant_visibility(context, plan, state)
+    except BaseException:
+        # A caller only restores state it was handed, so a failure part-way
+        # must not leave the view layer half staged.
+        restore_variant_visibility(state)
+        raise
+    _update_view_layer(context)
+    return state
+
+
+def _stage_variant_visibility(context, plan: VariantPlan, state: dict) -> None:
     restores: list = state["restores"]
 
     def assign(owner, attribute: str, value) -> None:
@@ -821,13 +847,34 @@ def prepare_variant_visibility(context, plan: VariantPlan) -> dict:
             restores.pop()
 
     members = {rna_identity(obj) for obj in plan.member_objects()}
+    chains = _member_layer_collection_chains(context, members)
+    exported_before = {rna_identity(obj) for obj in view_layer_objects(context)}
 
-    for chain in _member_layer_collection_chains(context, members):
-        # Root first: clearing a parent's exclude is what makes clearing a
-        # child's meaningful, and Blender resets descendants when a parent is
-        # re-included.
+    # Every layer collection whose ``exclude`` staging can change, parents
+    # before children, with its value now. Including a member's collection
+    # cascades only into its own subtree, so the subtrees under the top-level
+    # collections that lead to a member are all that can move.
+    excludes: list = state["excludes"]
+    seen_subtrees: set[int] = set()
+    for chain in chains:
+        if len(chain) < 2:
+            continue  # members directly in the scene collection
+        top = chain[1]
+        if rna_identity(top) in seen_subtrees:
+            continue
+        seen_subtrees.add(rna_identity(top))
+        excludes.extend(
+            (layer, bool(layer.exclude)) for layer in _layer_subtree(top)
+        )
+
+    holders = {rna_identity(chain[-1]) for chain in chains}
+    _apply_excludes(
+        (layer, False if rna_identity(layer) in holders else previous)
+        for layer, previous in excludes
+    )
+
+    for chain in chains:
         for layer_collection in chain:
-            assign(layer_collection, "exclude", False)
             collection = getattr(layer_collection, "collection", None)
             for flag in _HIDE_FLAGS:
                 assign(collection, flag, False)
@@ -836,21 +883,88 @@ def prepare_variant_visibility(context, plan: VariantPlan) -> dict:
         for flag in _HIDE_FLAGS:
             assign(obj, flag, False)
 
-    _update_view_layer(context)
-    return state
+    # A collection's hide flag hides its whole subtree, so clearing one along
+    # a member's path also shows the non-members beside it. Hide each object
+    # staging brought in that is not a member: it was out of the export
+    # before, so hiding it changes nothing else. A member's instance
+    # prototypes and deforming rigs are kept: hiding a prototype empties every
+    # instance of it, and a skinned member needs its skeleton.
+    needed = members | _member_dependencies(plan.member_objects())
+    for obj in view_layer_objects(context):
+        identity = rna_identity(obj)
+        if identity in needed or identity in exported_before:
+            continue
+        for flag in _HIDE_FLAGS:
+            assign(obj, flag, True)
+
+
+def _member_dependencies(objects) -> set[int]:
+    """Objects a member draws through: instance prototypes and deforming rigs.
+
+    Followed transitively, so a prototype's own rig counts too. A parent is
+    not one: a member under a hidden parent still exports, with the parent
+    written as a transform.
+    """
+    found: set[int] = set()
+    stack = list(objects)
+    while stack:
+        obj = stack.pop()
+        dependencies = []
+        collection = getattr(obj, "instance_collection", None)
+        if getattr(obj, "instance_type", None) == "COLLECTION" and collection is not None:
+            dependencies.extend(getattr(collection, "all_objects", None) or ())
+        for modifier in getattr(obj, "modifiers", None) or ():
+            if getattr(modifier, "type", None) == "ARMATURE":
+                dependencies.append(getattr(modifier, "object", None))
+        for dependency in dependencies:
+            if dependency is None or rna_identity(dependency) in found:
+                continue
+            found.add(rna_identity(dependency))
+            stack.append(dependency)
+    return found
 
 
 def restore_variant_visibility(state: dict) -> None:
-    """Put every flag staging changed back, newest change first."""
+    """Put every flag staging changed back exactly as it was."""
     if not state:
         return
+    # Parents before children: re-excluding a parent cascades to its subtree,
+    # and each child is then set back to its own value after that cascade.
+    _apply_excludes(state.get("excludes", []))
     for owner, attribute, previous in reversed(state.get("restores", [])):
         try:
             setattr(owner, attribute, previous)
         except Exception:
             continue
+    state["excludes"] = []
     state["restores"] = []
     _update_view_layer(state.get("context"))
+
+
+def _apply_excludes(targets) -> None:
+    """Set each layer collection's ``exclude``, in the order given.
+
+    ``targets`` is parents before children. Setting a layer's ``exclude``
+    sets its whole subtree, so a later child is read back after any cascade
+    and set only if it still differs.
+    """
+    for layer_collection, value in targets:
+        try:
+            if bool(layer_collection.exclude) != bool(value):
+                layer_collection.exclude = value
+        except Exception:
+            continue
+
+
+def _layer_subtree(layer_collection) -> list:
+    """``layer_collection`` and all its descendants, parents before children."""
+    ordered: list = []
+    stack = [layer_collection]
+    while stack:
+        layer = stack.pop()
+        ordered.append(layer)
+        stack.extend(reversed(list(getattr(layer, "children", None) or ())))
+    return ordered
 
 
 def _member_layer_collection_chains(context, members: set[int]) -> list[tuple]:

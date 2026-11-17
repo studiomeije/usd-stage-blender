@@ -7,6 +7,9 @@ and what you have to do differently. Internal refactors are not listed.
 
 ## Unreleased
 
+- A material variant set over a collection instance is refused while
+  Instancing is on, because the shared prototype's material would win. Turn
+  Instancing off and every mesh of every instance takes the finish.
 - Payload exports keep texture, reference and clip paths valid after geometry
   moves into the payload layer.
 - Selected-only exports include the rigs and dependent variant members needed
@@ -90,7 +93,7 @@ and what you have to do differently. Internal refactors are not listed.
 - An export can now be split into an asset interface and a payload, with
   Advanced USD ▸ Payload Geometry. The interface holds the root prim, its
   kind, asset info, bounds and variant sets; the geometry moves to
-  `assets/<name>_payload`. Another scene can then reference your asset,
+  `assets/<output>/<generation>/<name>_payload`. Another scene can then reference your asset,
   place it and pick a variant without loading any geometry, and a USDZ
   still carries both halves. Composed, it is identical to a flat export:
   the payload repeats the units and frame rate, so animation plays at the

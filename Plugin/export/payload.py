@@ -7,17 +7,24 @@ when something actually has to be drawn.
 
 The split follows the shape the OpenUSD asset guidelines describe:
 
-    table.usdc                 the interface: root prim, kind, assetInfo,
-                               extentsHint, variant sets, and a payload arc
-    assets/table_payload.usdc  everything else: geometry, materials, skeletons
+    table.usdc                    the interface: root prim, kind, assetInfo,
+                                  extentsHint, variant sets, and a payload arc
+    assets/table.usdc/<generation>/table_payload.usdc
+                                  everything else: geometry, materials, skeletons
 
 Which half each piece belongs in is not arbitrary. Variant sets stay in the
 interface because their whole purpose is to be selectable before the payload
 loads; that is also why the guidelines put them on the root prim, which this
 exporter already does. Geometry goes in the payload because it is the weight.
 
-The payload layer lives under ``assets/`` because publication already owns and
-tracks that directory, so a split export republishes as safely as a flat one.
+The payload layer lives in the export's own sidecar generation under
+``assets/``, next to the dependencies ``usd_assets`` localized there. Publication
+treats every file below ``assets/`` as immutable: it installs the new files
+first, swaps the root last, and never rewrites a file in place, so a crash
+leaves either the old root with the old payload or the new root with the new
+one. A fixed ``assets/<name>_payload`` path would have to be rewritten on every
+re-export; a generation-scoped one is simply a new file, and the previous
+generation is pruned as a stale sidecar once the new root is in place.
 """
 
 from __future__ import annotations
@@ -26,10 +33,11 @@ from pathlib import Path
 import posixpath
 
 from .asset_paths import asset_scheme
+from .staging_namespace import output_sidecar_namespace
 from .usd_utils import Sdf, require_pxr
 
-#: Where the payload layer is written, relative to the exported stage. Already
-#: an owned sidecar directory, so publication needs no new rules.
+#: The owned sidecar root the payload layer is written below, relative to the
+#: exported stage. Publication already tracks it, so it needs no new rules.
 PAYLOAD_DIRECTORY = "assets"
 
 #: Layer metadata the payload repeats from the interface. The units keep it
@@ -76,9 +84,14 @@ def split_asset_payload(stage, usd_path, settings=None, diagnostics=None) -> dic
         return {}
 
     stage_path = Path(str(usd_path))
-    payload_dir = stage_path.parent / PAYLOAD_DIRECTORY
+    # The same <output>/<generation> namespace textures and localized
+    # dependencies use, so every export attempt writes a payload no earlier
+    # publication owns. Reusing one fixed name made the second export to a
+    # path collide with its own immutable payload from the first.
+    namespace = Path(PAYLOAD_DIRECTORY) / output_sidecar_namespace(stage_path)
+    payload_dir = stage_path.parent / namespace
     payload_dir.mkdir(parents=True, exist_ok=True)
-    payload_path = payload_dir / f"{stage_path.stem}_payload{stage_path.suffix}"
+    payload_path = _unused_payload_path(payload_dir, stage_path)
 
     payload_layer = Sdf.Layer.CreateNew(str(payload_path))
 
@@ -94,10 +107,10 @@ def split_asset_payload(stage, usd_path, settings=None, diagnostics=None) -> dic
         child = root_path.AppendChild(name)
         Sdf.CopySpec(root_layer, child, payload_layer, child)
 
-    # Copied opinions now resolve relative to assets/, not the interface's
-    # directory. Rebase every asset opinion, including those in variants,
+    # Copied opinions now resolve relative to the payload's directory, not the
+    # interface's. Rebase every asset opinion, including those in variants,
     # time samples, clip metadata and external composition arcs.
-    _rebase_payload_assets(payload_layer)
+    _rebase_payload_assets(payload_layer, namespace.as_posix())
 
     for key in _SHARED_LAYER_METADATA:
         if root_layer.pseudoRoot.HasInfo(key):
@@ -109,7 +122,7 @@ def split_asset_payload(stage, usd_path, settings=None, diagnostics=None) -> dic
     # hands off everything said *inside* it.
     for name in list(interface_spec.nameChildren.keys()):
         del interface_spec.nameChildren[name]
-    relative = f"./{PAYLOAD_DIRECTORY}/{payload_path.name}"
+    relative = f"./{namespace.as_posix()}/{payload_path.name}"
     interface_spec.payloadList.explicitItems = [Sdf.Payload(relative)]
 
     written = {
@@ -122,21 +135,57 @@ def split_asset_payload(stage, usd_path, settings=None, diagnostics=None) -> dic
     return written
 
 
-def _payload_asset_path(path: str) -> str:
-    """Keep a copied relative path anchored to the interface's directory."""
+def _unused_payload_path(payload_dir: Path, stage_path: Path) -> Path:
+    """Name the payload layer without clobbering a localized dependency.
+
+    The generation directory is shared with the layers ``usd_assets`` copied
+    in, and one of those may already be called ``<stem>_payload``.
+    """
+    stem, suffix = f"{stage_path.stem}_payload", stage_path.suffix
+    candidate = payload_dir / f"{stem}{suffix}"
+    index = 2
+    while candidate.exists() or Sdf.Layer.Find(str(candidate)):
+        candidate = payload_dir / f"{stem}_{index}{suffix}"
+        index += 1
+    return candidate
+
+
+def _payload_asset_path(path: str, payload_dir: str) -> str:
+    """Re-anchor a relative path from the interface's directory to the payload's.
+
+    ``payload_dir`` is the payload layer's directory relative to the
+    interface's, in POSIX form and without ``..``. A path into the payload's
+    own generation comes out as ``./<name>``; anything else climbs out of it.
+    """
     if not path or asset_scheme(path) or Path(path).is_absolute():
         return path
     # A Windows absolute path must also stay absolute on a POSIX test host.
     if len(path) >= 2 and path[1] == ":":
         return path
-    return posixpath.normpath(posixpath.join("..", path))
+    # A package-relative path names a member inside the archive after "[";
+    # only the archive's own path is relative to the layer.
+    outer, bracket, member = path.partition("[")
+    target = [part for part in posixpath.normpath(outer).split("/") if part != "."]
+    base = [part for part in payload_dir.split("/") if part not in ("", ".")]
+    shared = 0
+    while (
+        shared < len(base)
+        and shared < len(target) - 1
+        and target[shared] == base[shared]
+    ):
+        shared += 1
+    parts = [".."] * (len(base) - shared) + target[shared:]
+    rebased = "/".join(parts)
+    if not rebased.startswith("../"):
+        rebased = f"./{rebased}"
+    return f"{rebased}{bracket}{member}"
 
 
-def _rebase_payload_assets(layer) -> None:
+def _rebase_payload_assets(layer, payload_dir: str) -> None:
     """Re-anchor asset opinions without dropping empty array entries."""
     def rewrite(value):
         if isinstance(value, Sdf.AssetPath):
-            return Sdf.AssetPath(_payload_asset_path(value.path))
+            return Sdf.AssetPath(_payload_asset_path(value.path, payload_dir))
         if isinstance(value, Sdf.AssetPathArray):
             return Sdf.AssetPathArray([rewrite(item) for item in value])
         if isinstance(value, dict):
@@ -152,12 +201,13 @@ def _rebase_payload_assets(layer) -> None:
             return result
         if isinstance(value, Sdf.Reference):
             return Sdf.Reference(
-                _payload_asset_path(value.assetPath), value.primPath,
+                _payload_asset_path(value.assetPath, payload_dir), value.primPath,
                 value.layerOffset, rewrite(value.customData),
             )
         if isinstance(value, Sdf.Payload):
             return Sdf.Payload(
-                _payload_asset_path(value.assetPath), value.primPath, value.layerOffset,
+                _payload_asset_path(value.assetPath, payload_dir), value.primPath,
+                value.layerOffset,
             )
         if isinstance(value, list):
             return [rewrite(item) for item in value]

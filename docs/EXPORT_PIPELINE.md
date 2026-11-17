@@ -398,10 +398,14 @@ case rather than shipping it.
 
 The variant you are not working on is usually hidden, and Blender's exporter
 drops an excluded collection and anything the active **Use Settings for** mode
-sees as hidden. So the export opens every member's path into the view layer
-first and puts your view layer back exactly as it was afterwards, even if the
-export fails. Only the outliner's eye never mattered: Blender exports through
-it regardless.
+sees as hidden. So the export first includes each collection that holds a
+member and clears the hide flags along its path. Parent collections stay
+excluded, so an excluded collection next to a member stays out of the export.
+A cleared hide flag would show everything beneath it, so any non-member that
+this brings in is hidden again for the export, except a member's instance
+prototypes and the rig that deforms it. Afterwards your view layer is put back
+exactly as it was, even if the export fails. Only the outliner's eye never
+mattered: Blender exports through it regardless.
 
 With **Author Variant Sets** off, neither authoring nor that staging runs, and
 the export holds exactly what the viewport shows.
@@ -435,7 +439,9 @@ Two consequences worth knowing:
 - The binding is rewritten on the mesh beneath each target object, where
   Blender wrote it, including on objects a geometry set hides by default. An
   object parented under a target is a separate object and keeps its own
-  material unless the material set targets it too.
+  material unless the material set targets it too. A target that instances a
+  collection rebinds the meshes of every instance's copy, with **Instancing**
+  off.
 - A finish you do not currently use is still exportable. Blender writes no
   material prim for a material no face wears, so the material set defines one,
   named the way Blender would have named it and never sharing a prim with a
@@ -472,6 +478,10 @@ a style. One level of nesting is the limit.
   before anything is written.
 - **A material set over a multi-material mesh** sets every GeomSubset to one
   material, and warns that it did.
+- **A material set over a collection instance is refused with Instancing on.**
+  The instance's meshes and their bindings live in one shared prototype, and a
+  binding authored over the instance cannot replace them. Turn **Instancing**
+  off, or make the instance real and target its meshes.
 - **A selected-only export** carries the other variants of any set the
   selection touches, along with their rigs and dependent variant members.
   Unrelated sets stay out of the export.

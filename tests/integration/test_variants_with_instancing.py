@@ -6,6 +6,13 @@ instance proxies, and USD does not allow authoring through a proxy. Variant
 activation, collider components and finish bindings all author on object
 prims, so each had to be checked rather than assumed.
 
+A finish cannot reach an instance's meshes: they bind inside the shared
+prototype, and that binding beats anything authored on the instance above.
+So a finish over instanced objects is refused, and works once Instancing is
+off. Bindings are checked as they resolve on the meshes themselves, through
+the instance proxies: a binding on an instance root says nothing about what
+the meshes below it show.
+
 The bake route is here for the same reason: it reaches the same post-process
 by a different path, and no variant test had ever taken it.
 """
@@ -26,7 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 _BUILD = r'''
 import bpy, sys
 
-repo, out = sys.argv[-2], sys.argv[-1]
+repo, out, finish_target = sys.argv[-3], sys.argv[-2], sys.argv[-1]
 sys.path.insert(0, repo)
 import Plugin
 Plugin.register()
@@ -57,6 +64,8 @@ shape = bpy.data.collections.new("Shape")
 scene.collection.children.link(shape)
 pawns = bpy.data.collections.new("Pawns")
 scene.collection.children.link(pawns)
+solids = bpy.data.collections.new("Solids")
+scene.collection.children.link(solids)
 
 for variant_name, count in (("Few", 1), ("Many", 3)):
     group = bpy.data.collections.new(variant_name)
@@ -67,7 +76,7 @@ for variant_name, count in (("Few", 1), ("Many", 3)):
         empty.instance_collection = proto
         empty.location = (index * 0.6, 0, 0)
         group.objects.link(empty)
-        pawns.objects.link(empty)          # the finish set rebinds these
+        pawns.objects.link(empty)
 
     # A solid mesh too, so an instanced member and an ordinary one are both
     # covered, and give it a rigid body so it asks for a collider.
@@ -77,6 +86,7 @@ for variant_name, count in (("Few", 1), ("Many", 3)):
     for existing in solid.users_collection:
         existing.objects.unlink(solid)
     group.objects.link(solid)
+    solids.objects.link(solid)
     solid.data.materials.append(oak)
     bpy.ops.rigidbody.object_add()
 
@@ -93,7 +103,7 @@ shape_set.default_variant = "Few"
 finish_set = sets.add()
 finish_set.name = "Finish"
 finish_set.kind = 'MATERIAL'
-finish_set.target_collection = pawns
+finish_set.target_collection = bpy.data.collections[finish_target]
 for name, mat in (("Oak", oak), ("Walnut", walnut)):
     variant = finish_set.variants.add()
     variant.name = name
@@ -113,20 +123,30 @@ def _usdstage(*args, timeout=900):
     )
 
 
-@pytest.fixture(scope="module")
-def scene_file(tmp_path_factory) -> Path:
-    workdir = tmp_path_factory.mktemp("instanced_variants")
+def _build(workdir: Path, finish_target: str) -> Path:
     script = workdir / "build.py"
     script.write_text(_BUILD)
-    blend = workdir / "pawns.blend"
+    blend = workdir / f"pawns_{finish_target.lower()}.blend"
 
     built = subprocess.run(
         [blender_executable(), "--background", "--factory-startup",
-         "--python", str(script), "--", str(REPO_ROOT), str(blend)],
+         "--python", str(script), "--", str(REPO_ROOT), str(blend), finish_target],
         capture_output=True, text=True, timeout=300,
     )
     assert blend.exists(), built.stdout + built.stderr
     return blend
+
+
+@pytest.fixture(scope="module")
+def scene_file(tmp_path_factory) -> Path:
+    """The finish targets the ordinary meshes beside the instances."""
+    return _build(tmp_path_factory.mktemp("instanced_variants"), "Solids")
+
+
+@pytest.fixture(scope="module")
+def instanced_finish_scene(tmp_path_factory) -> Path:
+    """The finish targets the collection instances themselves."""
+    return _build(tmp_path_factory.mktemp("instanced_finish"), "Pawns")
 
 
 @pytest.fixture(scope="module")
@@ -176,23 +196,90 @@ def test_the_prototype_is_still_shared(exported):
     assert len(instanced) == 3, [str(p.GetPath()) for p in instanced]
 
 
-def test_a_finish_rebinds_instanced_objects(exported):
-    """The binding lands on the instance root and composes down to the proxy."""
-    pytest.importorskip("pxr")
-    from pxr import UsdShade
+def _resolved_mesh_materials(stage) -> dict:
+    """{mesh path: the material it resolves to}, instance proxies included."""
+    from pxr import Usd, UsdGeom, UsdShade
 
-    for finish, expected in (("Oak", "OakMat"), ("Walnut", "WalnutMat")):
-        stage, _ = _with_selection(exported, "Many", finish)
-        # The instanced pawns are the finish set's targets; the solid mesh
-        # beside them is not, so it must keep its own material.
-        bound = {
-            prim.GetName(): UsdShade.MaterialBindingAPI(prim)
-            .ComputeBoundMaterial()[0].GetPrim().GetName()
-            for prim in stage.Traverse()
-            if prim.IsInstanceable()
-        }
-        assert bound, "no instanced pawn was found to check"
-        assert set(bound.values()) == {expected}, (finish, bound)
+    return {
+        str(prim.GetPath()): UsdShade.MaterialBindingAPI(prim)
+        .ComputeBoundMaterial()[0].GetPrim().GetName()
+        for prim in Usd.PrimRange(stage.GetPseudoRoot(), Usd.TraverseInstanceProxies())
+        if prim.IsA(UsdGeom.Mesh)
+    }
+
+
+def _pawn_meshes(resolved: dict, shape: str) -> dict:
+    solid = f"/root/{shape}_Solid/"
+    return {
+        path: material for path, material in resolved.items()
+        if path.startswith(f"/root/{shape}_") and not path.startswith(solid)
+    }
+
+
+def _solid_meshes(resolved: dict, shape: str) -> dict:
+    solid = f"/root/{shape}_Solid/"
+    return {
+        path: material for path, material in resolved.items()
+        if path.startswith(solid) and not path.startswith(solid + "Collider")
+    }
+
+
+def test_a_finish_beside_instances_leaves_the_instances_alone(exported):
+    """The finish rebinds its own meshes; the instanced pawns keep theirs."""
+    pytest.importorskip("pxr")
+
+    for shape, count in (("Few", 1), ("Many", 3)):
+        for finish, expected in (("Oak", "OakMat"), ("Walnut", "WalnutMat")):
+            stage, _ = _with_selection(exported, shape, finish)
+            resolved = _resolved_mesh_materials(stage)
+            pawns = _pawn_meshes(resolved, shape)
+            proxies = [path for path in pawns if stage.GetPrimAtPath(path).IsInstanceProxy()]
+            solids = _solid_meshes(resolved, shape)
+
+            assert len(proxies) == len(pawns) == count, (shape, finish, resolved)
+            assert set(pawns.values()) == {"OakMat"}, (shape, finish, pawns)
+            assert solids and set(solids.values()) == {expected}, (shape, finish, solids)
+
+
+def test_a_finish_over_instances_is_refused(instanced_finish_scene, tmp_path_factory):
+    """Authored over an instance root, the prototype's binding would win silently."""
+    output = tmp_path_factory.mktemp("instanced_refused") / "pawns.usda"
+    result = _usdstage(
+        "export", str(instanced_finish_scene), "use_instancing=true",
+        "-o", str(output), "--format", "USDA",
+    )
+    log = result.stdout + result.stderr
+
+    assert result.returncode != 0, log
+    assert "Variant set 'Finish' cannot rebind" in log, log
+    assert "is exported as an instance" in log, log
+    assert "Turn off Instancing" in log, log
+    assert not output.exists()
+
+
+def test_a_finish_over_instances_works_with_instancing_off(
+    instanced_finish_scene, tmp_path_factory
+):
+    """The refusal's remedy: every copy of every instance follows the finish."""
+    pytest.importorskip("pxr")
+    output = tmp_path_factory.mktemp("instancing_off") / "pawns.usda"
+    result = _usdstage(
+        "export", str(instanced_finish_scene), "use_instancing=false",
+        "-o", str(output), "--format", "USDA",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    for shape, count in (("Few", 1), ("Many", 3)):
+        for finish, expected in (("Oak", "OakMat"), ("Walnut", "WalnutMat")):
+            stage, _ = _with_selection(output, shape, finish)
+            resolved = _resolved_mesh_materials(stage)
+            pawns = _pawn_meshes(resolved, shape)
+            solids = _solid_meshes(resolved, shape)
+
+            assert len(pawns) == count, (shape, finish, resolved)
+            assert set(pawns.values()) == {expected}, (shape, finish, pawns)
+            # Not a target, so it keeps its own material.
+            assert solids and set(solids.values()) == {"OakMat"}, (shape, finish, solids)
 
 
 def test_every_variant_member_keeps_its_collider(exported):

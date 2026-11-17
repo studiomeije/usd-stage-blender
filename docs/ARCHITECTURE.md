@@ -119,7 +119,7 @@ is the phase the diagnostics report records.
 | `localize_source_dependencies` | Copies every layer and asset the stage depends on into the export, and records which layers the export owns. |
 | `normalize_scene` | Up axis, units, default prim and prim names; returns the renames, so later passes can translate paths captured before them. |
 | `save_localized_layers` | Saves the localized layers before anything recomposes them. |
-| `reserve_variant_materials` | Defines a material for every variant finish, including one nothing in the scene wears. |
+| `reserve_variant_materials` | Defines a material for every finish in the export's variant scope, including one nothing in the scene wears. |
 | `rewrite_materials` | Replaces Blender's materials with RealityKit MaterialX graphs. |
 | `author_animation_library` | The Reality Composer Pro clip library, when enabled. |
 | `finalize_assets` | Localizes anything the two passes before it authored. |

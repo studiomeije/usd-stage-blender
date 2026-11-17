@@ -38,7 +38,7 @@ emit nothing at all. Those are listed at the end of this page.
 | Multi-material meshes | Yes | Each material becomes a `GeomSubset` binding. |
 | Shape keys (blend shapes) | Yes | |
 | Armature skinning | Yes | Exported through USD's skeletal schema. |
-| Collection instances | Yes | With **Instancing** on (the default), each instance is an instanceable reference to one shared prototype, so the mesh is written once. Reality Composer Pro imports them as instances of one prototype entity, keeping each instance's transform and the prototype's materials. |
+| Collection instances | Yes | With **Instancing** on (the default), each instance is an instanceable reference to one shared prototype, so the mesh is written once. Reality Composer Pro imports them as instances of one prototype entity, keeping each instance's transform and the prototype's materials. A material variant set cannot target a collection instance while Instancing is on. |
 | Object hierarchy | Yes | Object transforms and parenting are preserved. |
 | Curves, hair, point clouds, volumes | Dropped | These object types are never exported and nothing warns. |
 | Cameras and lights | Dropped | Author them in Reality Composer Pro; nothing warns that they were skipped. |

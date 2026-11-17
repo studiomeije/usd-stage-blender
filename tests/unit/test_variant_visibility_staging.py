@@ -37,12 +37,50 @@ def _collection(name: str, objects=(), children=(), hide_render=False, hide_view
     )
 
 
+class _LayerCollection:
+    """A layer collection that cascades ``exclude`` the way Blender 5.3 does.
+
+    Setting ``exclude`` sets the same value on the whole subtree. Each layer's
+    own value still decides whether its objects are in the view layer, so a
+    child can be included under an excluded parent; the constructor allows
+    any such state.
+    """
+
+    def __init__(self, collection, children=(), exclude=False):
+        self.collection = collection
+        self.children = list(children)
+        self._exclude = exclude
+        self.writes = 0
+
+    @property
+    def exclude(self):
+        return self._exclude
+
+    @exclude.setter
+    def exclude(self, value):
+        self.writes += 1
+        stack = [self]
+        while stack:
+            layer = stack.pop()
+            layer._exclude = bool(value)
+            stack.extend(layer.children)
+
+
 def _layer(collection, children=(), exclude=False):
-    return SimpleNamespace(
-        collection=collection,
-        children=list(children),
-        exclude=exclude,
-    )
+    return _LayerCollection(collection, children, exclude)
+
+
+def _layers(root):
+    stack, found = [root], []
+    while stack:
+        layer = stack.pop()
+        found.append(layer)
+        stack.extend(layer.children)
+    return found
+
+
+def _excludes(root):
+    return {layer.collection.name: layer.exclude for layer in _layers(root)[1:]}
 
 
 class _ViewLayer:
@@ -54,9 +92,29 @@ class _ViewLayer:
         self.updates += 1
 
 
+def _scene_objects(view_layer) -> list:
+    """Every object in the layer tree, once, the way ``scene.objects`` lists them."""
+    objects, seen = [], set()
+    stack = [getattr(view_layer, "layer_collection", None)]
+    while stack:
+        layer = stack.pop()
+        if layer is None:
+            continue
+        for obj in getattr(layer.collection, "objects", ()):
+            if id(obj) not in seen:
+                seen.add(id(obj))
+                objects.append(obj)
+        stack.extend(getattr(layer, "children", ()))
+    return objects
+
+
 def _context(view_layer, *variant_sets):
     return SimpleNamespace(
-        scene=SimpleNamespace(usd_stage_variant_sets=list(variant_sets)),
+        scene=SimpleNamespace(
+            usd_stage_variant_sets=list(variant_sets),
+            objects=_scene_objects(view_layer),
+            usd_stage_export_settings=SimpleNamespace(evaluation_mode="RENDER"),
+        ),
         view_layer=view_layer,
     )
 
@@ -172,17 +230,26 @@ def test_a_hidden_member_collection_is_shown_and_restored():
     assert objects["leather"].hide_render is True
 
 
-def test_an_excluded_ancestor_is_opened_so_the_member_can_be_reached():
-    """Excluding the parent hides both variants; the chain must be opened."""
+def test_an_excluded_ancestor_is_left_alone_while_its_members_are_included():
+    """Excluding the parent cascades to both variants; only they come back.
+
+    An included collection under an excluded parent still contributes its
+    objects, so re-including the parent would only pull the parent's own
+    objects into the export.
+    """
     context, _view_layer, layers, _objects = _seat_scene()
     layers["seat"].exclude = True
+    assert layers["fabric"].exclude is True and layers["leather"].exclude is True
 
     _plan, state = _stage(context)
 
-    assert layers["seat"].exclude is False
-    assert layers["fabric"].exclude is False
-    restore_variant_visibility(state)
     assert layers["seat"].exclude is True
+    assert layers["fabric"].exclude is False
+    assert layers["leather"].exclude is False
+    restore_variant_visibility(state)
+    assert (layers["seat"].exclude, layers["fabric"].exclude, layers["leather"].exclude) == (
+        True, True, True,
+    )
 
 
 def test_a_collection_linked_in_two_places_has_both_chains_opened():
@@ -212,6 +279,160 @@ def test_a_collection_linked_in_two_places_has_both_chains_opened():
     restore_variant_visibility(state)
     assert first_leather_layer.exclude is True
     assert second_leather_layer.exclude is True
+
+
+def _grouped_scene():
+    """Variants/{Fabric,Leather,Props}: the group excluded, Fabric re-included.
+
+    Fabric and Leather are the variants; Props is not a member. Variants also
+    holds a loose object of its own, and Props a nested Box collection.
+    """
+    fabric = _collection("Fabric", objects=[_object("FabricSeat")])
+    leather = _collection("Leather", objects=[_object("LeatherSeat")])
+    box = _collection("Box", objects=[_object("BoxProp")])
+    props = _collection("Props", objects=[_object("Prop")], children=[box])
+    group = _collection(
+        "Variants", objects=[_object("Loose")], children=[fabric, leather, props]
+    )
+    group_layer = _layer(
+        group,
+        exclude=True,
+        children=[
+            _layer(fabric, exclude=False),
+            _layer(leather, exclude=True),
+            _layer(props, exclude=True, children=[_layer(box, exclude=True)]),
+        ],
+    )
+    root = _layer(_collection("Scene", children=[group]), children=[group_layer])
+    context = _context(
+        _ViewLayer(root),
+        _variant_set("Seat", [_variant("Fabric", fabric), _variant("Leather", leather)]),
+    )
+    return context, root
+
+
+def test_staging_includes_only_the_member_collections():
+    context, root = _grouped_scene()
+
+    _plan, state = _stage(context)
+
+    assert _excludes(root) == {
+        "Variants": True,
+        "Fabric": False,
+        "Leather": False,
+        "Props": True,
+        "Box": True,
+    }
+    restore_variant_visibility(state)
+
+
+def test_restore_returns_every_exclude_to_its_original_value():
+    context, root = _grouped_scene()
+    before = _excludes(root)
+
+    _plan, state = _stage(context)
+    restore_variant_visibility(state)
+
+    assert _excludes(root) == before
+
+
+def test_a_non_member_child_reincluded_by_the_cascade_is_excluded_again():
+    """Including a collection that holds a member cascades into its children.
+
+    A variant's own child collections are members, but a member object can
+    also be linked into another collection whose other children are not.
+    """
+    seat_leather = _object("SeatLeather")
+    leather = _collection("Leather", objects=[seat_leather])
+    fabric = _collection("Fabric", objects=[_object("SeatFabric")])
+    extra = _collection("Extra", objects=[_object("ExtraProp")])
+    display = _collection("Display", objects=[seat_leather], children=[extra])
+    leather_layer = _layer(leather, exclude=True)
+    extra_layer = _layer(extra, exclude=True)
+    display_layer = _layer(display, exclude=True, children=[extra_layer])
+    root = _layer(
+        _collection("Scene", children=[fabric, leather, display]),
+        children=[_layer(fabric), leather_layer, display_layer],
+    )
+    context = _context(
+        _ViewLayer(root),
+        _variant_set("Seat", [_variant("Fabric", fabric), _variant("Leather", leather)]),
+    )
+    before = _excludes(root)
+
+    _plan, state = _stage(context)
+
+    assert leather_layer.exclude is False
+    assert display_layer.exclude is False
+    assert extra_layer.exclude is True
+    restore_variant_visibility(state)
+    assert _excludes(root) == before
+
+
+def test_a_member_under_an_excluded_non_member_is_still_included():
+    """Restoring a non-member parent must not cascade over a member inside it."""
+    leather = _collection("Leather", objects=[_object("SeatLeather")])
+    fabric = _collection("Fabric", objects=[_object("SeatFabric")])
+    shelf = _collection("Shelf", objects=[_object("ShelfProp")], children=[leather])
+    leather_layer = _layer(leather, exclude=True)
+    shelf_layer = _layer(shelf, exclude=True, children=[leather_layer])
+    root = _layer(
+        _collection("Scene", children=[fabric, shelf]),
+        children=[_layer(fabric), shelf_layer],
+    )
+    context = _context(
+        _ViewLayer(root),
+        _variant_set("Seat", [_variant("Fabric", fabric), _variant("Leather", leather)]),
+    )
+
+    _plan, state = _stage(context)
+
+    assert shelf_layer.exclude is True
+    assert leather_layer.exclude is False
+    restore_variant_visibility(state)
+    assert (shelf_layer.exclude, leather_layer.exclude) == (True, True)
+
+
+def test_layers_already_as_needed_are_never_written():
+    context, root = _grouped_scene()
+    root.children[0].children[1].exclude = False  # Leather already included
+    for layer in _layers(root):
+        layer.writes = 0
+
+    _plan, state = _stage(context)
+    restore_variant_visibility(state)
+
+    assert all(layer.writes == 0 for layer in _layers(root))
+
+
+def test_a_failure_part_way_through_staging_puts_the_scene_back():
+    context, root = _grouped_scene()
+    before = _excludes(root)
+
+    class _Exploding:
+        name = "Exploding"
+        type = "MESH"
+        hide_viewport = False
+
+        @property
+        def hide_render(self):
+            return True
+
+        @hide_render.setter
+        def hide_render(self, _value):
+            raise KeyboardInterrupt  # not swallowed like an ordinary error
+
+    leather = root.children[0].children[1].collection
+    leather.objects.append(_Exploding())
+
+    try:
+        _stage(context)
+    except KeyboardInterrupt:
+        pass
+    else:  # pragma: no cover - the fake always raises
+        raise AssertionError("staging should have raised")
+
+    assert _excludes(root) == before
 
 
 def test_the_view_layer_is_refreshed_on_the_way_in_and_out():

@@ -12,6 +12,7 @@ different bytes" - permanently, until the user deleted it by hand.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -73,12 +74,12 @@ def packed_blends(tmp_path_factory) -> tuple[Path, Path]:
     return made[0], made[1]
 
 
-def _export(blend: Path, output: Path):
+def _export(blend: Path, output: Path, *overrides: str, format: str = "USDA"):
     import sys
     return subprocess.run(
         [
             sys.executable, str(REPO_ROOT / "Plugin"),
-            "export", str(blend), "-o", str(output), "--format", "USDA",
+            "export", str(blend), *overrides, "-o", str(output), "--format", format,
         ],
         capture_output=True, text=True, timeout=600,
     )
@@ -116,3 +117,75 @@ def test_no_un_namespaced_texture_is_published(packed_blends, tmp_path):
         f"un-namespaced textures published: {[e.name for e in flat]}. These are "
         "claimed by the ownership manifest and break the next export."
     )
+
+
+def _payload_arc(output: Path) -> str:
+    from pxr import Sdf
+
+    layer = Sdf.Layer.OpenAsAnonymous(str(output))
+    assert layer.defaultPrim, "the interface has no default prim"
+    root = layer.GetPrimAtPath(f"/{layer.defaultPrim}")
+    items = root.payloadList.explicitItems
+    assert len(items) == 1, f"expected one payload arc, found {items}"
+    return items[0].assetPath
+
+
+def _base_colour_texture(output: Path) -> Path:
+    from pxr import Usd, UsdShade
+
+    stage = Usd.Stage.Open(str(output), Usd.Stage.LoadAll)
+    textures = [
+        Path(attr.Get().resolvedPath)
+        for prim in stage.Traverse()
+        if prim.IsA(UsdShade.Shader)
+        for attr in prim.GetAttributes()
+        if str(attr.GetTypeName()) == "asset" and attr.Get() and attr.Get().resolvedPath
+    ]
+    assert len(textures) == 1, textures
+    return textures[0]
+
+
+@pytest.mark.parametrize("format", ["USDA", "USDC"])
+def test_reexport_with_payload_geometry_replaces_the_payload(packed_blends, tmp_path, format):
+    """The payload layer used to sit at one fixed path below ``assets/``.
+
+    Publication never rewrites a file there in place, so the second export to
+    an output aborted on its own payload from the first. Each export now
+    writes its payload into its own sidecar generation.
+    """
+    red, blue = packed_blends
+    output = tmp_path / f"scene.{format.lower()}"
+
+    first = _export(red, output, "payload_geometry=true", format=format)
+    assert first.returncode == 0, first.stdout + first.stderr
+    first_arc = _payload_arc(output)
+    first_texture = _base_colour_texture(output).read_bytes()
+
+    second = _export(blue, output, "payload_geometry=true", format=format)
+    assert second.returncode == 0, (
+        "re-export with payload_geometry failed:\n" + second.stdout + second.stderr
+    )
+    second_arc = _payload_arc(output)
+
+    # The interface points at a new payload, and the payload it composes is
+    # the second export's: the texture it binds carries the new colour.
+    assert second_arc != first_arc
+    assert (tmp_path / second_arc).is_file()
+    assert _base_colour_texture(output).read_bytes() != first_texture
+
+    # Nothing from the first export is left: one payload on disk, the one in
+    # use, and the ownership manifest claims exactly that one.
+    payloads = sorted(
+        path.relative_to(tmp_path).as_posix()
+        for path in (tmp_path / "assets").rglob(f"*_payload.{format.lower()}")
+    )
+    assert payloads == [second_arc.removeprefix("./")]
+    assert not (tmp_path / first_arc).parent.exists()
+    manifest = json.loads(
+        (tmp_path / ".usdstage_sidecars" / f"{output.name}.json").read_text()
+    )
+    assert [e for e in manifest["sidecars"] if "_payload." in e] == payloads
+
+    third = _export(red, output, "payload_geometry=true", format=format)
+    assert third.returncode == 0, third.stdout + third.stderr
+    assert _base_colour_texture(output).read_bytes() == first_texture

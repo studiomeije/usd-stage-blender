@@ -64,8 +64,11 @@ def test_the_setting_leaves_the_export_whole_by_default(tmp_path):
 def test_the_geometry_moves_into_a_payload_layer(tmp_path):
     path, written = _split(tmp_path)
 
-    assert written["payload_path"] == "./assets/table_payload.usda"
-    assert (tmp_path / "assets" / "table_payload.usda").exists()
+    # Generation-scoped like every other sidecar, so a re-export to the same
+    # path writes a new file instead of colliding with its own old payload.
+    assert written["payload_path"].startswith("./assets/table.usda/")
+    assert written["payload_path"].endswith("/table_payload.usda")
+    assert (tmp_path / written["payload_path"]).exists()
 
 
 def test_the_interface_keeps_only_the_root_prim(tmp_path):
@@ -112,11 +115,11 @@ def test_a_variant_can_be_chosen_while_the_payload_is_unloaded(tmp_path):
 
 def test_the_payload_does_not_carry_a_second_copy_of_the_variants(tmp_path):
     """Two layers authoring one selection would fight over it."""
-    _split(tmp_path, with_variants=True)
+    _, written = _split(tmp_path, with_variants=True)
 
     from pxr import Sdf
 
-    payload = Sdf.Layer.FindOrOpen(str(tmp_path / "assets" / "table_payload.usda"))
+    payload = Sdf.Layer.FindOrOpen(str(tmp_path / written["payload_path"]))
     root = payload.GetPrimAtPath("/root")
     assert list(root.variantSets.keys()) == []
     assert sorted(root.nameChildren.keys()) == ["Large", "Small"]
@@ -138,9 +141,9 @@ def test_the_variants_still_switch_after_the_split(tmp_path):
 
 def test_the_payload_stands_alone(tmp_path):
     """Opened directly it still knows its axis, scale and default prim."""
-    _split(tmp_path)
+    _, written = _split(tmp_path)
 
-    payload = Usd.Stage.Open(str(tmp_path / "assets" / "table_payload.usda"))
+    payload = Usd.Stage.Open(str(tmp_path / written["payload_path"]))
     assert UsdGeom.GetStageUpAxis(payload) == UsdGeom.Tokens.y
     assert UsdGeom.GetStageMetersPerUnit(payload) == 1.0
     assert payload.GetDefaultPrim().GetName() == "root"

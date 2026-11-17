@@ -19,6 +19,7 @@ from typing import Any
 import bpy
 
 from .object_scope import (
+    view_layer_objects,
     is_exportable_object as _is_exportable_object,
     rna_identity as _rna_identity,
 )
@@ -121,46 +122,6 @@ def collect_export_objects(context, settings) -> list:
     ordered_ids = {_rna_identity(obj) for obj in ordered}
     ordered.extend(obj for obj in closure if _rna_identity(obj) not in ordered_ids)
     return ordered
-
-
-def view_layer_objects(context, settings=None) -> list:
-    """The scene objects Blender's USD exporter writes, in scene order.
-
-    Blender leaves out objects in collections excluded from the view layer,
-    and follows ``evaluation_mode``: ``RENDER`` skips objects and collections
-    disabled in renders, ``VIEWPORT`` those disabled in viewports. Hiding with
-    the outliner's eye does not leave anything out. The export scope does the
-    same. Collection-instance prototypes hidden this way still
-    reach the processing scope through their instancer.
-    """
-    scene_objects = list(context.scene.objects)
-    if settings is None:
-        settings = getattr(getattr(context, "scene", None), "usd_stage_export_settings", None)
-    viewport = str(getattr(settings, "evaluation_mode", "RENDER")) == "VIEWPORT"
-    hidden_flag = "hide_viewport" if viewport else "hide_render"
-    view_layer = getattr(context, "view_layer", None)
-    root = getattr(view_layer, "layer_collection", None)
-    if root is None:
-        layer_objects = getattr(view_layer, "objects", None)
-        if layer_objects is None:
-            return scene_objects
-        in_layer = {_rna_identity(obj) for obj in layer_objects}
-        return [obj for obj in scene_objects if _rna_identity(obj) in in_layer]
-
-    visible: set[int] = set()
-    stack = [root]
-    while stack:
-        layer_collection = stack.pop()
-        collection = layer_collection.collection
-        if bool(getattr(layer_collection, "exclude", False)):
-            continue
-        if bool(getattr(collection, hidden_flag, False)):
-            continue
-        for obj in collection.objects:
-            if not bool(getattr(obj, hidden_flag, False)):
-                visible.add(_rna_identity(obj))
-        stack.extend(layer_collection.children)
-    return [obj for obj in scene_objects if _rna_identity(obj) in visible]
 
 
 def collect_processing_objects(context, export_objects: list) -> list:

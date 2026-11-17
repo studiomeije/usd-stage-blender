@@ -202,11 +202,11 @@ def author_variants(
             "became. Authoring by name instead would be a guess."
         )
 
-    paths = _prim_paths(stage, object_map, path_edits)
+    owners = _prim_owners(stage, object_map, path_edits)
+    paths = _prim_paths(owners)
     selected_only = bool(getattr(settings, "selected_objects_only", False))
     animated = _animated_members(stage, paths, settings)
     materials = _Materials(stage, root, settings, material_names)
-    object_prims = frozenset(paths.values())
 
     authored: list[str] = []
     for variant_set in plan.sets:
@@ -223,7 +223,8 @@ def author_variants(
         if variant_set.kind != MATERIAL:
             continue
         targets = [
-            paths[name] for name in variant_set.target_object_names if name in paths
+            (obj, paths[obj.name]) for obj in variant_set.target_objects
+            if obj.name in paths
         ]
         if not targets:
             if selected_only:
@@ -241,7 +242,7 @@ def author_variants(
                 f"Variant set {variant_set.name!r} nests inside "
                 f"{variant_set.parent_set!r}, which is not authored."
             )
-        bound = _binding_paths(stage, targets, object_prims, variant_set.name, diagnostics)
+        bound = _binding_paths(stage, targets, owners, variant_set.name, diagnostics)
         if parent is None or parent.name not in authored:
             _author_finish_set(stage, root, variant_set, bound, materials)
         else:
@@ -355,7 +356,7 @@ def _bind(stage, paths, material) -> None:
         relationship.targetPathList.explicitItems = [target]
 
 
-def _binding_paths(stage, targets, object_prims, set_name: str, diagnostics) -> list[str]:
+def _binding_paths(stage, targets, owners: dict, set_name: str, diagnostics) -> list[str]:
     """Bind where Blender binds: the mesh, not the Xform above it.
 
     An object becomes an Xform with its mesh beneath, and the binding sits on
@@ -367,46 +368,137 @@ def _binding_paths(stage, targets, object_prims, set_name: str, diagnostics) -> 
     from the composed stage: once a shape set deactivates a target its mesh
     no longer composes, and a composed walk would miss the very binding the
     finish has to replace.
+
+    ``targets`` pairs each target object with its prim path; ``owners`` is
+    ``{prim path: Blender object name}`` for every object prim on the stage.
     """
     layer = stage.GetRootLayer()
     paths: list[str] = []
-    for target in targets:
-        found = _bound_descendants(layer, target, object_prims)
-        if len(found) > 1:
+    for obj, target in targets:
+        part_of = _instanced_object_names(obj)
+        specs = _object_specs(layer, target, owners, part_of)
+        _require_not_instanced(specs, obj.name, set_name)
+        found = _bound_descendants(specs, target)
+        subsets = [spec for spec in specs
+                   if spec.typeName == "GeomSubset" and str(spec.path) in found]
+        if subsets:
             _warn(diagnostics,
-                  f"Variant set {set_name!r}: {target} binds {len(found)} "
+                  f"Variant set {set_name!r}: {target} binds {len(subsets)} "
                   "materials (GeomSubsets), and every variant sets them all "
                   "to one material.")
         paths.extend(found)
     return paths
 
 
-def _bound_descendants(layer, object_path: str, object_prims=frozenset()) -> list[str]:
-    """The prims under one object that carry its binding.
+def finish_binding_paths(stage, object_map: dict, path_edits, target_objects) -> list[str]:
+    """The prims a finish over ``target_objects`` will bind, authoring nothing.
+
+    The same walk :func:`author_variants` makes, for the passes that run
+    before it and must know which meshes a finish will reach. An instanced
+    target is not refused here; :func:`author_variants` does that.
+    """
+    owners = _prim_owners(stage, object_map, path_edits)
+    paths = _prim_paths(owners)
+    layer = stage.GetRootLayer()
+    found: list[str] = []
+    for obj in target_objects:
+        target = paths.get(obj.name)
+        if target is None:
+            continue
+        specs = _object_specs(layer, target, owners, _instanced_object_names(obj))
+        found.extend(_bound_descendants(specs, target))
+    return found
+
+
+def _instanced_object_names(obj) -> frozenset:
+    """The objects ``obj`` shows by instancing a collection, nested ones too.
+
+    Blender writes each instance's copy of them as prims beneath the
+    instancer's own, and they are what a finish on the instancer means to
+    rebind: the instancer is an empty with no geometry of its own.
+    """
+    names: set = set()
+    seen: set = set()
+    stack = [obj]
+    while stack:
+        current = stack.pop()
+        if getattr(current, "instance_type", None) != "COLLECTION":
+            continue
+        collection = getattr(current, "instance_collection", None)
+        if collection is None or id(collection) in seen:
+            continue
+        seen.add(id(collection))
+        for member in getattr(collection, "all_objects", ()):
+            names.add(str(member.name))
+            stack.append(member)
+    return frozenset(names)
+
+
+def _object_specs(layer, object_path: str, owners: dict, part_of=frozenset()) -> list:
+    """The root-layer prim specs that belong to one object, its own first.
 
     Stops at a child that is another object's prim: a parented object is a
     separate Blender object, and a finish rebinds only the objects it targets.
-    Falls back to the object's mesh when nothing is bound yet, and to the
-    object prim itself when it has no mesh.
+    The exception is ``part_of``, the objects an instancer shows through its
+    collection - those prims are the instancer's geometry.
     """
     spec = layer.GetPrimAtPath(object_path)
     if spec is None:
-        return [object_path]
+        return []
     own = str(spec.path)
-    bound: list[str] = []
-    meshes: list[str] = []
+    specs = []
     stack = [spec]
     while stack:
         current = stack.pop()
         path = str(current.path)
-        if path != own and path in object_prims:
+        if path != own and path in owners and owners[path] not in part_of:
             continue
-        if current.relationships.get("material:binding") is not None:
-            bound.append(path)
-        elif current.typeName == "Mesh":
-            meshes.append(path)
+        specs.append(current)
         stack.extend(current.nameChildren.values())
-    return sorted(bound) or sorted(meshes)[:1] or [object_path]
+    return specs
+
+
+def _require_not_instanced(specs, object_name: str, set_name: str) -> None:
+    """Refuse a finish target whose geometry sits in an instance prototype.
+
+    With Instancing on, a collection instance becomes an ``instanceable``
+    reference to one shared prototype, and its meshes - with the binding
+    Blender gave them - live inside that prototype. Nothing can be authored
+    through an instance proxy, and a binding on the instance root above is an
+    ancestor opinion the prototype mesh's own binding beats. The finish would
+    be written and every selection would show the prototype's material, so
+    it is refused instead.
+
+    No ``bindMaterialAs = strongerThanDescendants`` route is offered: there is
+    no measurement that RealityKit honours binding strength.
+    """
+    for spec in specs:
+        if spec.HasInfo("instanceable") and spec.instanceable:
+            raise VariantAuthoringError(
+                f"Variant set {set_name!r} cannot rebind {object_name!r}: it "
+                f"is exported as an instance ({spec.path}), and a binding over "
+                "an instance cannot replace the material its shared prototype "
+                "binds, so every finish would show the prototype's material. "
+                "Turn off Instancing for this export, or make the instance "
+                "real (Object > Apply > Make Instances Real) and target its "
+                "meshes instead."
+            )
+
+
+def _bound_descendants(specs, object_path: str) -> list[str]:
+    """The prims of one object that carry its binding, and its unbound meshes.
+
+    ``specs`` can span several meshes - an instancer's covers every object of
+    the collection it shows - and each one must take the finish, whether
+    Blender bound it or not. Falls back to the object prim itself when it has
+    neither a binding nor a mesh.
+    """
+    found: list[str] = []
+    for spec in specs:
+        if (spec.relationships.get("material:binding") is not None
+                or spec.typeName == "Mesh"):
+            found.append(str(spec.path))
+    return sorted(found) or [object_path]
 
 
 def _unbind_outside_variants(stage, paths) -> None:
@@ -437,18 +529,30 @@ def _require_prim(stage, path: str, set_name: str):
 # Resolving members to prims
 # ---------------------------------------------------------------------------
 
-def _prim_paths(stage, object_map: dict, path_edits) -> dict[str, str]:
-    """{Blender object name: its prim path on this stage}.
+def _prim_owners(stage, object_map: dict, path_edits) -> dict[str, str]:
+    """{prim path on this stage: the Blender object it stands for}.
 
     The map is captured during export and the stage may have been renamed
     since, so every path is translated and then confirmed against the stage.
+    One object can own several prims: each instance of a collection gets its
+    own copy of the collection's objects.
     """
-    resolved: dict[str, str] = {}
+    owners: dict[str, str] = {}
     for prim_path, object_name in object_map.items():
         current = remap_prim_path(str(prim_path), path_edits)
         if stage.GetPrimAtPath(current):
-            resolved[str(object_name)] = current
-    return resolved
+            owners[current] = str(object_name)
+    return owners
+
+
+def _prim_paths(owners: dict) -> dict[str, str]:
+    """{Blender object name: one prim path it owns}.
+
+    Variant members and finish targets are the scene's own objects, which
+    own one prim each. An object that owns several is one a collection
+    instance copies, and which copy is kept here is arbitrary.
+    """
+    return {name: path for path, name in owners.items()}
 
 
 def _resolve_shape_set(
