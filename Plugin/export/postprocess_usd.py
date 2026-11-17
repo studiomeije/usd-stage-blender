@@ -82,6 +82,16 @@ def _finish_materials(run):
     return run.finish_materials
 
 
+def _rewrite_materials(run):
+    """The MaterialX rewrite, with finish meshes resolved from this run's plan."""
+    from .materials.extract.readers import finish_mesh_scope
+
+    with finish_mesh_scope(_variant_plan(run)):
+        return rewrite_materials(
+            run.stage, run.settings, run.context, run.diagnostics,
+            _reserved_prims(run), _reserved_names(run))
+
+
 #: The passes, in the order they run: ``(phase name, pass, result kept as)``.
 #: The phase name is what the diagnostics report records. A pass reads the run
 #: and returns a value; when it is kept, later passes find it on the run.
@@ -111,11 +121,7 @@ PASSES = (
      lambda run: _reserve_variant_materials(
          run.stage, _variant_plan(run), run.settings, run.diagnostics) or {},
      "reserved_materials"),
-    ("rewrite_materials",
-     lambda run: rewrite_materials(
-         run.stage, run.settings, run.context, run.diagnostics,
-         _reserved_prims(run), _reserved_names(run)),
-     None),
+    ("rewrite_materials", lambda run: _rewrite_materials(run), None),
     ("author_animation_library",
      lambda run: author_animation_library(run.stage, run.settings, run.diagnostics),
      None),

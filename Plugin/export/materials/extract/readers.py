@@ -1,5 +1,7 @@
 """Surface readers: nodes that read the surface, the view or the mesh."""
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 import math
 import re
 from typing import Any, Dict, Optional
@@ -1683,13 +1685,19 @@ _ATTRIBUTE_READABLE_DOMAINS = frozenset({"POINT", "CORNER"})
 
 
 def _material_meshes(node):
-    """Meshes that use the material owning ``node``; None outside Blender."""
+    """Meshes that use the material owning ``node``; None outside Blender.
+
+    A material a finish variant offers counts the meshes of that set's
+    targets too: it is bound there inside the variant, so the UV maps and
+    attributes it reads must be found on them, not guessed.
+    """
     try:
         import bpy
         meshes = bpy.data.meshes
         materials = bpy.data.materials
     except Exception:
         return None
+    context = getattr(bpy, "context", None)
     node_tree = getattr(node, "id_data", None)
     owners = [material for material in materials if getattr(material, "node_tree", None) == node_tree]
     found = []
@@ -1697,6 +1705,73 @@ def _material_meshes(node):
         mesh_materials = [m for m in (getattr(mesh, "materials", []) or []) if m is not None]
         if any(any(candidate == owner for owner in owners) for candidate in mesh_materials):
             found.append(mesh)
+    for mesh in _finish_target_meshes(context, owners):
+        if not any(mesh == existing for existing in found):
+            found.append(mesh)
+    return found
+
+
+#: ``{material name: meshes}`` a finish may bind each material on, for the
+#: export run in progress; see :func:`finish_mesh_scope`.
+_FINISH_MESHES: ContextVar = ContextVar("usdstage_finish_meshes", default=None)
+
+
+@contextmanager
+def finish_mesh_scope(plan):
+    """Resolve the finish meshes once, from the export's own variant plan.
+
+    The material rewrite asks for a material's meshes once per node that
+    reads mesh data; resolving the plan each time would repeat the work and
+    could disagree with the scope the rest of the export uses.
+    """
+    token = _FINISH_MESHES.set(_finish_meshes_by_material(plan))
+    try:
+        yield
+    finally:
+        _FINISH_MESHES.reset(token)
+
+
+def _finish_meshes_by_material(plan) -> dict:
+    """``{material name: meshes}`` from :func:`variants.finish_material_targets`.
+
+    An instancing target contributes the meshes of the collection it shows,
+    since those are what the finish rebinds.
+    """
+    from ...object_scope import rna_identity
+    from ...variants import finish_material_targets
+
+    by_material = {}
+    for name, targets in finish_material_targets(plan).items():
+        meshes, seen = [], set()
+        stack = list(targets)
+        while stack:
+            obj = stack.pop()
+            if rna_identity(obj) in seen:
+                continue
+            seen.add(rna_identity(obj))
+            if getattr(obj, "type", None) == "MESH" and getattr(obj, "data", None) is not None:
+                meshes.append(obj.data)
+            collection = getattr(obj, "instance_collection", None)
+            if getattr(obj, "instance_type", None) == "COLLECTION" and collection is not None:
+                stack.extend(getattr(collection, "all_objects", None) or ())
+        by_material[name] = meshes
+    return by_material
+
+
+def _finish_target_meshes(context, owners) -> list:
+    """Meshes a finish may bind one of ``owners`` on, in the export's scope."""
+    by_material = _FINISH_MESHES.get()
+    if by_material is None:
+        scene = getattr(context, "scene", None)
+        settings = getattr(scene, "usd_stage_export_settings", None)
+        if settings is None:
+            return []
+        from ...variant_scope import effective_variant_plan
+
+        by_material = _finish_meshes_by_material(effective_variant_plan(context, settings))
+    found = []
+    for owner in owners:
+        found.extend(by_material.get(str(getattr(owner, "name", "")), ()))
     return found
 
 
@@ -1704,25 +1779,30 @@ def _attribute_description(node, name: str):
     """What ``name`` is on the meshes using this material.
 
     ``("uv", None, "CORNER")``, ``("color", data_type, domain)``,
-    ``("generic", data_type, domain)``, or None when no such mesh carries it.
+    ``("generic", data_type, domain)``, or None unless every such mesh -
+    including one a finish variant offers the material - carries it: a mesh
+    without it would read nothing. The first mesh says what it is.
     Outside a live Blender session the graph is trusted as a float attribute.
     """
     meshes = _core._material_meshes(node)
     if meshes is None:
         return ("generic", "FLOAT", "POINT")
+    description = None
     for mesh in meshes:
         uv_layers = getattr(mesh, "uv_layers", None)
         if uv_layers is not None and uv_layers.get(name) is not None:
-            return ("uv", None, "CORNER")
+            description = description or ("uv", None, "CORNER")
+            continue
         attributes = getattr(mesh, "attributes", None)
         attribute = attributes.get(name) if attributes is not None else None
         if attribute is None:
-            continue
-        data_type = (getattr(attribute, "data_type", "") or "").upper()
-        domain = (getattr(attribute, "domain", "") or "").upper()
-        kind = "color" if data_type in _ATTRIBUTE_COLOR_TYPES else "generic"
-        return (kind, data_type, domain)
-    return None
+            return None
+        if description is None:
+            data_type = (getattr(attribute, "data_type", "") or "").upper()
+            domain = (getattr(attribute, "domain", "") or "").upper()
+            kind = "color" if data_type in _ATTRIBUTE_COLOR_TYPES else "generic"
+            description = (kind, data_type, domain)
+    return description
 
 
 def _attribute_node_expr(node, from_socket, provenance) -> Dict[str, Any]:

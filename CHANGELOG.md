@@ -20,6 +20,9 @@ and what you have to do differently. Internal refactors are not listed.
   for finishes, or disable variant export before baking.
 - A collider uses its object's geometry without enclosing separate child
   objects. File URLs with escaped percent signs name the correct file.
+- A finish nothing wears reads the UV maps and colour attributes of the meshes
+  its set targets, so a renamed render UV map still reads as `st` and a colour
+  attribute it reads is no longer refused.
 - Finish variants keep distinct materials whose names reduce to the same USD
   identifier, even when custom properties and Blender-name metadata are off.
 - Blender 5.3 is now the minimum supported version. Installation, command-line

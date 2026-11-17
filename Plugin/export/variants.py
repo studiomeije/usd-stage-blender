@@ -319,6 +319,53 @@ class VariantPlan:
         )
 
 
+def finish_material_targets(plan: VariantPlan) -> dict[str, tuple]:
+    """``{material name: the target objects a finish binds it on}``.
+
+    A finish nested in a shape set is bound inside each shape variant that
+    offers it, on every target except the members of the other shapes - and
+    of their parented children. So a finish offered on one shape never
+    reaches a target only another shape owns. Mirrors the authoring.
+    """
+    reached: dict[str, list] = {}
+    for variant_set in plan.sets:
+        if variant_set.kind != MATERIAL:
+            continue
+        parent = plan.set_named(variant_set.parent_set)
+        owners: dict[int, set] = {}
+        for parent_variant in (parent.variants if parent is not None else ()):
+            for obj in parent_variant.objects:
+                owners.setdefault(rna_identity(obj), set()).add(parent_variant.name)
+
+
+        for variant in variant_set.variants:
+            if not variant.has_material:
+                continue
+            for target in variant_set.target_objects:
+                if parent is not None:
+                    owned = _owning_variants(target, owners)
+                    if not any(
+                        variant.applies_to_parent(parent_variant.name)
+                        and not owned - {parent_variant.name}
+                        for parent_variant in parent.variants
+                    ):
+                        continue
+                found = reached.setdefault(variant.material_name, [])
+                if not any(target is existing for existing in found):
+                    found.append(target)
+    return {name: tuple(targets) for name, targets in reached.items()}
+
+
+def _owning_variants(target, owners: dict) -> set:
+    """Names of the parent variants owning ``target`` or an object it is parented under."""
+    names: set = set()
+    current = target
+    while current is not None:
+        names |= owners.get(rna_identity(current), set())
+        current = getattr(current, "parent", None)
+    return names
+
+
 class VariantPlanError(RuntimeError):
     """Raised when declared variant sets cannot be authored."""
 

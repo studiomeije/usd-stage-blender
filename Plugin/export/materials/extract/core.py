@@ -2672,45 +2672,31 @@ def _color_attribute_primvar_type(node, layer_name: str) -> Optional[str]:
     the type that primvar actually carries, or Reality Composer Pro cannot
     instantiate the material at all.
 
-    Returns ``None`` when no mesh using this node's material carries the
-    attribute, which is the fail-closed signal callers refuse on. Fails
+    Returns ``None`` unless every mesh using this node's material (or offered
+    it by a finish variant) carries the attribute, which is the fail-closed
+    signal callers refuse on: a mesh without it would read nothing. Fails
     closed when no owning material/mesh can be found (e.g. the node lives in
     a node group tree). Outside a live Blender session (pure-Python unit
     doubles) the graph is trusted and reads with the measured default; the
     real export path always runs inside Blender.
     """
-    try:
-        import bpy
-        meshes = bpy.data.meshes
-        materials = bpy.data.materials
-    except Exception:
+    meshes = _material_meshes(node)
+    if meshes is None:
         return _COLOR_ATTRIBUTE_DEFAULT_PRIMVAR_TYPE
-    node_tree = getattr(node, "id_data", None)
-    owners = [
-        material
-        for material in materials
-        if getattr(material, "node_tree", None) == node_tree
-    ]
-    if not owners:
-        return None
+    primvar_type = None
     for mesh in meshes:
-        mesh_materials = list(getattr(mesh, "materials", []) or [])
-        if not any(
-            any(candidate == owner for owner in owners)
-            for candidate in mesh_materials
-            if candidate is not None
-        ):
-            continue
         attributes = getattr(mesh, "color_attributes", None)
         attribute = (
             attributes.get(layer_name) if attributes is not None else None
         )
-        if attribute is not None:
+        if attribute is None:
+            return None
+        if primvar_type is None:
             data_type = (getattr(attribute, "data_type", "") or "").upper()
-            return _COLOR_ATTRIBUTE_PRIMVAR_TYPES.get(
+            primvar_type = _COLOR_ATTRIBUTE_PRIMVAR_TYPES.get(
                 data_type, _COLOR_ATTRIBUTE_DEFAULT_PRIMVAR_TYPE
             )
-    return None
+    return primvar_type
 
 
 def _color_attribute_set_index(node, layer_name: str) -> Optional[int]:
@@ -2718,55 +2704,39 @@ def _color_attribute_set_index(node, layer_name: str) -> Optional[int]:
 
     RealityKit's vertex-colour reader (``ND_geomcolor_*``) selects a colour
     set by integer index, not by name, so only an attribute the mesh lists
-    first is addressable. Returns ``None`` when the attribute is not first,
-    which callers refuse on rather than silently exporting a different set.
+    first is addressable. Returns ``None`` when the attribute is not first on
+    every mesh using the material (or offered it by a finish variant), which
+    callers refuse on rather than silently exporting a different set.
 
     Outside a live Blender session the graph is trusted and index 0 is
     assumed; the real export path always runs inside Blender.
     """
-    try:
-        import bpy
-        meshes = bpy.data.meshes
-        materials = bpy.data.materials
-    except Exception:
+    meshes = _material_meshes(node)
+    if meshes is None:
         return 0
-    node_tree = getattr(node, "id_data", None)
-    owners = [
-        material
-        for material in materials
-        if getattr(material, "node_tree", None) == node_tree
-    ]
-    if not owners:
+    if not meshes:
         return None
     for mesh in meshes:
-        mesh_materials = list(getattr(mesh, "materials", []) or [])
-        if not any(
-            any(candidate == owner for owner in owners)
-            for candidate in mesh_materials
-            if candidate is not None
-        ):
-            continue
         collection = getattr(mesh, "color_attributes", None)
         if collection is None:
-            continue
+            return None
         try:
             attributes = list(collection)
         except TypeError:
             # Name-keyed doubles (and some bpy collection shims) are not
             # iterable; presence is all they can answer, and a single
             # attribute is necessarily the first one.
-            found = collection.get(layer_name)
-            if found is not None:
-                return 0
+            if collection.get(layer_name) is None:
+                return None
             continue
-        for index, attribute in enumerate(attributes):
-            if getattr(attribute, "name", None) == layer_name:
-                return index if index == 0 else None
-    return None
+        first = getattr(attributes[0], "name", None) if attributes else None
+        if first != layer_name:
+            return None
+    return 0
 
 
 def _color_attribute_reaches_export(node, layer_name: str) -> bool:
-    """Whether a mesh using this node's material carries ``layer_name``."""
+    """Whether every mesh using this node's material carries ``layer_name``."""
     return _color_attribute_primvar_type(node, layer_name) is not None
 
 
@@ -4365,7 +4335,7 @@ def uv_set_resolution(node, uv_map: Optional[str]) -> Tuple[str, Optional[str]]:
         if layers is None or layers.get(name) is None:
             return name, (
                 f"UV map '{name}' is not on the mesh '{getattr(mesh, 'name', '?')}', which uses "
-                "this material, so the export has no such coordinates to read; add the UV map "
+                "this material or is offered it by a finish variant, so the export has no such coordinates to read; add the UV map "
                 "or pick one every mesh has"
             )
         resolved.add("UV0" if _render_uv_layer_name(mesh) == name else name)

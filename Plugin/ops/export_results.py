@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from functools import lru_cache
 from pathlib import Path
 
 from .background_jobs import read_job_status
@@ -25,13 +26,24 @@ def record_result(settings, *, state, export_path="", diagnostics_path="",
     return result
 
 
-def get_latest_result(settings, background_status=None):
+@lru_cache(maxsize=8)
+def _parse_stored_result(raw: str) -> dict:
+    """The stored result, parsed once per distinct string.
+
+    The panel asks for the latest result on every redraw, and the stored
+    string carries the full diagnostics, so parsing it each time is wasted
+    work. Callers get a shallow copy, so they must not mutate the nested
+    ``data``, ``warnings`` or ``errors``: those are shared with the cache.
+    """
     try:
-        direct = json.loads(getattr(settings, "last_export_result", "") or "{}")
+        parsed = json.loads(raw or "{}")
     except (TypeError, ValueError):
-        direct = {}
-    if not isinstance(direct, dict):
-        direct = {}
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def get_latest_result(settings, background_status=None):
+    direct = _parse_stored_result(str(getattr(settings, "last_export_result", "") or ""))
     background = background_status
     if background is None:
         background = read_job_status(getattr(settings, "background_job_dir", ""))

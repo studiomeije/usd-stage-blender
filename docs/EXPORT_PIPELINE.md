@@ -446,6 +446,8 @@ Two consequences worth knowing:
   material prim for a material no face wears, so the material set defines one,
   named the way Blender would have named it and never sharing a prim with a
   different material, and the MaterialX rewrite converts it like any other.
+  The UV maps and colour attributes it reads are looked up on the meshes the
+  material set targets, so a render UV map with any name still reads as `st`.
 
 ### Offering a finish on some shapes only
 
