@@ -19,38 +19,38 @@ and what you have to do differently. Internal refactors are not listed.
   Pro and RealityKit switch between. Declare them in the new **Variants**
   panel; the [user guide](docs/USER_GUIDE.md#offering-variants) walks through
   it.
-  - A **geometry set** switches whole collections of objects: **Geometry Set**
-    builds one from a parent collection whose children are the variants.
-  - A **material set** keeps the objects and rebinds their material, so one
-    tabletop can be offered in oak or walnut without a second copy of the mesh.
-    **Material Set** builds one from the collection it applies to and the
-    materials you pick, by checkbox or by a shared name prefix such as
-    `Fabric_`. One object can belong to a geometry set and a material set at
-    once: three tops and four finishes is twelve looks from three meshes.
-  - A material set can be offered on some shapes only - walnut on the square
-    top but not the round one - with **Geometry Restrictions** and each
-    material's **Offered On** toggles.
-  - The export authors a `variantSet` on the asset's root prim and ships the
-    variant you chose with **Use as Export Default**. Objects in no variant
-    are present whatever the selection.
-  - Variants you have hidden or excluded are brought into the export, and your
-    view layer is put back exactly as it was afterwards.
-  - **Preview in Viewport** shows a geometry variant in the scene, and
-    **Previews** renders a thumbnail of each variant.
-  - The panel keeps a declaration consistent as you edit it - renaming carries
-    through to the default and to nested sets - and lists every problem an
-    export would refuse or warn about, in the export's own words.
-  - An export stops rather than ship a set that cannot switch: two variants
-    claiming one object, a variant parented under another's, a name that is
-    not a USD identifier, or an opinion in the file that would override the
-    variants. Variant names are never renamed for you, since they are what
-    Reality Composer Pro lists and what your code passes to
-    `setVariantSelection(for:to:)`.
-  - A material nothing wears yet can still be offered: the export writes it,
-    and reads the UV maps and colour attributes it uses from the objects the
-    set targets.
-  - Selected-only exports bring along the other variants, rigs and dependent
-    members of any set the selection touches.
+    - A **geometry set** switches whole collections of objects: **Geometry Set**
+      builds one from a parent collection whose children are the variants.
+    - A **material set** keeps the objects and rebinds their material, so one
+      tabletop can be offered in oak or walnut without a second copy of the mesh.
+      **Material Set** builds one from the collection it applies to and the
+      materials you pick, by checkbox or by a shared name prefix such as
+      `Fabric_`. One object can belong to a geometry set and a material set at
+      once: three tops and four finishes is twelve looks from three meshes.
+    - A material set can be offered on some shapes only - walnut on the square
+      top but not the round one - with **Geometry Restrictions** and each
+      material's **Offered On** toggles.
+    - The export authors a `variantSet` on the asset's root prim and ships the
+      variant you chose with **Use as Export Default**. Objects in no variant
+      are present whatever the selection.
+    - Variants you have hidden or excluded are brought into the export, and your
+      view layer is put back exactly as it was afterwards.
+    - **Preview in Viewport** shows a geometry variant in the scene, and
+      **Previews** renders a thumbnail of each variant.
+    - The panel keeps a declaration consistent as you edit it - renaming carries
+      through to the default and to nested sets - and lists every problem an
+      export would refuse or warn about, in the export's own words.
+    - An export stops rather than ship a set that cannot switch: two variants
+      claiming one object, a variant parented under another's, a name that is
+      not a USD identifier, or an opinion in the file that would override the
+      variants. Variant names are never renamed for you, since they are what
+      Reality Composer Pro lists and what your code passes to
+      `setVariantSelection(for:to:)`.
+    - A material nothing wears yet can still be offered: the export writes it,
+      and reads the UV maps and colour attributes it uses from the objects the
+      set targets.
+    - Selected-only exports bring along the other variants, rigs and dependent
+      members of any set the selection touches.
 - **Asset identity.** The root prim carries a USD `kind` (Component by
   default), `assetInfo` naming the file a consumer references, and an
   `extentsHint` giving its bounds, so another stage can reference, instance
@@ -71,8 +71,8 @@ and what you have to do differently. Internal refactors are not listed.
 - **A clearer export panel.** Save To, Format, the Profile and Selection Only
   sit together above one **Export** button, and an empty Save To opens a file
   picker. After an export a result card shows the outcome and warning count,
-  with **Reveal File** and **View Details**, which opens the full report in
-  Blender's Text Editor.
+  with **Reveal File** and **View Details**, a summary of the export that
+  opens the full report in Blender's Text Editor.
 - **Blender 5.3's USD workflows.** Exports use Blender 5.3's native normals
   and keep matrix mesh attributes. Reloadable geometry from Blender's USD
   Collection Importer exports through the normal pipeline; see the

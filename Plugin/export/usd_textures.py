@@ -591,7 +591,7 @@ def require_safe_texture_alpha_staging_policy(
 
     raise _TextureStagingError(
         f"Premultiplied base-color texture '{source_path}' cannot be encoded "
-        "or resized as AVIF safely by Blender 5.2. Select PNG for the export "
+        "or resized as AVIF safely by Blender. Select PNG for the export "
         "texture format, or disable the unsafe AVIF/resolution override."
     )
 

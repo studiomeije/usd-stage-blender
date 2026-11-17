@@ -552,7 +552,7 @@ def _unsupported_principled_inputs(
     for name, neutral, controller in anisotropy_inputs:
         if (controller is None or anisotropy_active) and _active(name, neutral):
             issues.append(
-                f"Principled '{name}' requires a verified Blender 5.2 tangent/anisotropy "
+                f"Principled '{name}' requires a verified Blender tangent/anisotropy "
                 "mapping; bake the material before export."
             )
 

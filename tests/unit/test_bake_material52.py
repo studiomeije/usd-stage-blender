@@ -335,7 +335,7 @@ def test_surface_render_method_uses_blender_52_values(
 
 def test_surface_render_method_rejects_unknown_value():
     material = types.SimpleNamespace(surface_render_method="OPAQUE")
-    with pytest.raises(ValueError, match="Unsupported Blender 5.2"):
+    with pytest.raises(ValueError, match="Unsupported Blender surface render method"):
         bake_textures._surface_render_method(material, transparent=True)
 
 

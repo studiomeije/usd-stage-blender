@@ -2479,7 +2479,7 @@ def _surface_render_method(material, *, transparent: bool) -> str:
         return "DITHERED"
     value = str(material.surface_render_method)
     if value not in {"DITHERED", "BLENDED"}:
-        raise ValueError(f"Unsupported Blender 5.2 surface render method: {value}")
+        raise ValueError(f"Unsupported Blender surface render method: {value}")
     return value
 
 
@@ -2651,7 +2651,7 @@ def _build_baked_material(
 ) -> None:
     if surface_render_method not in {"DITHERED", "BLENDED"}:
         raise ValueError(
-            f"Unsupported Blender 5.2 surface render method: {surface_render_method}"
+            f"Unsupported Blender surface render method: {surface_render_method}"
         )
     node_tree = material.node_tree
     nodes = node_tree.nodes

@@ -244,8 +244,9 @@ After an export, a card at the top of **USD Stage Export** shows:
   number of warnings when there are some;
 - the file name, and for a failure the reason;
 - **Reveal File** to show the file in Finder;
-- **View Details** to open the full report in Blender's Text Editor, with every
-  warning and error;
+- **View Details** for a summary of the export - its output, the materials and
+  textures it converted, and its warnings and errors - with **Open Full Report
+  in Text Editor** for the complete report;
 - **Open Log** for a background bake's log.
 
 A failed export never replaces a file that was already at the path: the

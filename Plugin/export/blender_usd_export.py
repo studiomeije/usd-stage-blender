@@ -1323,7 +1323,7 @@ def _validate_export_operator_contract(operator, kwargs: dict) -> None:
         valid_props = {prop.identifier for prop in operator.get_rna_type().properties}
     except Exception as exc:
         raise RuntimeError(
-            "Unable to inspect Blender 5.2 USD export operator properties."
+            "Unable to inspect the Blender USD export operator properties."
         ) from exc
 
     missing_contract = sorted(_REQUIRED_USD_EXPORT_PROPERTIES - valid_props)
@@ -1349,7 +1349,7 @@ def _invoke_usd_export(operator, kwargs: dict, diagnostics=None) -> set[str]:
         reports = _new_operator_reports(reports_before, _read_window_manager_reports())
         report_detail = "; ".join(message for _levels, message in reports)
         suffix = f" Reports: {report_detail}" if report_detail else ""
-        message = f"Blender 5.2 USD export operator failed: {exc}{suffix}"
+        message = f"Blender's USD export operator failed: {exc}{suffix}"
         if diagnostics:
             diagnostics.add_error(message)
         raise RuntimeError(message) from exc
@@ -1363,14 +1363,14 @@ def _invoke_usd_export(operator, kwargs: dict, diagnostics=None) -> set[str]:
             diagnostics.add_warning(f"Blender USD export: {message}")
 
     if report_errors:
-        message = "Blender 5.2 USD export operator reported errors: " + "; ".join(report_errors)
+        message = "Blender's USD export operator reported errors: " + "; ".join(report_errors)
         if diagnostics:
             diagnostics.add_error(message)
         raise RuntimeError(message)
 
     if "FINISHED" not in result:
         status = ", ".join(sorted(result)) if result else "no status"
-        message = f"Blender 5.2 USD export operator did not finish (reported: {status})."
+        message = f"Blender's USD export operator did not finish (reported: {status})."
         if diagnostics:
             diagnostics.add_error(message)
         raise RuntimeError(message)
