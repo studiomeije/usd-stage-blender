@@ -12,6 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from Plugin.export.materials.extract import core
+from Plugin.export.materials.extract import images
 from Plugin.export import postprocess_usd
 
 
@@ -33,12 +34,12 @@ class _Image:
 
 
 def test_reloaded_temp_file_invalidates_cache_within_one_export(tmp_path, monkeypatch):
-    monkeypatch.setattr(core.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(images.tempfile, "gettempdir", lambda: str(tmp_path))
     source = tmp_path / "source.png"
     source.write_bytes(b"first-file-version")
     image = _Image(source)
 
-    session_dir = core.begin_image_staging_session()
+    session_dir = images.begin_image_staging_session()
     try:
         first = Path(core._resolve_image_path(image))
         assert first.read_bytes() == b"first-file-version"
@@ -51,15 +52,15 @@ def test_reloaded_temp_file_invalidates_cache_within_one_export(tmp_path, monkey
         assert second == first
         assert session_dir in second.parents
     finally:
-        assert core.cleanup_image_staging_session()
+        assert images.cleanup_image_staging_session()
 
     assert not session_dir.exists()
-    assert not core._STAGED_IMAGE_CACHE
-    assert core._STAGED_IMAGE_DIR is None
+    assert not images._STAGED_IMAGE_CACHE
+    assert images._STAGED_IMAGE_DIR is None
 
 
 def test_dirty_to_clean_transition_never_reuses_dirty_snapshot(tmp_path, monkeypatch):
-    monkeypatch.setattr(core.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(images.tempfile, "gettempdir", lambda: str(tmp_path))
     source = tmp_path / "source.png"
     source.write_bytes(b"old-disk-file")
     image = _Image(source, dirty=True)
@@ -68,8 +69,8 @@ def test_dirty_to_clean_transition_never_reuses_dirty_snapshot(tmp_path, monkeyp
         destination.write_bytes(b"dirty-in-memory-pixels")
         return True
 
-    monkeypatch.setattr(core, "_save_current_image_snapshot_to_path", save_current_pixels)
-    session_dir = core.begin_image_staging_session()
+    monkeypatch.setattr(images, "_save_current_image_snapshot_to_path", save_current_pixels)
+    session_dir = images.begin_image_staging_session()
     try:
         dirty_snapshot = Path(core._resolve_image_path(image))
         assert dirty_snapshot.read_bytes() == b"dirty-in-memory-pixels"
@@ -81,10 +82,10 @@ def test_dirty_to_clean_transition_never_reuses_dirty_snapshot(tmp_path, monkeyp
         assert clean_snapshot.read_bytes() == b"reloaded-current-file"
         assert clean_snapshot == dirty_snapshot
     finally:
-        assert core.cleanup_image_staging_session()
+        assert images.cleanup_image_staging_session()
 
     assert not session_dir.exists()
-    assert not core._STAGED_IMAGE_CACHE
+    assert not images._STAGED_IMAGE_CACHE
 
 
 def test_postprocess_export_boundary_cleans_session_on_failure(monkeypatch):

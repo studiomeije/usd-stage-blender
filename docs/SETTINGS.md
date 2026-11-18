@@ -26,7 +26,7 @@ What that means:
 
 - **A scene keeps the settings saved with it.** The panel and the command line export a `.blend` with the same values.
 - **A scene with no saved settings starts from your last-used values.** The first time the panel or an export operator touches such a scene in a Blender session, it copies them in from `last_export_settings_json`. A payload from another schema version, or one missing a key, is ignored.
-- **`filepath` is remembered per `.blend`**, in the hidden preference `last_export_paths_json`, and fills an empty Output Path. An unsaved `.blend` has no remembered path.
+- **`filepath` is remembered per `.blend`**, in the hidden preference `last_export_paths_json`, and fills an empty Save To field. An unsaved `.blend` has no remembered path.
 - **`export` and `bake-export` do not write preferences.** They suspend persistence for the whole command, so a `key=value` override does not leak into your panel values.
 
 ## The settings
@@ -41,12 +41,16 @@ UI paths below start from the **USD Stage** tab. Where a row says "see below", t
 
 | Key | UI control | Applies to | Precondition or interaction |
 |---|---|---|---|
-| `filepath` | Export ▸ Output Path | both | The extension always follows `export_format`. A `//` or other relative path is refused until the `.blend` is saved. On the CLI, pass `-o/--output`. |
+| `filepath` | Export ▸ Save To | both | The extension always follows `export_format`. A `//` or other relative path is refused until the `.blend` is saved. On the CLI, pass `-o/--output`. |
 | `export_format` | Export ▸ Format | both | Only `USDZ` packages the result and consults `usdzip_path`. |
 | `root_prim_name` | Advanced USD ▸ General ▸ Root Prim | both | A missing leading `/` is added. Empty means `Scene`. |
-| `export_animation` | Export ▸ Include ▸ Animation | both | Master switch for animation, including `author_animation_library`. |
-| `author_animation_library` | Export ▸ RCP Clip Library, shown only with Animation on | both | Needs `export_animation`. See below. |
-| `selected_objects_only` | Export ▸ Include ▸ Selection Only | both | Narrows validation and fails on an empty selection. See below. CLI flag: `--selected-only`. |
+| `root_prim_kind` | Advanced USD ▸ General ▸ Asset Kind | both | The USD model kind on the root prim. `None` authors no kind, asset info or bounds hint. See below. |
+| `export_colliders` | Advanced USD ▸ General ▸ Colliders | both | Authors a RealityKit collider for every object with Blender Rigid Body enabled. See below. |
+| `payload_geometry` | Advanced USD ▸ General ▸ Payload Geometry | both | Splits the export into an asset interface and a payload layer under `assets/`. Off by default. See below. |
+| `export_animation` | Export ▸ Animation | both | Master switch for animation, including `author_animation_library`. |
+| `author_animation_library` | Advanced USD ▸ General ▸ RCP Clip Library, shown only with Animation on | both | Needs `export_animation`. See below. |
+| `selected_objects_only` | Export ▸ Selection Only | both | Narrows validation and fails on an empty selection. See below. CLI flag: `--selected-only`. |
+| `export_variants` | Variants ▸ Include Variants in Export | both | Off skips variant authoring and the visibility staging with it, so the export holds only what the viewport shows. The sets themselves live on the scene, not here. See below. |
 | `export_custom_properties` | Advanced USD ▸ General ▸ Custom Properties | both | Master switch for the next two keys. See below. |
 | `custom_properties_namespace` | Advanced USD ▸ General ▸ Namespace, shown only with Custom Properties on | both | Ignored when `export_custom_properties` is off. |
 | `author_blender_name` | Advanced USD ▸ General ▸ Blender Names, grayed out with Custom Properties off | both | Ignored when `export_custom_properties` is off. |
@@ -88,6 +92,21 @@ UI paths below start from the **USD Stage** tab. Where a row says "see below", t
 - An export or bake with nothing selected fails with `NO_EXPORTABLE_OBJECTS` instead of exporting the whole scene.
 - A selected skinned mesh brings its deforming armature along, when `export_armatures` is on.
 - A bake re-applies your selection after baking, so the bake's own selection changes cannot widen the export.
+- A variant set the selection touches brings its other variants' objects along, so an authored variant cannot switch to a prim the export never wrote. A set the selection does not touch is left out of the export and is not authored.
+
+**`payload_geometry` changes the shape of the output, not its contents.** On, the export writes two files: the interface, holding the root prim with its kind, asset info, bounds hint and variant sets plus a payload arc; and `assets/<output>/<generation>/<name>_payload.<ext>`, holding the geometry and materials. A consumer can then reference the asset, read what it is, size it and choose a variant with the geometry still on disk. Composed, the two are identical to a flat export, and a USDZ carries both layers. The payload repeats the interface's units and frame rate: USD rescales time across a payload whose frame rate differs, so without it a 30 fps animation would play back at the wrong speed. The variant sets stay in the interface alone: two layers authoring one selection would fight over it.
+
+**Colliders come from Blender's own Rigid Body, and are always boxes.** Enable Rigid Body on an object and the export writes a RealityKit collider sized from that object's bounds, so the asset is interactive without hand-work in Reality Composer Pro. It is written as a child called `Collider`, or `Collider_1` when the object already has a child of that name. Any other Blender collision shape is approximated by that box and the diagnostics report says which objects were approximated: Box is the one shape whose RealityKit spelling is verified. The component written is RealityKit's own, not `UsdPhysics`, which [never reaches RealityKit](APPLE_CONFORMANCE.md).
+
+**`root_prim_kind` governs three pieces of metadata, not one.** With any kind but `None`, the export also writes `assetInfo` (the name and the file a consumer references) and an `extentsHint` (the asset's bounds, so a consumer can lay it out without loading its geometry). `None` leaves all three unwritten, for a pipeline that assigns model hierarchy itself. On a variant asset the hint describes the selection the file ships with, since every other selection has a different size.
+
+**A material set can be offered on some shapes only.** Expand its Geometry Restrictions, choose the geometry set, and use each material's Offered On toggles to pick the shapes that offer it; the materials are then authored inside each geometry variant, so a finish can be offered on one shape and not another. Every shape must offer at least one. See [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#offering-a-finish-on-some-shapes-only).
+
+**A variant set varies geometry or materials.** A geometry set switches whole collections of objects; a material set keeps them and rebinds their material, so one object can belong to both. Two sets varying the same property of one object are refused. See [EXPORT_PIPELINE.md](EXPORT_PIPELINE.md#geometry-sets-and-material-sets).
+
+**Variant sets are scene content, not a setting.** They live on the scene and are saved with the `.blend`, so the panel and the command line export the same variants from the same file. `export_variants` only decides whether they are authored. Unlike the settings in this table, they are not carried into the next scene as last-used values: a list of this file's collections would mean nothing in another one.
+
+**Variant and variant-set names are refused, not renamed.** `allow_unicode` governs prim identifiers, not these. A variant name is what Reality Composer Pro lists and what `setVariantSelection(for:to:)` is passed, so an export will not quietly change one; it fails and says which name to fix. Names the panel makes for you are the exception - a set built from a collection or a material family, or a variant named after the collection or material it was given: those are adjusted up front, where you can see them in the panel and edit them.
 
 **`allow_unicode` also applies after Blender's export.** USD Stage for Blender renames any prim whose name is not a valid identifier. With `allow_unicode` on, non-ASCII letters and digits survive and other characters become `_`. With it off, every non-ASCII character becomes `_`. Reality Composer Pro imports non-ASCII names intact, Chinese included, although its hierarchy displays Chinese characters as `¿`.
 
@@ -157,28 +176,42 @@ Textures that a bake copies rather than bakes follow the direct-export rules abo
 ```text
 3D Viewport ▸ Sidebar ▸ "USD Stage"
 └─ USD Stage Export                                    (USDSTAGE_PT_export_panel)
-   ├─ [Background Job card, only while a job exists]
-   ├─ Export box: filepath · export_format · selected_objects_only · export_animation
-   │              [· author_animation_library] · Profile (ui_material_type) · [Export]
-   ├─ Material Settings
-   │  ├─ PBR   ▸ Processing (ui_pbr_processing)
-   │  │  ├─ Translate ▸ clamp_specular_tint
-   │  │  └─ Bake      ▸ bake_roughness_mode · Advanced ▸ bake_base_color · bake_opacity
-   │  │                                     · bake_step_timeout_seconds
-   │  └─ Unlit ▸ Appearance (ui_unlit_appearance)
-   │     ├─ Material Color Only ▸ Advanced ▸ (as above)
-   │     └─ Lighting & Shadows  ▸ bake_ibl_source [· bake_ibl_filepath · bake_ibl_strength
-   │                               · bake_ibl_rotation] · bake_isolate_meshes_lit · Advanced ▸ (as above)
+   ├─ [Background Job card, only while a job runs: progress · Cancel]
+   ├─ [Result card after an export: status · file · Reveal File · View Details · Open Log]
+   │  [· Dismiss Job, after a background job]
+   ├─ Export block: filepath (Save To) · export_format (Format)
+   │                · Profile (ui_material_type)
+   │                · Processing (ui_pbr_processing) or Appearance (ui_unlit_appearance)
+   │                · selected_objects_only (Selection Only) · export_animation (Animation)
+   │                [· Use Translate Materials, with material variants on a bake route]
+   │                [· bake_isolate_meshes_lit, with geometry variants on Lighting & Shadows]
+   │                · [Export]
+   ├─ Material Settings                      (collapsed)
+   │  ├─ PBR   ▸ Translate ▸ clamp_specular_tint
+   │  │          Bake      ▸ bake_roughness_mode · Advanced ▸ bake_base_color · bake_opacity
+   │  │                                         · bake_step_timeout_seconds
+   │  └─ Unlit ▸ Material Color Only ▸ Advanced ▸ (as above)
+   │            Lighting & Shadows  ▸ bake_ibl_source [· bake_ibl_filepath · bake_ibl_strength
+   │                                  · bake_ibl_rotation] · bake_isolate_meshes_lit · Advanced ▸ (as above)
    ├─ Textures                               (collapsed)
    │  ├─ direct route ▸ ui_source_texture_resolution · ui_source_texture_format [· bake_resolution_custom]
    │  └─ bake route   ▸ bake_resolution · bake_image_format [· bake_resolution_custom] · bake_margin
+   ├─ Variants                               (collapsed; USDSTAGE_PT_export_variants)
+   │  └─ export_variants (Include Variants in Export)
+   │     · variant sets [Geometry Set · Material Set · Empty · Remove]
+   │     · kind (Geometry / Materials) [· target_collection, material sets]
+   │     · variants [Add · Remove] · Use as Export Default · collection or material
+   │     [· Preview in Viewport, geometry sets] [· Selected Material preview, material sets]
+   │     [· Geometry Restrictions ▸ parent set · Offered On, material sets]
+   │     · Previews ▸ Refresh
    ├─ Advanced USD                           (collapsed)
-   │  ├─ General  ▸ root_prim_name · export_custom_properties [· custom_properties_namespace] · author_blender_name
-   │  │             · allow_unicode · evaluation_mode · use_instancing
+   │  ├─ General  ▸ root_prim_name · root_prim_kind · export_colliders · payload_geometry
+   │  │             · export_custom_properties [· custom_properties_namespace] · author_blender_name
+   │  │             · allow_unicode · evaluation_mode · use_instancing [· author_animation_library]
    │  ├─ Geometry ▸ triangulate_meshes [· quad_method · ngon_method] · export_subdivision
    │  └─ Rigging  ▸ export_shapekeys · export_armatures · only_deform_bones
    └─ Diagnostics                            (collapsed)
-      └─ diagnostics_enabled · [Show Diagnostics] [Create Support Bundle]
+      └─ diagnostics_enabled · [Show Diagnostics] [Create Support Bundle] · Documentation
 
 Shader Editor ▸ Sidebar ▸ "USD Stage"
 ├─ RealityKit Compatibility                  (USDSTAGE_PT_shader_validation)

@@ -4,7 +4,7 @@
 #   scripts/verify_apple_platform.sh [OUTPUT_DIR]
 #
 # Needs: macOS 27, Xcode 27 (xcrun usdchecker, realitytool, swiftc),
-# Reality Composer Pro 3, Blender 5.2, and a Python with pytest, usd-core and
+# Reality Composer Pro 3, Blender 5.3, and a Python with pytest, usd-core and
 # numpy: USDSTAGE_PYTHON, else the repository's .venv, else python3.
 #
 # What it does NOT do: prove anything renders. Every check here is a syntax,

@@ -26,7 +26,7 @@ def valid_manifest(**overrides: str) -> str:
         "version": "1.0.0",
         "maintainer": "Studio Meije <maintainers@usdstage.dev>",
         "type": "add-on",
-        "blender_version_min": "5.2.0",
+        "blender_version_min": "5.3.0",
         "website": "https://github.com/studiomeije/usd-stage-blender",
     }
     fields.update(overrides)

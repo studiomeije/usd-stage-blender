@@ -84,7 +84,7 @@ def test_an_image_through_a_uv_map_node_carries_the_resolved_set(meshes, monkeyp
 def test_a_uv_map_missing_from_a_mesh_or_render_on_only_some_is_refused(meshes):
     node = Node("UVMAP", "UV Map", {}, outputs=("UV",), uv_map="Paint", from_instancer=False)
     resolved = resolve(node, "UV", "vector3")
-    assert resolved["kind"] == "unresolved" and "'Paint' is not on the mesh 'Plane'" in resolved["reason"]
+    assert resolved["kind"] == "unresolved" and "'Paint' is not on mesh 'Plane'" in resolved["reason"]
 
     meshes.append(_mesh("Other", ["UVMap", "Detail"], render="UVMap"))
     node = Node("UVMAP", "UV Map", {}, outputs=("UV",), uv_map="Detail", from_instancer=False)

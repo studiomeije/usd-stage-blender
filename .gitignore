@@ -15,6 +15,9 @@ __pycache__/
 # Build artifacts
 dist/
 
+# Documentation site build (mkdocs build)
+site/
+
 # Background bake/export jobs
 .usdstage_jobs/
 

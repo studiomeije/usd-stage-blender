@@ -519,7 +519,7 @@ def _expanded_dependency_paths(bpy_module, owners) -> list[dict[str, Any]] | Non
         subset = set(owners)
     except Exception as exc:
         raise RuntimeError(
-            "Blender 5.2 asset preflight could not build its scoped datablock set."
+            "Asset preflight could not build its scoped datablock set."
         ) from exc
     if not subset:
         return []
@@ -551,7 +551,7 @@ def _expanded_dependency_paths(bpy_module, owners) -> list[dict[str, Any]] | Non
         )
     except Exception as exc:
         raise RuntimeError(
-            "Blender 5.2 asset dependency scanning failed while expanding "
+            "Asset dependency scanning failed while expanding "
             "UDIM, sequence, or cache paths. Save the scene and relink its "
             "external assets, then retry."
         ) from exc

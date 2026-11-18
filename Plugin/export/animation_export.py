@@ -18,13 +18,12 @@ from typing import Any
 
 import bpy
 
-
-def _rna_identity(value) -> int:
-    """Stable Blender datablock identity, with a test-double fallback."""
-    try:
-        return int(value.as_pointer())
-    except Exception:
-        return id(value)
+from .object_scope import (
+    view_layer_objects,
+    is_exportable_object as _is_exportable_object,
+    rna_identity as _rna_identity,
+)
+from .variants import resolve_variant_plan
 
 
 def collect_export_objects(context, settings) -> list:
@@ -76,27 +75,43 @@ def collect_export_objects(context, settings) -> list:
     for obj in selected:
         add(obj)
 
-    if bool(getattr(settings, "export_armatures", True)):
-        evaluation_mode = str(getattr(settings, "evaluation_mode", "RENDER"))
-        for obj in selected:
-            if getattr(obj, "type", None) != "MESH":
-                continue
-            for modifier in getattr(obj, "modifiers", []) or []:
-                if (
-                    getattr(modifier, "type", None) == "ARMATURE"
-                    and (
-                        getattr(modifier, "show_render", True)
-                        if evaluation_mode == "RENDER"
-                        else getattr(modifier, "show_viewport", True)
+    # Close over variant dependencies and rigs together: a sibling introduced
+    # by a shape set can use its own rig or participate in another set.
+    variant_plan = resolve_variant_plan(context, settings)
+    evaluation_mode = str(getattr(settings, "evaluation_mode", "RENDER"))
+    changed = True
+    while changed:
+        changed = False
+        for variant_set in variant_plan.sets_touching(seen):
+            dependencies = [variant_set]
+            parent = variant_plan.set_named(variant_set.parent_set)
+            if parent is not None:
+                dependencies.append(parent)
+            for dependency in dependencies:
+                for member in dependency.target_objects:
+                    changed = add(member) or changed
+                for variant in dependency.variants:
+                    for member in variant.objects:
+                        changed = add(member) or changed
+        if bool(getattr(settings, "export_armatures", True)):
+            for obj in list(closure):
+                if getattr(obj, "type", None) != "MESH":
+                    continue
+                for modifier in getattr(obj, "modifiers", []) or []:
+                    enabled = getattr(
+                        modifier,
+                        "show_render" if evaluation_mode == "RENDER" else "show_viewport",
+                        True,
                     )
-                ):
+                    if getattr(modifier, "type", None) != "ARMATURE" or not enabled:
+                        continue
                     armature = getattr(modifier, "object", None)
                     if armature is None:
                         raise RuntimeError(
                             f"Selected skinned mesh '{obj.name}' has an enabled "
                             "Armature modifier with no target object."
                         )
-                    add(armature)
+                    changed = add(armature) or changed
 
     # Preserve scene order for deterministic exports, then retain a linked
     # armature that is not directly linked into the active scene.  Selection
@@ -107,46 +122,6 @@ def collect_export_objects(context, settings) -> list:
     ordered_ids = {_rna_identity(obj) for obj in ordered}
     ordered.extend(obj for obj in closure if _rna_identity(obj) not in ordered_ids)
     return ordered
-
-
-def view_layer_objects(context, settings=None) -> list:
-    """The scene objects Blender's USD exporter writes, in scene order.
-
-    Blender leaves out objects in collections excluded from the view layer,
-    and follows ``evaluation_mode``: ``RENDER`` skips objects and collections
-    disabled in renders, ``VIEWPORT`` those disabled in viewports. Hiding with
-    the outliner's eye does not leave anything out. The export scope does the
-    same. Collection-instance prototypes hidden this way still
-    reach the processing scope through their instancer.
-    """
-    scene_objects = list(context.scene.objects)
-    if settings is None:
-        settings = getattr(getattr(context, "scene", None), "usd_stage_export_settings", None)
-    viewport = str(getattr(settings, "evaluation_mode", "RENDER")) == "VIEWPORT"
-    hidden_flag = "hide_viewport" if viewport else "hide_render"
-    view_layer = getattr(context, "view_layer", None)
-    root = getattr(view_layer, "layer_collection", None)
-    if root is None:
-        layer_objects = getattr(view_layer, "objects", None)
-        if layer_objects is None:
-            return scene_objects
-        in_layer = {_rna_identity(obj) for obj in layer_objects}
-        return [obj for obj in scene_objects if _rna_identity(obj) in in_layer]
-
-    visible: set[int] = set()
-    stack = [root]
-    while stack:
-        layer_collection = stack.pop()
-        collection = layer_collection.collection
-        if bool(getattr(layer_collection, "exclude", False)):
-            continue
-        if bool(getattr(collection, hidden_flag, False)):
-            continue
-        for obj in collection.objects:
-            if not bool(getattr(obj, hidden_flag, False)):
-                visible.add(_rna_identity(obj))
-        stack.extend(layer_collection.children)
-    return [obj for obj in scene_objects if _rna_identity(obj) in visible]
 
 
 def collect_processing_objects(context, export_objects: list) -> list:
@@ -751,32 +726,6 @@ def _slot_matches_owner(slot, owner) -> bool:
     identifier = str(getattr(slot, "identifier", "") or "")
     # Blender prefixes Action slot identifiers by ID type (OB, KE, ...).
     return len(identifier) > 2 and identifier[2:] == owner_name
-
-
-#: Object types the RealityKit delivery contract never exports. The native
-#: exporter's flags for them are hard-disabled too, so selection filtering must
-#: never admit them.
-_NEVER_EXPORTED_TYPES = frozenset({"LIGHT", "CAMERA", "CURVE", "CURVES", "POINTCLOUD", "VOLUME"})
-
-
-def _is_exportable_object(obj, settings) -> bool:
-    """Whether an object belongs in the export scope.
-
-    Meshes always export: the USD exporter's mesh flag is hard-coded on
-    (``_build_export_kwargs``), so no setting can drop one. Armatures follow
-    ``export_armatures``. Empties are real USD Xforms and collection-instance
-    roots; any other Blender object class is out of scope, so selected-only
-    validation cannot succeed on a selection that would publish only the
-    synthetic export root.
-    """
-    object_type = str(getattr(obj, "type", ""))
-    if object_type == "MESH":
-        return True
-    if object_type == "ARMATURE":
-        return bool(getattr(settings, "export_armatures", True))
-    if object_type in _NEVER_EXPORTED_TYPES:
-        return False
-    return object_type == "EMPTY"
 
 
 def _has_shapekeys(obj, settings) -> bool:

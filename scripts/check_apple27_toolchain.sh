@@ -27,8 +27,8 @@ Environment:
   RCP_APP                 Reality Composer Pro application bundle. Default:
                           /Applications/RealityComposerPro.app
   APPLE_MIN_VERSION       Minimum macOS, Xcode, and SDK version. Default: 27.0
-  BLENDER_TARGET_VERSION  Blender target major/minor. Default: 5.2
-  BLENDER_VERSION_MODE    "exact" requires the target major/minor (5.2.x).
+  BLENDER_TARGET_VERSION  Blender target major/minor. Default: 5.3
+  BLENDER_VERSION_MODE    "exact" requires the target major/minor (5.3.x).
                           "minimum" accepts the target or newer. Default: exact
   RCP_REQUIRED_MAJOR      Required Reality Composer Pro major. Default: 3
 
@@ -136,7 +136,7 @@ version_major_minor() {
 }
 
 APPLE_MIN_VERSION="${APPLE_MIN_VERSION:-27.0}"
-BLENDER_TARGET_VERSION="${BLENDER_TARGET_VERSION:-5.2}"
+BLENDER_TARGET_VERSION="${BLENDER_TARGET_VERSION:-5.3}"
 BLENDER_VERSION_MODE="${BLENDER_VERSION_MODE:-exact}"
 RCP_REQUIRED_MAJOR="${RCP_REQUIRED_MAJOR:-3}"
 

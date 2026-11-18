@@ -6,29 +6,24 @@ packaging pass can include a complete, portable dependency closure.
 
 from __future__ import annotations
 
-import hashlib
 import os
 import shutil
-import unicodedata
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
-from urllib.parse import unquote, urlparse
-from urllib.request import url2pathname
 
 from . import usd_textures
+from .asset_paths import (
+    asset_value_paths as _asset_value_paths,
+    is_non_file_asset as _is_non_file_asset,
+    layer_filesystem_path as _layer_filesystem_path,
+    normalize_file_url as _normalize_file_url,
+    unique_destination_name as _unique_destination_name,
+)
 from .staging_namespace import output_sidecar_namespace
 from .usd_utils import Sdf
 from .usd_textures import _is_texture_path
 
 
-NON_FILE_PREFIXES = (
-    "anon:",
-    "mem:",
-    "http:",
-    "https:",
-    "data:",
-    "blob:",
-)
 
 _USD_LAYER_EXTENSIONS = {".usd", ".usda", ".usdc"}
 
@@ -924,14 +919,6 @@ def _rewrite_asset_value(
     return Sdf.AssetPath(relative_path), True
 
 
-def _asset_value_paths(value) -> Tuple[str, str]:
-    if Sdf is not None and isinstance(value, Sdf.AssetPath):
-        return str(value.path or ""), str(value.resolvedPath or "")
-    if value:
-        return str(value), ""
-    return "", ""
-
-
 def _resolve_asset_dependency(
     *,
     owner,
@@ -1020,63 +1007,6 @@ def _resolve_layer_dependency(layer, authored_path: str) -> Optional[Path]:
         return candidate.resolve()
     except OSError:
         return candidate.absolute()
-
-
-def _layer_filesystem_path(layer) -> Optional[Path]:
-    for field in ("realPath", "resolvedPath", "identifier"):
-        value = getattr(layer, field, None)
-        if value and not _is_non_file_asset(str(value)):
-            normalized = _normalize_file_url(str(value))
-            if "[" not in normalized:
-                return Path(normalized).resolve()
-    return None
-
-
-def _is_non_file_asset(asset_path: str) -> bool:
-    """Return True if the asset path is not a local file path."""
-    return str(asset_path).lower().startswith(NON_FILE_PREFIXES)
-
-
-def _normalize_file_url(asset_path: str) -> str:
-    """Convert file:// URLs to filesystem paths when needed."""
-    if asset_path.startswith("file://"):
-        parsed = urlparse(asset_path)
-        return unquote(url2pathname(parsed.path))
-    return asset_path
-
-
-def _unique_destination_name(path: Path, used: dict, diagnostics=None, label: str = "asset") -> str:
-    """Return a deterministic unique filename, avoiding collisions."""
-    name = path.name
-    name_key = _destination_name_key(name)
-    existing = used.get(name_key)
-    if existing is None or existing == path:
-        used[name_key] = path
-        return name
-
-    stem = path.stem
-    suffix = path.suffix
-    digest = hashlib.sha1(str(path).encode("utf-8")).hexdigest()[:8]
-    candidate = f"{stem}_{digest}{suffix}"
-    counter = 1
-    candidate_key = _destination_name_key(candidate)
-    while candidate_key in used and used[candidate_key] != path:
-        candidate = f"{stem}_{digest}_{counter}{suffix}"
-        candidate_key = _destination_name_key(candidate)
-        counter += 1
-    used[candidate_key] = path
-
-    if diagnostics:
-        diagnostics.add_warning(
-            f"Renamed {label} '{name}' to '{candidate}' to avoid a name collision."
-        )
-
-    return candidate
-
-
-def _destination_name_key(name: str) -> str:
-    """Match default Apple filesystem case and Unicode normalization rules."""
-    return unicodedata.normalize("NFC", name).casefold()
 
 
 def _diagnostic_warning(diagnostics, message: str) -> None:

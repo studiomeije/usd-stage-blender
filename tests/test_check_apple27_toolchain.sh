@@ -72,7 +72,7 @@ EOF
 cat >"$FIXTURE_BIN/blender" <<'EOF'
 #!/usr/bin/env bash
 [[ "${1:-}" == "--version" ]] || exit 2
-printf 'Blender %s LTS\n' "${FAKE_BLENDER_VERSION:-5.2.0}"
+printf 'Blender %s\n' "${FAKE_BLENDER_VERSION:-5.3.0}"
 EOF
 
 cat >"$FIXTURE_BIN/realitytool" <<'EOF'
@@ -131,7 +131,7 @@ run_preflight() {
         FAKE_OS_NAME="${FAKE_OS_NAME:-Darwin}" \
         FAKE_ARCH="${FAKE_ARCH:-arm64}" \
         FAKE_MACOS_VERSION="${FAKE_MACOS_VERSION:-27.0}" \
-        FAKE_BLENDER_VERSION="${FAKE_BLENDER_VERSION:-5.2.0}" \
+        FAKE_BLENDER_VERSION="${FAKE_BLENDER_VERSION:-5.3.0}" \
         FAKE_XCODE_VERSION="${FAKE_XCODE_VERSION:-27.0}" \
         FAKE_SDK_VERSION="${FAKE_SDK_VERSION:-27.0}" \
         FAKE_RCP_VERSION="${FAKE_RCP_VERSION:-3.0}" \
@@ -184,12 +184,12 @@ assert_contains "ERROR: Unknown argument: --invalid" "$FIXTURE_ROOT/invalid-argu
 run_case invalid-config 2 env BLENDER_VERSION_MODE=unsupported "$CHECK_SCRIPT"
 assert_contains 'BLENDER_VERSION_MODE must be "exact" or "minimum"' "$FIXTURE_ROOT/invalid-config.out"
 
-BLENDER_VERSION_MODE=minimum FAKE_BLENDER_VERSION=5.3.0 \
+BLENDER_VERSION_MODE=minimum FAKE_BLENDER_VERSION=5.4.0 \
     run_case minimum-mode 0 run_preflight
-assert_contains "Blender 5.3.0 satisfies >=5.2" "$FIXTURE_ROOT/minimum-mode.out"
+assert_contains "Blender 5.4.0 satisfies >=5.3" "$FIXTURE_ROOT/minimum-mode.out"
 
-FAKE_BLENDER_VERSION=5.3.0 run_case exact-mode-rejects-newer 1 run_preflight
-assert_contains "does not match required 5.2.x" "$FIXTURE_ROOT/exact-mode-rejects-newer.out"
+FAKE_BLENDER_VERSION=5.4.0 run_case exact-mode-rejects-newer 1 run_preflight
+assert_contains "does not match required 5.3.x" "$FIXTURE_ROOT/exact-mode-rejects-newer.out"
 
 FAKE_OS_NAME=Linux \
 FAKE_ARCH=x86_64 \

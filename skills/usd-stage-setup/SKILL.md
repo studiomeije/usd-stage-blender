@@ -10,7 +10,7 @@ set up the `usdstage` alias the `usd-stage-cli` skill uses.
 
 ## Prerequisites
 
-- Blender 5.2 or newer.
+- Blender 5.3 or newer.
 - The USD Stage for Blender add-on installed and enabled. The release zip,
   `usd-stage-for-blender-<version>.zip`, comes from the public repository's
   [Releases page](https://github.com/studiomeije/usd-stage-blender/releases)
@@ -85,8 +85,8 @@ alias usdstage="python3 /path/to/usd_stage"
 Windows, in the PowerShell profile (`notepad $PROFILE`):
 
 ```powershell
-$env:USDSTAGE_BLENDER = "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
-function usdstage { py "$env:APPDATA\Blender Foundation\Blender\5.2\extensions\user_default\usd_stage" @args }
+$env:USDSTAGE_BLENDER = "C:\Program Files\Blender Foundation\Blender 5.3\blender.exe"
+function usdstage { py "$env:APPDATA\Blender Foundation\Blender\5.3\extensions\user_default\usd_stage" @args }
 ```
 
 Open a new terminal and run `usdstage version`.

@@ -90,7 +90,7 @@ def test_a_uv_map_attribute_fac_is_u(monkeypatch):
     (("generic", "FLOAT", "FACE"), "GEOMETRY", "wear", "Face domain"),
     (("generic", "INT", "POINT"), "GEOMETRY", "count", "Int attribute"),
     (("generic", "FLOAT", "POINT"), "GEOMETRY", "2bad", "not a valid USD primvar"),
-    (None, "GEOMETRY", "missing", "was not found"),
+    (None, "GEOMETRY", "missing", "is not on any mesh using this material"),
     (("color", "FLOAT_COLOR", "POINT"), "GEOMETRY", "Second", "first colour attribute"),
 ])
 def test_unexportable_attributes_are_refused_naming_why(description, attribute_type, name, words, monkeypatch):

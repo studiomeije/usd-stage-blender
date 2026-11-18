@@ -20,6 +20,6 @@ def draw_issue_list(layout, items, *, title, icon, alert=False, max_items=8, for
     column = box.column(align=True)
     column.alert = alert
     for item in items[:max_items]:
-        column.label(text=format_item(item))
+        column.label_multiline(text=format_item(item))
     if len(items) > max_items:
         box.label(text=f"... {len(items) - max_items} more")

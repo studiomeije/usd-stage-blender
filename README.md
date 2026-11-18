@@ -22,6 +22,13 @@ Blender's interface.
 - **Animation**: transform animation, skinned meshes, shape keys, vertex
   displacement and drivers over `frame` export
   ([docs/EXPORT_PIPELINE.md](docs/EXPORT_PIPELINE.md)).
+- **Variants**: offer geometry and material alternatives from one file.
+  Group the alternatives in collections or materials, declare them in the
+  Variants panel, and the export writes USD variant sets
+  ([docs/EXPORT_PIPELINE.md](docs/EXPORT_PIPELINE.md#5-variant-sets)).
+- **Ready to use in an app**: Rigid Body objects export with a RealityKit
+  collider, and every export says what it is - its kind, name and bounds - so
+  another scene can reference and lay it out without loading it.
 - **Portable output**: every export is Y-up, -Z forward and in meters, with
   textures staged beside it under relative paths.
 - **Command line and agent skills**: export, bake, validate and manage
@@ -32,10 +39,14 @@ Blender's interface.
 
 ## Requirements
 
-- Blender 5.2 LTS.
+- Blender 5.3 or newer.
 - `python3`, for the command line.
 - Reality Composer Pro 3, or RealityKit on visionOS, iOS or macOS 27, to open
   the exports.
+
+Blender 5.3's Collection Importer can keep source USD assets reloadable inside
+your scene. See [reloadable USD source collections](docs/EXPORT_PIPELINE.md#reloadable-usd-source-collections)
+for the workflow and material round-trip limits.
 
 ## Install
 
@@ -58,9 +69,13 @@ repository.
 
 ## Where to find it in Blender
 
+New to the add-on? Start with the [user guide](docs/USER_GUIDE.md).
+
 - **3D Viewport ▸ Sidebar ▸ USD Stage**: the export panel with the Profile,
   the Export button, material, texture and USD settings, the background job
   monitor, and diagnostics.
+- **3D Viewport ▸ Sidebar ▸ USD Stage ▸ Variants**: declare the asset's
+  geometry and material variant sets, preview them and pick the default.
 - **Shader Editor ▸ Sidebar ▸ USD Stage ▸ RealityKit Compatibility**:
   check the active material against the chosen Profile and select the nodes
   that block translation.
@@ -136,7 +151,16 @@ folder redacted. What else to attach to a report is in
 
 ## Documentation
 
+The documentation is published at
+[studiomeije.github.io/usd-stage-blender](https://studiomeije.github.io/usd-stage-blender/),
+built from the pages below.
+
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md) walks through the everyday tasks:
+  a first export, choosing a Profile, fixing a refused material, variants,
+  colliders and payloads, and reading the result.
 - [docs/README.md](docs/README.md) indexes every documentation page.
+- [CONTRIBUTING.md](CONTRIBUTING.md) covers setting up a checkout, running the
+  tests, and extending the add-on.
 - [CHANGELOG.md](CHANGELOG.md) lists what changed in each release, including
   what to redo when coming from BlenderToRCP.
 

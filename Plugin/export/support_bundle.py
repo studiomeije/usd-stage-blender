@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 
+from .diagnostics import json_value as _json_safe
 from .sidecar_manifest import (
     SidecarManifestError,
     read_output_sidecar_manifest,
@@ -210,20 +211,22 @@ def collect_validation_snapshot(context=None) -> dict:
         entries = []
         total_errors = 0
         total_warnings = 0
-        for material in materials:
-            result = rk_validate.validate_material(
-                material,
-                strict=True,
-                clamp_specular_tint=clamp_specular_tint,
-            )
-            total_errors += len(result.get("errors", []))
-            total_warnings += len(result.get("warnings", []))
-            entries.append({
-                "name": result.get("material", material.name),
-                "ok": result.get("ok", False),
-                "errors": result.get("errors", []),
-                "warnings": result.get("warnings", []),
-            })
+        from .materials.extract.readers import finish_meshes_resolved
+        with finish_meshes_resolved(context):
+            for material in materials:
+                result = rk_validate.validate_material(
+                    material,
+                    strict=True,
+                    clamp_specular_tint=clamp_specular_tint,
+                )
+                total_errors += len(result.get("errors", []))
+                total_warnings += len(result.get("warnings", []))
+                entries.append({
+                    "name": result.get("material", material.name),
+                    "ok": result.get("ok", False),
+                    "errors": result.get("errors", []),
+                    "warnings": result.get("warnings", []),
+                })
         return _json_safe({
             "ok": total_errors == 0,
             "error_count": total_errors,
@@ -1044,15 +1047,3 @@ def _redact_text(text: str, tokens: list[tuple[str, str]]) -> str:
             redacted = redacted.replace(candidate, replacement)
     redacted = re.sub(r"(?i)(api[_-]?key|token|secret|password)=\S+", r"\1=<redacted>", redacted)
     return redacted
-
-
-def _json_safe(value):
-    if isinstance(value, dict):
-        return {str(k): _json_safe(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        return [_json_safe(v) for v in value]
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    return str(value)

@@ -5,6 +5,117 @@ Notable changes to USD Stage for Blender, newest first. Dates are release dates.
 Entries describe what changed for you — what now works, what stops the export,
 and what you have to do differently. Internal refactors are not listed.
 
+## 1.2.0 — 2026-11-18
+
+### Before you update
+
+- **Blender 5.3 or newer is now required.** Installation, command-line
+  exports, release packaging and CI use this baseline. Older `.blend` files
+  still open in Blender 5.3.
+
+### New
+
+- **Variant sets.** One file can now offer alternatives that Reality Composer
+  Pro and RealityKit switch between. Declare them in the new **Variants**
+  panel; the [user guide](docs/USER_GUIDE.md#offering-variants) walks through
+  it.
+    - A **geometry set** switches whole collections of objects: **Geometry Set**
+      builds one from a parent collection whose children are the variants.
+    - A **material set** keeps the objects and rebinds their material, so one
+      tabletop can be offered in oak or walnut without a second copy of the mesh.
+      **Material Set** builds one from the collection it applies to and the
+      materials you pick, by checkbox or by a shared name prefix such as
+      `Fabric_`. One object can belong to a geometry set and a material set at
+      once: three tops and four finishes is twelve looks from three meshes.
+    - A material set can be offered on some shapes only - walnut on the square
+      top but not the round one - with **Geometry Restrictions** and each
+      material's **Offered On** toggles.
+    - The export authors a `variantSet` on the asset's root prim and ships the
+      variant you chose with **Use as Export Default**. Objects in no variant
+      are present whatever the selection.
+    - Variants you have hidden or excluded are brought into the export, and your
+      view layer is put back exactly as it was afterwards.
+    - **Preview in Viewport** shows a geometry variant in the scene, and
+      **Previews** renders a thumbnail of each variant.
+    - The panel keeps a declaration consistent as you edit it - renaming carries
+      through to the default and to nested sets - and lists every problem an
+      export would refuse or warn about, in the export's own words.
+    - An export stops rather than ship a set that cannot switch: two variants
+      claiming one object, a variant parented under another's, a name that is
+      not a USD identifier, or an opinion in the file that would override the
+      variants. Variant names are never renamed for you, since they are what
+      Reality Composer Pro lists and what your code passes to
+      `setVariantSelection(for:to:)`.
+    - A material nothing wears yet can still be offered: the export writes it,
+      and reads the UV maps and colour attributes it uses from the objects the
+      set targets.
+    - Selected-only exports bring along the other variants, rigs and dependent
+      members of any set the selection touches.
+- **Asset identity.** The root prim carries a USD `kind` (Component by
+  default), `assetInfo` naming the file a consumer references, and an
+  `extentsHint` giving its bounds, so another stage can reference, instance
+  and lay out the export without loading its geometry. Set **Advanced USD ▸
+  General ▸ Asset Kind** to None to author none of it.
+- **Payload Geometry** (Advanced USD ▸ General) splits an export into an asset
+  interface - root prim, kind, asset info, bounds and variant sets - and a
+  payload under `assets/` with the geometry and materials. Another scene can
+  reference your asset, place it and pick a variant without loading any
+  geometry. Composed, it is identical to a flat export, and a USDZ carries
+  both halves.
+- **Colliders.** Objects with Blender Rigid Body enabled export with a
+  RealityKit collider sized from the object's own geometry, so an asset can be
+  tapped, dragged or collided with in an app without adding a collision
+  component in Reality Composer Pro. Colliders are boxes; other collision
+  shapes are approximated and the diagnostics report says which. Turn it off
+  with **Advanced USD ▸ General ▸ Colliders**.
+- **A clearer export panel.** Save To, Format, the Profile and Selection Only
+  sit together above one **Export** button, and an empty Save To opens a file
+  picker. After an export a result card shows the outcome and warning count,
+  with **Reveal File** and **View Details**, a summary of the export that
+  opens the full report in Blender's Text Editor.
+- **Blender 5.3's USD workflows.** Exports use Blender 5.3's native normals
+  and keep matrix mesh attributes. Reloadable geometry from Blender's USD
+  Collection Importer exports through the normal pipeline; see the
+  [export guide](docs/EXPORT_PIPELINE.md#reloadable-usd-source-collections)
+  for the workflow and its limits.
+- `usdstage info` lists the variant sets a `.blend` declares, so you can see
+  what a file will export without exporting it.
+- **Documentation.** A new [user guide](docs/USER_GUIDE.md) covers the
+  everyday tasks with screenshots, and the documentation is published at
+  [studiomeije.github.io/usd-stage-blender](https://studiomeije.github.io/usd-stage-blender/).
+
+### Fixed
+
+- An asset referenced through a network `file://server/share/...` URL is now
+  copied from that server. The server name used to be dropped, so the export
+  looked for the path on your own disk instead. Upper-case `FILE://` URLs are
+  read as URLs too, an asset path with a scheme such as `s3://` is no longer
+  mistaken for a local file, and file URLs with escaped percent signs name the
+  correct file.
+- The diagnostics report is always valid JSON. A value such as an empty
+  object's bounds could write `NaN` into it, which strict JSON readers refuse;
+  such numbers are now written as the strings `"NaN"`, `"Infinity"` and
+  `"-Infinity"`.
+- An export started from the panel records how long each step took in its
+  diagnostics report, as the command line always did.
+- A material refused because a UV map or attribute it reads is missing names
+  the scene objects that lack it, instead of the mesh data's name.
+
+### Limits
+
+- **Reality Composer Pro's `.reality` compile keeps only the selection you
+  shipped.** `realitytool` resolves the default and discards the other
+  variants, so a `.reality` built from an `.rkassets` bundle carries none
+  unless you also define Reality Composer Pro's own variants in the editor.
+  The variant sets survive intact in `.usda`, `.usdc` and `.usdz`.
+- A material set over a collection instance is refused while Instancing is
+  on, because the shared prototype's material would win. Turn Instancing off
+  and every mesh of every instance takes the finish.
+- Baking supports geometry sets, not material sets: use Translate Materials
+  for material variants, or turn off **Include Variants in Export** to bake
+  without them. Lighting & Shadows needs **Isolate Meshes for Shadows** when
+  geometry variants are exported.
+
 ## 1.1.0 — 2026-10-17
 
 - An export where two materials have names that reduce to the same USD prim

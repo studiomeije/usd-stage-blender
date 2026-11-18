@@ -16,11 +16,11 @@ else:
     bpy = _bpy
 
 
-MINIMUM_BLENDER_VERSION = (5, 2, 0)
+MINIMUM_BLENDER_VERSION = (5, 3, 0)
 
 
 def require_supported_blender_version() -> tuple[int, int, int]:
-    """Fail closed unless Blender 5.2 or newer is running.
+    """Fail closed unless Blender 5.3 or newer is running.
 
     The extension manifest prevents normal installation in older Blender
     versions, but command-line and source-tree execution can bypass that UI

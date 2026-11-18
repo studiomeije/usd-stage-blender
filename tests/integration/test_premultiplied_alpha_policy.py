@@ -158,7 +158,7 @@ original_avif_copy_error = rejected(avif_fixture, settings("ORIGINAL", "ORIGINAL
 
 results = {
     "checks": {
-        "blender_5_2": tuple(bpy.app.version[:2]) == (5, 2),
+        "supported_blender": tuple(bpy.app.version[:2]) >= (5, 3),
         "source_is_associated_edge": source_size == (4, 1)
         and associated_alpha_is_preserved(source_pixels),
         "png_copy_is_byte_exact": copy_is_exact,

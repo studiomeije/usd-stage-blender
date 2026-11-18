@@ -4,12 +4,12 @@
 schema_version = "1.0.0"
 id = "usd_stage"
 name = "USD Stage for Blender"
-version = "1.1.0"
+version = "1.2.0"
 tagline = "USD export for RealityKit and Reality Composer Pro"
 maintainer = "Tom Krikorian <tom@studiomeije.com>"
 website = "https://github.com/studiomeije/usd-stage-blender"
 type = "add-on"
-blender_version_min = "5.2.0"
+blender_version_min = "5.3.0"
 license = ["SPDX:GPL-3.0-or-later"]
 
 [permissions]

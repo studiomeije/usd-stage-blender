@@ -16,6 +16,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from Plugin.export.materials.author import create_materialx_material
 from Plugin.export.materials.extract import core
+from Plugin.export.materials.extract import images
 from Plugin.export.materials import rewrite as material_rewrite
 from Plugin.export.materials.graph import (
     MaterialXGraphBuilder,
@@ -440,7 +441,7 @@ def test_blender_image_alpha_semantics_reach_realitykit_graph(
     monkeypatch.setattr(core, "_get_surface_shader_node", lambda _material: principled)
     # pytest's tmp_path is itself inside the system temp root; this fixture is a
     # real existing source file, not an export-generated image snapshot.
-    monkeypatch.setattr(core, "_is_temp_path", lambda _path: False)
+    monkeypatch.setattr(images, "_is_temp_path", lambda _path: False)
 
     data = core.extract_blender_material_data(material)
 
@@ -1290,8 +1291,8 @@ def test_clean_packed_bytes_win_over_stale_external_file(tmp_path, monkeypatch):
         is_dirty=False,
         file_format="PNG",
     )
-    monkeypatch.setattr(core, "_STAGED_IMAGE_CACHE", {})
-    monkeypatch.setattr(core, "_STAGED_IMAGE_DIR", tmp_path / "stage")
+    monkeypatch.setattr(images, "_STAGED_IMAGE_CACHE", {})
+    monkeypatch.setattr(images, "_STAGED_IMAGE_DIR", tmp_path / "stage")
     (tmp_path / "stage").mkdir()
     staged = Path(core._resolve_image_path(image))
     assert staged != external
@@ -1319,9 +1320,9 @@ def test_dirty_image_refreshes_staging_cache(tmp_path, monkeypatch):
         destination.write_bytes(state["bytes"])
         return True
 
-    monkeypatch.setattr(core, "_save_current_image_snapshot_to_path", save_snapshot)
-    monkeypatch.setattr(core, "_STAGED_IMAGE_CACHE", {})
-    monkeypatch.setattr(core, "_STAGED_IMAGE_DIR", tmp_path / "stage")
+    monkeypatch.setattr(images, "_save_current_image_snapshot_to_path", save_snapshot)
+    monkeypatch.setattr(images, "_STAGED_IMAGE_CACHE", {})
+    monkeypatch.setattr(images, "_STAGED_IMAGE_DIR", tmp_path / "stage")
     (tmp_path / "stage").mkdir()
     first = Path(core._resolve_image_path(image))
     assert first.read_bytes() == b"first"
@@ -1351,9 +1352,9 @@ def test_current_pixel_snapshot_failure_never_falls_back_to_stale_bytes(
         is_float=False,
         file_format="JPEG",
     )
-    monkeypatch.setattr(core, "_save_current_image_snapshot_to_path", lambda *_: False)
-    monkeypatch.setattr(core, "_STAGED_IMAGE_CACHE", {})
-    monkeypatch.setattr(core, "_STAGED_IMAGE_DIR", tmp_path / "stage")
+    monkeypatch.setattr(images, "_save_current_image_snapshot_to_path", lambda *_: False)
+    monkeypatch.setattr(images, "_STAGED_IMAGE_CACHE", {})
+    monkeypatch.setattr(images, "_STAGED_IMAGE_DIR", tmp_path / "stage")
     (tmp_path / "stage").mkdir()
     with pytest.raises(ValueError, match="Unable to snapshot"):
         core._resolve_image_path(image)
@@ -1373,8 +1374,8 @@ def test_packed_write_failure_never_falls_back_to_external_file(tmp_path, monkey
     )
     destination = tmp_path / "not-a-directory"
     destination.write_text("blocked")
-    monkeypatch.setattr(core, "_STAGED_IMAGE_CACHE", {})
-    monkeypatch.setattr(core, "_STAGED_IMAGE_DIR", destination)
+    monkeypatch.setattr(images, "_STAGED_IMAGE_CACHE", {})
+    monkeypatch.setattr(images, "_STAGED_IMAGE_DIR", destination)
     with pytest.raises((FileExistsError, ValueError)):
         core._resolve_image_path(image)
 
