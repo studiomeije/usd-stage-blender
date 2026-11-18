@@ -5,7 +5,7 @@ Notable changes to USD Stage for Blender, newest first. Dates are release dates.
 Entries describe what changed for you — what now works, what stops the export,
 and what you have to do differently. Internal refactors are not listed.
 
-## 1.2.0 — 2026-11-17
+## 1.2.0 — 2026-11-18
 
 ### Before you update
 
