@@ -794,6 +794,14 @@ def _validate_material(
         _add_issue(result, "errors", None, surface_refusal + ".", removable=False)
         result["ok"] = False
 
+    from ..export.materials.extract.core import unlit_tone_map_from_material
+
+    try:
+        unlit_tone_map_from_material(material)
+    except ValueError as error:
+        _add_issue(result, "errors", None, f"{error}.", removable=False)
+        result["ok"] = False
+
     from ..export.materials.extract.occlusion import ambient_occlusion_refusal
 
     occlusion_refusal = ambient_occlusion_refusal(material)

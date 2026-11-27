@@ -148,9 +148,21 @@ nothing to select.
    sets (`resolve_force_unlit`): `LIT_ALBEDO` builds PBR, the other modes build
    unlit. See [BAKING.md](BAKING.md#2-the-bake-modes).
 
-The unlit surface carries only `color`, `opacity`, `opacityThreshold` and
-`hasPremultipliedAlpha`; other linked inputs are dropped with a warning naming
-them (`_unlit_input_graphs`), and other constants are not mapped. A Principled
+The unlit surface carries only `color`, `opacity`, `opacityThreshold`,
+`hasPremultipliedAlpha` and `applyPostProcessToneMap`; other linked inputs are
+dropped with a warning naming them (`_unlit_input_graphs`), and other
+constants are not mapped.
+
+**Tone mapping.** RealityKit tone-maps an unlit surface with the rest of the
+frame unless `applyPostProcessToneMap` is false: with the camera's tone
+mapping on, a 0.18 unlit grey reads 0.129 and 1.0 reads 0.666, and with the
+input false they read 0.180 and 1.0 (measured on macOS 27.2.1). Set the
+material custom property `usd_stage_unlit_tonemap` to False on a screen or UI
+material that must show its exact colour; the export then authors the input
+false. Unset or True authors nothing, RealityKit's default. A value that is
+not a boolean (or 0 or 1) stops the export, and the property on a material
+that exports lit warns that it has no effect
+(`unlit_tone_map_from_material`). A Principled
 material built unlit takes its Base Color as `color`, textured or constant,
 never scaled by Emission Strength, which scales only the emission.
 

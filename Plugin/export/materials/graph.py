@@ -152,6 +152,12 @@ class MaterialXGraphBuilder:
         if not pbr_node_def:
             raise ValueError(f"PBR node definition not found: {pbr_node_id}")
 
+        if material_data.get('unlit_tone_map') is False and self.diagnostics:
+            self.diagnostics.add_warning(
+                f"Material '{material_data.get('name')}' sets usd_stage_unlit_tonemap to "
+                "False but exports lit, through PBR Surface 2, which has no tone-map "
+                "switch; the property only affects unlit materials."
+            )
         pbr_inputs = self._map_realitykit_pbr2_inputs(material_data)
         pbr_node = self._create_node(
             node_id=pbr_node_id,
@@ -1032,6 +1038,9 @@ class MaterialXGraphBuilder:
             )
         elif 'base_color' in material_data:
             inputs['color'] = self._convert_color(material_data['base_color'])
+
+        if material_data.get('unlit_tone_map') is False:
+            inputs['applyPostProcessToneMap'] = False
 
         is_transparent = material_data.get('is_transparent', False)
 

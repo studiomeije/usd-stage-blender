@@ -171,6 +171,34 @@ def opacity_threshold_from_material(
     return threshold
 
 
+_UNLIT_TONE_MAP_PROPERTY = "usd_stage_unlit_tonemap"
+
+
+def unlit_tone_map_from_material(material) -> Optional[bool]:
+    """The material's ``usd_stage_unlit_tonemap`` choice, or None when unset.
+
+    RealityKit's unlit surface tone-maps its colour with the rest of the frame
+    unless ``applyPostProcessToneMap`` is false. Measured on macOS 27.2.1 with
+    the camera's tone mapping on: a 0.18 unlit grey reads 0.129 and 1.0 reads
+    0.666 by default, and 0.180 and 1.0 with the input false. A screen or UI
+    surface that must show exact sRGB sets the property to False. Anything but
+    a boolean (or 0 / 1) is refused rather than guessed at.
+    """
+    try:
+        value = material.get(_UNLIT_TONE_MAP_PROPERTY)
+    except Exception:
+        return None
+    if value is None:
+        return None
+    if isinstance(value, bool) or value in (0, 1):
+        return bool(value)
+    raise ValueError(
+        f"Material property '{_UNLIT_TONE_MAP_PROPERTY}' is {value!r}; set it to False "
+        "for exact colour on an unlit surface, True for RealityKit's tone mapping, or "
+        "delete it"
+    )
+
+
 def extract_blender_material_data(material) -> Dict[str, Any]:
     """Extract supported material parameters from a Blender material."""
     data = {
@@ -183,6 +211,9 @@ def extract_blender_material_data(material) -> Dict[str, Any]:
         "DITHERED",
     )
     data['is_transparent'] = material_has_transparency(material)
+    tone_map = unlit_tone_map_from_material(material)
+    if tone_map is not None:
+        data['unlit_tone_map'] = tone_map
 
     surface_node = _get_surface_shader_node(material)
     if surface_node and surface_node.type == 'GROUP':

@@ -41,6 +41,11 @@ and what you have to do differently. Internal refactors are not listed.
   values. With Coat Normal unlinked, the coat now follows the Normal input as
   it does in Cycles.
 
+- **Exact colour on unlit screens.** Set the material custom property
+  `usd_stage_unlit_tonemap` to False and the unlit material is exported with
+  RealityKit's tone mapping off, so a 0.18 grey shows as 0.18 rather than
+  0.13. Materials without the property are unchanged.
+
 ### Before you update
 
 - **A Coat IOR other than 1.5 stops the export.** RealityKit ignores the

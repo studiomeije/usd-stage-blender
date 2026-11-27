@@ -58,7 +58,7 @@ inputs; every node that feeds them is in [Shader nodes](#shader-nodes).
 | Glossy BSDF | Partial | A metallic surface of its Color. Glossy has no Fresnel, so its rim brightens toward white, and the export says so. |
 | Two of the shaders above in a Mix Shader | Partial | Blended into one surface. Exact when the only input that differs is Base Color or Metallic; otherwise every differing input is named in a warning. Differing linked normals are refused. |
 | Principled Hair BSDF | Partial | Direct coloring only; terminates in RealityKit's hair surface. See the Shader nodes table. |
-| Emission on the Material Output, or a material without nodes | Yes | Terminates in RealityKit's unlit surface. |
+| Emission on the Material Output, or a material without nodes | Yes | Terminates in RealityKit's unlit surface. Set the material custom property `usd_stage_unlit_tonemap` to False to show the exact colour, untouched by RealityKit's tone mapping. |
 | Unlit bake modes | Yes | **RealityKit Unlit ▸ Material Color Only** and **Lighting & Shadows** author the unlit surface. See [BAKING.md](BAKING.md#2-the-bake-modes). |
 | RealityKit node groups | Yes | A group from the add-on's own catalog on the output exports as that RealityKit material. |
 | Base Color, Metallic, Roughness | Yes | Constant or linked. |
