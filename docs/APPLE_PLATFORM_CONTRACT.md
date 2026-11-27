@@ -116,6 +116,31 @@ Translated materials carry only this graph
 ([no UsdPreviewSurface network](MATERIAL_TRANSLATION.md#no-usdpreviewsurface-network)),
 and their textures follow [color space](MATERIAL_TRANSLATION.md#color-space).
 
+### Builds differ
+
+A ShaderGraph framework ships with the OS, with Reality Composer Pro and with
+Xcode, and each is its own build. They mostly agree, but not everywhere.
+Measured with `scripts/check_shader_implementations.py --shadergraph all` on
+macOS 27.2.1:
+
+| Nodes | OS, 159.40.2 | Reality Composer Pro 3, 159.0.5 | Xcode 27.2, 159.40.3 |
+|---|---|---|---|
+| `ND_MTL_dfdx_*`, `ND_MTL_dfdy_*`, `ND_MTL_fwidth_*` (float, vector2-4 and their half forms) | implemented | implemented | no Metal function |
+| `ND_hextiledimage_color3`, `_color4`, `ND_hextilednormalmap_vector3` | implemented | GLSL only | implemented |
+| `ND_RealityKitTexture2DGradient_*`, `ND_RealityKitTexture2DLOD_*` | implemented | implemented | implemented |
+
+The derivative nodes return exact screen-space derivatives from a USD-loaded
+graph, and the gradient and LOD texture nodes honour the derivatives and level
+they are given (measured, see
+[What RealityKit reads](REALITYKIT_USD_SUPPORT.md#materials-and-shading)). The
+exporter never authors them itself; the node manifest declares them so a graph
+that uses them passes preflight. The manifest records which builds lack an
+implementation (`policy.unimplemented_in_shadergraph_builds`), and the
+preflight warns, naming the builds, when a material uses such a node
+(`MATERIALX_NODEDEF_UNIMPLEMENTED_IN_SOME_BUILDS`): a hex-tiled material
+renders on macOS 27.2 and shows without its shader graph in Reality Composer
+Pro 3.
+
 ### Colour nodes compute in half precision
 
 RealityKit's MaterialX 1.39 library computes its colour-typed nodes

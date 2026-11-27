@@ -690,6 +690,8 @@ RealityKit would drop or replace the material; the two version checks read
 | `MATERIALX_INPUT_ABSENT_FROM_NODEDEF` | The shader authors an input the nodedef does not declare at that version |
 | `GEOMPROPVALUE_PRIMVAR_TYPE_MISMATCH` | A primvar read declares a different channel count than the primvar has |
 
+The preflight also warns with `MATERIALX_NODEDEF_UNIMPLEMENTED_IN_SOME_BUILDS` when a material uses a node some recorded ShaderGraph build cannot build, such as `ND_hextiledimage_*` in Reality Composer Pro 3; see [builds differ](APPLE_PLATFORM_CONTRACT.md#builds-differ).
+
 Warnings and info notes do not stop the export:
 
 | Code | Severity | Meaning |

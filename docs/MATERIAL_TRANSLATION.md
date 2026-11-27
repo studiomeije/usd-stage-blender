@@ -447,7 +447,7 @@ The gate is the module constants in `Plugin/nodes/validate.py`
 `SUPPORTED_VECTOR_MATH_OPERATIONS`) plus the hair, closure, reader,
 displacement and driver rules in `Plugin/export/materials/extract/` (`core.py` and its section modules),
 where `_resolve_socket_value` decides what the export contains. Referenceable
-nodedefs are in `Plugin/manifest/rk_nodes_manifest.json` (1,232, of which the
+nodedefs are in `Plugin/manifest/rk_nodes_manifest.json` (1,256, of which the
 56 flagged `policy.editor_unresolvable` are refused). Non-`RK_*` node groups and
 unrecognized node types are refused. Per-node verdicts:
 [FEATURE_SUPPORT.md](FEATURE_SUPPORT.md#shader-nodes); platform side:

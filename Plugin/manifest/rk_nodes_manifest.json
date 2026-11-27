@@ -38076,6 +38076,726 @@
       },
       "source_file": "References/MaterialX-definitions/stdlib_defs.mtlx"
     },
+    "ND_MTL_dfdx_float": {
+      "nodedef_name": "ND_MTL_dfdx_float",
+      "node_id": "MTL_dfdx",
+      "node_name": "MTL_dfdx",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "float",
+          "value": "0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "float"
+        }
+      ],
+      "signature": "in[p:float]|out[out:float]",
+      "policy": {
+        "half_type": false,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdx_half": {
+      "nodedef_name": "ND_MTL_dfdx_half",
+      "node_id": "MTL_dfdx",
+      "node_name": "MTL_dfdx",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "half",
+          "value": "0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "half"
+        }
+      ],
+      "signature": "in[p:half]|out[out:half]",
+      "policy": {
+        "half_type": true,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdx_half2": {
+      "nodedef_name": "ND_MTL_dfdx_half2",
+      "node_id": "MTL_dfdx",
+      "node_name": "MTL_dfdx",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "half2",
+          "value": "0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "half2"
+        }
+      ],
+      "signature": "in[p:half2]|out[out:half2]",
+      "policy": {
+        "half_type": true,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdx_half3": {
+      "nodedef_name": "ND_MTL_dfdx_half3",
+      "node_id": "MTL_dfdx",
+      "node_name": "MTL_dfdx",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "half3",
+          "value": "0.0,0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "half3"
+        }
+      ],
+      "signature": "in[p:half3]|out[out:half3]",
+      "policy": {
+        "half_type": true,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdx_half4": {
+      "nodedef_name": "ND_MTL_dfdx_half4",
+      "node_id": "MTL_dfdx",
+      "node_name": "MTL_dfdx",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "half4",
+          "value": "0.0,0.0,0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "half4"
+        }
+      ],
+      "signature": "in[p:half4]|out[out:half4]",
+      "policy": {
+        "half_type": true,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdx_vector2": {
+      "nodedef_name": "ND_MTL_dfdx_vector2",
+      "node_id": "MTL_dfdx",
+      "node_name": "MTL_dfdx",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "vector2",
+          "value": "0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "vector2"
+        }
+      ],
+      "signature": "in[p:vector2]|out[out:vector2]",
+      "policy": {
+        "half_type": false,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdx_vector3": {
+      "nodedef_name": "ND_MTL_dfdx_vector3",
+      "node_id": "MTL_dfdx",
+      "node_name": "MTL_dfdx",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "vector3",
+          "value": "0.0,0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "vector3"
+        }
+      ],
+      "signature": "in[p:vector3]|out[out:vector3]",
+      "policy": {
+        "half_type": false,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdx_vector4": {
+      "nodedef_name": "ND_MTL_dfdx_vector4",
+      "node_id": "MTL_dfdx",
+      "node_name": "MTL_dfdx",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "vector4",
+          "value": "0.0,0.0,0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "vector4"
+        }
+      ],
+      "signature": "in[p:vector4]|out[out:vector4]",
+      "policy": {
+        "half_type": false,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdy_float": {
+      "nodedef_name": "ND_MTL_dfdy_float",
+      "node_id": "MTL_dfdy",
+      "node_name": "MTL_dfdy",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "float",
+          "value": "0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "float"
+        }
+      ],
+      "signature": "in[p:float]|out[out:float]",
+      "policy": {
+        "half_type": false,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdy_half": {
+      "nodedef_name": "ND_MTL_dfdy_half",
+      "node_id": "MTL_dfdy",
+      "node_name": "MTL_dfdy",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "half",
+          "value": "0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "half"
+        }
+      ],
+      "signature": "in[p:half]|out[out:half]",
+      "policy": {
+        "half_type": true,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdy_half2": {
+      "nodedef_name": "ND_MTL_dfdy_half2",
+      "node_id": "MTL_dfdy",
+      "node_name": "MTL_dfdy",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "half2",
+          "value": "0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "half2"
+        }
+      ],
+      "signature": "in[p:half2]|out[out:half2]",
+      "policy": {
+        "half_type": true,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdy_half3": {
+      "nodedef_name": "ND_MTL_dfdy_half3",
+      "node_id": "MTL_dfdy",
+      "node_name": "MTL_dfdy",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "half3",
+          "value": "0.0,0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "half3"
+        }
+      ],
+      "signature": "in[p:half3]|out[out:half3]",
+      "policy": {
+        "half_type": true,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdy_half4": {
+      "nodedef_name": "ND_MTL_dfdy_half4",
+      "node_id": "MTL_dfdy",
+      "node_name": "MTL_dfdy",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "half4",
+          "value": "0.0,0.0,0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "half4"
+        }
+      ],
+      "signature": "in[p:half4]|out[out:half4]",
+      "policy": {
+        "half_type": true,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdy_vector2": {
+      "nodedef_name": "ND_MTL_dfdy_vector2",
+      "node_id": "MTL_dfdy",
+      "node_name": "MTL_dfdy",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "vector2",
+          "value": "0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "vector2"
+        }
+      ],
+      "signature": "in[p:vector2]|out[out:vector2]",
+      "policy": {
+        "half_type": false,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdy_vector3": {
+      "nodedef_name": "ND_MTL_dfdy_vector3",
+      "node_id": "MTL_dfdy",
+      "node_name": "MTL_dfdy",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "vector3",
+          "value": "0.0,0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "vector3"
+        }
+      ],
+      "signature": "in[p:vector3]|out[out:vector3]",
+      "policy": {
+        "half_type": false,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_dfdy_vector4": {
+      "nodedef_name": "ND_MTL_dfdy_vector4",
+      "node_id": "MTL_dfdy",
+      "node_name": "MTL_dfdy",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "vector4",
+          "value": "0.0,0.0,0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "vector4"
+        }
+      ],
+      "signature": "in[p:vector4]|out[out:vector4]",
+      "policy": {
+        "half_type": false,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_fwidth_float": {
+      "nodedef_name": "ND_MTL_fwidth_float",
+      "node_id": "MTL_fwidth",
+      "node_name": "MTL_fwidth",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "float",
+          "value": "0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "float"
+        }
+      ],
+      "signature": "in[p:float]|out[out:float]",
+      "policy": {
+        "half_type": false,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_fwidth_half": {
+      "nodedef_name": "ND_MTL_fwidth_half",
+      "node_id": "MTL_fwidth",
+      "node_name": "MTL_fwidth",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "half",
+          "value": "0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "half"
+        }
+      ],
+      "signature": "in[p:half]|out[out:half]",
+      "policy": {
+        "half_type": true,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_fwidth_half2": {
+      "nodedef_name": "ND_MTL_fwidth_half2",
+      "node_id": "MTL_fwidth",
+      "node_name": "MTL_fwidth",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "half2",
+          "value": "0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "half2"
+        }
+      ],
+      "signature": "in[p:half2]|out[out:half2]",
+      "policy": {
+        "half_type": true,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_fwidth_half3": {
+      "nodedef_name": "ND_MTL_fwidth_half3",
+      "node_id": "MTL_fwidth",
+      "node_name": "MTL_fwidth",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "half3",
+          "value": "0.0,0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "half3"
+        }
+      ],
+      "signature": "in[p:half3]|out[out:half3]",
+      "policy": {
+        "half_type": true,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_fwidth_half4": {
+      "nodedef_name": "ND_MTL_fwidth_half4",
+      "node_id": "MTL_fwidth",
+      "node_name": "MTL_fwidth",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "half4",
+          "value": "0.0,0.0,0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "half4"
+        }
+      ],
+      "signature": "in[p:half4]|out[out:half4]",
+      "policy": {
+        "half_type": true,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_fwidth_vector2": {
+      "nodedef_name": "ND_MTL_fwidth_vector2",
+      "node_id": "MTL_fwidth",
+      "node_name": "MTL_fwidth",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "vector2",
+          "value": "0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "vector2"
+        }
+      ],
+      "signature": "in[p:vector2]|out[out:vector2]",
+      "policy": {
+        "half_type": false,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_fwidth_vector3": {
+      "nodedef_name": "ND_MTL_fwidth_vector3",
+      "node_id": "MTL_fwidth",
+      "node_name": "MTL_fwidth",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "vector3",
+          "value": "0.0,0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "vector3"
+        }
+      ],
+      "signature": "in[p:vector3]|out[out:vector3]",
+      "policy": {
+        "half_type": false,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
+    "ND_MTL_fwidth_vector4": {
+      "nodedef_name": "ND_MTL_fwidth_vector4",
+      "node_id": "MTL_fwidth",
+      "node_name": "MTL_fwidth",
+      "nodegroup": "realitykit",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "vector4",
+          "value": "0.0,0.0,0.0,0.0",
+          "uniform": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "vector4"
+        }
+      ],
+      "signature": "in[p:vector4]|out[out:vector4]",
+      "policy": {
+        "half_type": false,
+        "editor_unresolvable": false,
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.40.3"
+        ]
+      },
+      "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
+    },
     "ND_RealityKitImageInfo_texture2dfloat": {
       "nodedef_name": "ND_RealityKitImageInfo_texture2dfloat",
       "node_id": "RealityKitImageInfo",
@@ -47139,7 +47859,10 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.0.5"
+        ]
       },
       "source_file": "measured:ShaderGraph.framework/MaterialX-1.39.4/libraries/stdlib/stdlib_defs.mtlx"
     },
@@ -47244,7 +47967,10 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.0.5"
+        ]
       },
       "source_file": "measured:ShaderGraph.framework/MaterialX-1.39.4/libraries/stdlib/stdlib_defs.mtlx"
     },
@@ -47361,7 +48087,10 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true
+        "runtime_overlay": true,
+        "unimplemented_in_shadergraph_builds": [
+          "159.0.5"
+        ]
       },
       "source_file": "measured:ShaderGraph.framework/MaterialX-1.39.4/libraries/stdlib/stdlib_defs.mtlx"
     },
@@ -56531,6 +57260,36 @@
       "heighttonormal": [
         "ND_heighttonormal_vector3"
       ],
+      "MTL_dfdx": [
+        "ND_MTL_dfdx_float",
+        "ND_MTL_dfdx_half",
+        "ND_MTL_dfdx_half2",
+        "ND_MTL_dfdx_half3",
+        "ND_MTL_dfdx_half4",
+        "ND_MTL_dfdx_vector2",
+        "ND_MTL_dfdx_vector3",
+        "ND_MTL_dfdx_vector4"
+      ],
+      "MTL_dfdy": [
+        "ND_MTL_dfdy_float",
+        "ND_MTL_dfdy_half",
+        "ND_MTL_dfdy_half2",
+        "ND_MTL_dfdy_half3",
+        "ND_MTL_dfdy_half4",
+        "ND_MTL_dfdy_vector2",
+        "ND_MTL_dfdy_vector3",
+        "ND_MTL_dfdy_vector4"
+      ],
+      "MTL_fwidth": [
+        "ND_MTL_fwidth_float",
+        "ND_MTL_fwidth_half",
+        "ND_MTL_fwidth_half2",
+        "ND_MTL_fwidth_half3",
+        "ND_MTL_fwidth_half4",
+        "ND_MTL_fwidth_vector2",
+        "ND_MTL_fwidth_vector3",
+        "ND_MTL_fwidth_vector4"
+      ],
       "RealityKitImageInfo": [
         "ND_RealityKitImageInfo_texture2dfloat",
         "ND_RealityKitImageInfo_texture2dhalf",
@@ -60413,6 +61172,84 @@
           "ND_heighttonormal_vector3"
         ]
       },
+      "MTL_dfdx": {
+        "in[p:float]|out[out:float]": [
+          "ND_MTL_dfdx_float"
+        ],
+        "in[p:half]|out[out:half]": [
+          "ND_MTL_dfdx_half"
+        ],
+        "in[p:half2]|out[out:half2]": [
+          "ND_MTL_dfdx_half2"
+        ],
+        "in[p:half3]|out[out:half3]": [
+          "ND_MTL_dfdx_half3"
+        ],
+        "in[p:half4]|out[out:half4]": [
+          "ND_MTL_dfdx_half4"
+        ],
+        "in[p:vector2]|out[out:vector2]": [
+          "ND_MTL_dfdx_vector2"
+        ],
+        "in[p:vector3]|out[out:vector3]": [
+          "ND_MTL_dfdx_vector3"
+        ],
+        "in[p:vector4]|out[out:vector4]": [
+          "ND_MTL_dfdx_vector4"
+        ]
+      },
+      "MTL_dfdy": {
+        "in[p:float]|out[out:float]": [
+          "ND_MTL_dfdy_float"
+        ],
+        "in[p:half]|out[out:half]": [
+          "ND_MTL_dfdy_half"
+        ],
+        "in[p:half2]|out[out:half2]": [
+          "ND_MTL_dfdy_half2"
+        ],
+        "in[p:half3]|out[out:half3]": [
+          "ND_MTL_dfdy_half3"
+        ],
+        "in[p:half4]|out[out:half4]": [
+          "ND_MTL_dfdy_half4"
+        ],
+        "in[p:vector2]|out[out:vector2]": [
+          "ND_MTL_dfdy_vector2"
+        ],
+        "in[p:vector3]|out[out:vector3]": [
+          "ND_MTL_dfdy_vector3"
+        ],
+        "in[p:vector4]|out[out:vector4]": [
+          "ND_MTL_dfdy_vector4"
+        ]
+      },
+      "MTL_fwidth": {
+        "in[p:float]|out[out:float]": [
+          "ND_MTL_fwidth_float"
+        ],
+        "in[p:half]|out[out:half]": [
+          "ND_MTL_fwidth_half"
+        ],
+        "in[p:half2]|out[out:half2]": [
+          "ND_MTL_fwidth_half2"
+        ],
+        "in[p:half3]|out[out:half3]": [
+          "ND_MTL_fwidth_half3"
+        ],
+        "in[p:half4]|out[out:half4]": [
+          "ND_MTL_fwidth_half4"
+        ],
+        "in[p:vector2]|out[out:vector2]": [
+          "ND_MTL_fwidth_vector2"
+        ],
+        "in[p:vector3]|out[out:vector3]": [
+          "ND_MTL_fwidth_vector3"
+        ],
+        "in[p:vector4]|out[out:vector4]": [
+          "ND_MTL_fwidth_vector4"
+        ]
+      },
       "RealityKitImageInfo": {
         "in[file:filename]|out[width:integer,height:integer,num_mip_levels:integer]": [
           "ND_RealityKitImageInfo_texture2dfloat",
@@ -62063,6 +62900,84 @@
       "unpremult": {
         "color4->color4": [
           "ND_unpremult_color4"
+        ]
+      },
+      "MTL_dfdx": {
+        "float->float": [
+          "ND_MTL_dfdx_float"
+        ],
+        "half->half": [
+          "ND_MTL_dfdx_half"
+        ],
+        "half2->half2": [
+          "ND_MTL_dfdx_half2"
+        ],
+        "half3->half3": [
+          "ND_MTL_dfdx_half3"
+        ],
+        "half4->half4": [
+          "ND_MTL_dfdx_half4"
+        ],
+        "vector2->vector2": [
+          "ND_MTL_dfdx_vector2"
+        ],
+        "vector3->vector3": [
+          "ND_MTL_dfdx_vector3"
+        ],
+        "vector4->vector4": [
+          "ND_MTL_dfdx_vector4"
+        ]
+      },
+      "MTL_dfdy": {
+        "float->float": [
+          "ND_MTL_dfdy_float"
+        ],
+        "half->half": [
+          "ND_MTL_dfdy_half"
+        ],
+        "half2->half2": [
+          "ND_MTL_dfdy_half2"
+        ],
+        "half3->half3": [
+          "ND_MTL_dfdy_half3"
+        ],
+        "half4->half4": [
+          "ND_MTL_dfdy_half4"
+        ],
+        "vector2->vector2": [
+          "ND_MTL_dfdy_vector2"
+        ],
+        "vector3->vector3": [
+          "ND_MTL_dfdy_vector3"
+        ],
+        "vector4->vector4": [
+          "ND_MTL_dfdy_vector4"
+        ]
+      },
+      "MTL_fwidth": {
+        "float->float": [
+          "ND_MTL_fwidth_float"
+        ],
+        "half->half": [
+          "ND_MTL_fwidth_half"
+        ],
+        "half2->half2": [
+          "ND_MTL_fwidth_half2"
+        ],
+        "half3->half3": [
+          "ND_MTL_fwidth_half3"
+        ],
+        "half4->half4": [
+          "ND_MTL_fwidth_half4"
+        ],
+        "vector2->vector2": [
+          "ND_MTL_fwidth_vector2"
+        ],
+        "vector3->vector3": [
+          "ND_MTL_fwidth_vector3"
+        ],
+        "vector4->vector4": [
+          "ND_MTL_fwidth_vector4"
         ]
       },
       "fract": {
@@ -64918,6 +65833,84 @@
           "ND_heighttonormal_vector3"
         ]
       },
+      "MTL_dfdx": {
+        "float": [
+          "ND_MTL_dfdx_float"
+        ],
+        "half": [
+          "ND_MTL_dfdx_half"
+        ],
+        "half2": [
+          "ND_MTL_dfdx_half2"
+        ],
+        "half3": [
+          "ND_MTL_dfdx_half3"
+        ],
+        "half4": [
+          "ND_MTL_dfdx_half4"
+        ],
+        "vector2": [
+          "ND_MTL_dfdx_vector2"
+        ],
+        "vector3": [
+          "ND_MTL_dfdx_vector3"
+        ],
+        "vector4": [
+          "ND_MTL_dfdx_vector4"
+        ]
+      },
+      "MTL_dfdy": {
+        "float": [
+          "ND_MTL_dfdy_float"
+        ],
+        "half": [
+          "ND_MTL_dfdy_half"
+        ],
+        "half2": [
+          "ND_MTL_dfdy_half2"
+        ],
+        "half3": [
+          "ND_MTL_dfdy_half3"
+        ],
+        "half4": [
+          "ND_MTL_dfdy_half4"
+        ],
+        "vector2": [
+          "ND_MTL_dfdy_vector2"
+        ],
+        "vector3": [
+          "ND_MTL_dfdy_vector3"
+        ],
+        "vector4": [
+          "ND_MTL_dfdy_vector4"
+        ]
+      },
+      "MTL_fwidth": {
+        "float": [
+          "ND_MTL_fwidth_float"
+        ],
+        "half": [
+          "ND_MTL_fwidth_half"
+        ],
+        "half2": [
+          "ND_MTL_fwidth_half2"
+        ],
+        "half3": [
+          "ND_MTL_fwidth_half3"
+        ],
+        "half4": [
+          "ND_MTL_fwidth_half4"
+        ],
+        "vector2": [
+          "ND_MTL_fwidth_vector2"
+        ],
+        "vector3": [
+          "ND_MTL_fwidth_vector3"
+        ],
+        "vector4": [
+          "ND_MTL_fwidth_vector4"
+        ]
+      },
       "RealityKitTexture2DArrayGradient": {
         "color3": [
           "ND_RealityKitTexture2DArrayGradient_color3"
@@ -65675,7 +66668,7 @@
       "source": "ShaderGraph.framework/Versions/A/Resources/MaterialX",
       "reality_composer_pro_build": "80.0.6.0.5",
       "shadergraph_version": "159.1.1",
-      "entries_added": 305,
+      "entries_added": 329,
       "updated_nodedefs": {
         "ND_bump_vector3": [
           "bitangent"
@@ -65862,6 +66855,11 @@
         ]
       },
       "provenance": "Interface facts (names, types, defaults) measured from the installed ShaderGraph.framework MaterialX libraries; no .mtlx content is vendored."
+    },
+    "shadergraph_builds": {
+      "159.0.5": "Reality Composer Pro 3.0 (RealityComposerPro.app/Contents/SystemFrameworks)",
+      "159.40.2": "macOS 27.2.1 26B131 (/System/Library/SubFrameworks)",
+      "159.40.3": "Xcode 27.2 27B52 (Xcode.app/Contents/SystemFrameworks)"
     }
   }
 }

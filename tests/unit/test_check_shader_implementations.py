@@ -193,3 +193,31 @@ def test_scan_passes_pbr_surface_2_and_still_fails_a_made_up_nodedef(tmp_path):
     assert [(m, n) for m, n, _ in checker.scan(bad, tables)] == [
         ("Probe", "ND_realitykit_no_such_surfaceshader")
     ]
+
+
+def _installed_build_tables():
+    tables = {}
+    for framework in checker.SHADERGRAPH_FRAMEWORKS.values():
+        build = checker.shadergraph_build(framework)
+        if build and Path(checker.metal_libraries(framework)["1.39"]).exists():
+            tables[build] = checker.implementation_tables(framework)["1.39"]
+    return tables
+
+
+def test_recorded_build_gaps_match_the_installed_shadergraph_builds():
+    """The manifest's per-build availability must agree with every installed
+    ShaderGraph copy, so an OS, Xcode or RCP update that changes it fails here."""
+    from Plugin.manifest.materialx_nodes import load_manifest
+
+    tables = _installed_build_tables()
+    if not tables:
+        pytest.skip("no ShaderGraph framework installed")
+    recorded = load_manifest()["metadata"]["shadergraph_builds"]
+    for name, node in load_manifest()["nodes"].items():
+        gaps = set(node["policy"].get("unimplemented_in_shadergraph_builds") or ())
+        if not gaps:
+            continue
+        for build, table in tables.items():
+            if build not in recorded:
+                continue
+            assert checker._is_implemented(name, table) is (build not in gaps), (name, build)

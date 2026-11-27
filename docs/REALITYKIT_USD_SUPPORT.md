@@ -108,7 +108,7 @@ summary belongs here.
 
 | Feature | RealityKit | We author | Notes |
 |---|---|---|---|
-| MaterialX graph declaring 1.39 | observed | Yes | Every translated material. The nodes are checked against the OS library by `scripts/check_shader_implementations.py`. |
+| MaterialX graph declaring 1.39 | observed | Yes | Every translated material. The nodes are checked by `scripts/check_shader_implementations.py`, against Reality Composer Pro's ShaderGraph build by default and against the OS's or Xcode's with `--shadergraph`. |
 | `ND_realitykit_pbr_surfaceshader_2_0` | observed | Yes | The surface a Principled BSDF ends in. |
 | `ND_realitykit_unlit_surfaceshader` | observed | Yes | Emission-only materials and the unlit bake modes. |
 | `ND_realitykit_hair_surfaceshader` | observed | Yes | Principled Hair BSDF, direct coloring. |

@@ -25,7 +25,11 @@ the function it names is verified against the shipped symbols before it counts.
 
 Usage:
 
-    python3 scripts/check_shader_implementations.py <file-or-directory>...
+    python3 scripts/check_shader_implementations.py [--shadergraph rcp|os|xcode|all|PATH] <file-or-directory>...
+
+The default judges against Reality Composer Pro's ShaderGraph build. The OS
+copy, which a RealityKit app on this Mac renders with, is a different build
+and can implement nodes the editor's cannot (``ND_hextiledimage_*``).
 
 Scans .usda / .usdc / .usdz. Exits 1 if anything would fail.
 """
@@ -40,27 +44,57 @@ import sys
 import zipfile
 from pathlib import Path
 
-METAL_LIBRARIES = {
-    "1.38": "/Applications/RealityComposerPro.app/Contents/SystemFrameworks/"
-    "ShaderGraph.framework/Versions/A/Resources/MaterialX-1.38-apple.metallib",
-    "1.39": "/Applications/RealityComposerPro.app/Contents/SystemFrameworks/"
-    "ShaderGraph.framework/Versions/A/Resources/MaterialX-1.39.4-apple.metallib",
+#: The ShaderGraph framework copies a Mac can carry. Each is its own build:
+#: the OS copy is what a RealityKit app on this Mac renders with, Reality
+#: Composer Pro and Xcode ship their own, and the three need not agree.
+SHADERGRAPH_FRAMEWORKS = {
+    "rcp": "/Applications/RealityComposerPro.app/Contents/SystemFrameworks/ShaderGraph.framework",
+    "os": "/System/Library/SubFrameworks/ShaderGraph.framework",
+    "xcode": "/Applications/Xcode.app/Contents/SystemFrameworks/ShaderGraph.framework",
 }
-COMMON_LIBRARY = (
-    "/Applications/RealityComposerPro.app/Contents/SystemFrameworks/"
-    "ShaderGraph.framework/Versions/A/Resources/MaterialX-Common.metallib"
-)
+DEFAULT_SHADERGRAPH = "rcp"
 
-_MATERIALX_XML = (
-    "/Applications/RealityComposerPro.app/Contents/SystemFrameworks/"
-    "ShaderGraph.framework/Versions/A/Resources/MaterialX"
-)
 
-#: Per-version MaterialX definition trees, plus Apple's shared overrides.
-XML_TREES = {
-    "1.38": (f"{_MATERIALX_XML}/MaterialX-1.38", f"{_MATERIALX_XML}/Apple"),
-    "1.39": (f"{_MATERIALX_XML}/MaterialX-1.39.4", f"{_MATERIALX_XML}/Apple"),
-}
+def _resources(framework: str) -> str:
+    return f"{framework}/Versions/A/Resources"
+
+
+def metal_libraries(framework: str) -> dict:
+    resources = _resources(framework)
+    return {
+        "1.38": f"{resources}/MaterialX-1.38-apple.metallib",
+        "1.39": f"{resources}/MaterialX-1.39.4-apple.metallib",
+    }
+
+
+def common_library(framework: str) -> str:
+    return f"{_resources(framework)}/MaterialX-Common.metallib"
+
+
+def xml_trees(framework: str) -> dict:
+    """Per-version MaterialX definition trees, plus Apple's shared overrides."""
+    xml = f"{_resources(framework)}/MaterialX"
+    return {
+        "1.38": (f"{xml}/MaterialX-1.38", f"{xml}/Apple"),
+        "1.39": (f"{xml}/MaterialX-1.39.4", f"{xml}/Apple"),
+    }
+
+
+def shadergraph_build(framework: str) -> str | None:
+    """CFBundleVersion of a ShaderGraph framework copy, or None when absent."""
+    import plistlib
+
+    info = Path(_resources(framework)) / "Info.plist"
+    if not info.is_file():
+        return None
+    with info.open("rb") as handle:
+        return str(plistlib.load(handle).get("CFBundleVersion") or "") or None
+
+
+_DEFAULT_FRAMEWORK = SHADERGRAPH_FRAMEWORKS[DEFAULT_SHADERGRAPH]
+METAL_LIBRARIES = metal_libraries(_DEFAULT_FRAMEWORK)
+COMMON_LIBRARY = common_library(_DEFAULT_FRAMEWORK)
+XML_TREES = xml_trees(_DEFAULT_FRAMEWORK)
 
 #: Node families the engine implements outside both the Metal libraries and the
 #: MaterialX XML. Texture sampling, UV lookup and the surface constructors are
@@ -83,7 +117,7 @@ _MATERIAL = re.compile(r'def Material "([^"]+)"')
 _NODE_ID = re.compile(r'info:id\s*=\s*"(ND_[A-Za-z0-9_]+)"')
 
 
-def implemented_symbols(version: str) -> tuple[str, ...]:
+def implemented_symbols(version: str, framework: str = _DEFAULT_FRAMEWORK) -> tuple[str, ...]:
     """Every function symbol in the libraries this version binds.
 
     Returned sorted, and matched by *prefix*: Apple's symbols carry codegen
@@ -96,7 +130,7 @@ def implemented_symbols(version: str) -> tuple[str, ...]:
     alone left every one of them looking unimplemented.
     """
     symbols: set[str] = set()
-    for library in (METAL_LIBRARIES[version], COMMON_LIBRARY):
+    for library in (metal_libraries(framework)[version], common_library(framework)):
         if not Path(library).exists():
             continue
         out = subprocess.run(
@@ -106,7 +140,7 @@ def implemented_symbols(version: str) -> tuple[str, ...]:
     return tuple(sorted(symbols))
 
 
-def xml_implemented(version: str) -> frozenset[str]:
+def xml_implemented(version: str, framework: str = _DEFAULT_FRAMEWORK) -> frozenset[str]:
     """Nodedefs expanded from a nodegraph rather than compiled to Metal.
 
     470 nodedefs are expanded from a ``<nodegraph nodedef="...">`` at compile
@@ -120,7 +154,7 @@ def xml_implemented(version: str) -> frozenset[str]:
     """
     found: set[str] = set()
     pattern = re.compile(r'<nodegraph\b[^>]*\bnodedef="(ND_[A-Za-z0-9_]+)"')
-    for root in XML_TREES.get(version, ()):
+    for root in xml_trees(framework).get(version, ()):
         base = Path(root)
         if not base.is_dir():
             continue
@@ -165,7 +199,7 @@ def _implementation_function(element: str) -> tuple[str, str] | None:
     return values["nodedef"], values["function"]
 
 
-def xml_implementation_functions(version: str) -> dict[str, str]:
+def xml_implementation_functions(version: str, framework: str = _DEFAULT_FRAMEWORK) -> dict[str, str]:
     """Nodedef -> Metal function, from ``<implementation function="...">``.
 
     An implementation element is a claim: it names the function ShaderGraph
@@ -181,7 +215,7 @@ def xml_implementation_functions(version: str) -> dict[str, str]:
     that does not still fails, exactly as before.
     """
     found: dict[str, str] = {}
-    for root in XML_TREES.get(version, ()):
+    for root in xml_trees(framework).get(version, ()):
         base = Path(root)
         if not base.is_dir():
             continue
@@ -298,25 +332,35 @@ def scan(path: Path, symbols_by_version: dict) -> list[tuple[str, str, str]]:
     return findings
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("paths", nargs="+", type=Path)
-    args = parser.parse_args()
-
-    if not Path(METAL_LIBRARIES["1.38"]).exists():
-        print("Reality Composer Pro is not installed here.", file=sys.stderr)
-        return 2
-    symbols_by_version = {
-        v: (
-            implemented_symbols(v),
-            xml_implemented(v),
-            xml_implementation_functions(v),
+def implementation_tables(framework: str) -> dict:
+    """Per declared version, the tables ``scan`` judges a layer against."""
+    return {
+        version: (
+            implemented_symbols(version, framework),
+            xml_implemented(version, framework),
+            xml_implementation_functions(version, framework),
         )
-        for v in METAL_LIBRARIES
+        for version in metal_libraries(framework)
     }
 
+
+def _selected_frameworks(choice: str) -> list[tuple[str, str]]:
+    """(label, framework) pairs for ``--shadergraph``: a name, a path, or all."""
+    if choice == "all":
+        return [
+            (name, path)
+            for name, path in SHADERGRAPH_FRAMEWORKS.items()
+            if Path(metal_libraries(path)["1.38"]).exists()
+        ]
+    path = SHADERGRAPH_FRAMEWORKS.get(choice, choice)
+    if not Path(metal_libraries(path)["1.38"]).exists():
+        return []
+    return [(choice, path)]
+
+
+def _targets(paths) -> list[Path]:
     targets: list[Path] = []
-    for path in args.paths:
+    for path in paths:
         if path.is_dir():
             for suffix in ("*.usda", "*.usdc", "*.usdz"):
                 # is_file(): a texture staging directory is legitimately named
@@ -324,26 +368,52 @@ def main() -> int:
                 targets.extend(sorted(p for p in path.rglob(suffix) if p.is_file()))
         else:
             targets.append(path)
+    return targets
 
+
+def _check_build(label: str, framework: str, targets: list[Path]) -> int:
+    tables = implementation_tables(framework)
+    print(f"ShaderGraph {shadergraph_build(framework) or '?'} ({label}: {framework})")
     total = 0
     for target in targets:
-        findings = scan(target, symbols_by_version)
+        findings = scan(target, tables)
         if not findings:
             continue
         print(f"\n{target}")
         for material, nodedef, reason in findings:
             total += 1
             print(f"  {material or '<root>'}: {nodedef} - {reason}")
-
     if total:
         print(
             f"\n{total} material/node pair(s) would fail with "
             '"Couldn\'t find compiled shader graph buffer".'
         )
-        return 1
-    print(f"Checked {len(targets)} layer(s); every material can build a shader.")
-    return 0
+    else:
+        print(f"Checked {len(targets)} layer(s); every material can build a shader.")
+    return total
 
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("paths", nargs="+", type=Path)
+    parser.add_argument(
+        "--shadergraph",
+        default=DEFAULT_SHADERGRAPH,
+        help=(
+            "ShaderGraph build to judge against: rcp (Reality Composer Pro, the "
+            "default), os (what a RealityKit app on this Mac uses), xcode, a "
+            "framework path, or all installed copies."
+        ),
+    )
+    args = parser.parse_args()
+
+    frameworks = _selected_frameworks(args.shadergraph)
+    if not frameworks:
+        print(f"ShaderGraph '{args.shadergraph}' is not installed here.", file=sys.stderr)
+        return 2
+    targets = _targets(args.paths)
+    failures = sum(_check_build(label, path, targets) for label, path in frameworks)
+    return 1 if failures else 0
 
 if __name__ == "__main__":
     raise SystemExit(main())

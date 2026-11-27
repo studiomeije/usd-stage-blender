@@ -1291,6 +1291,29 @@ def _check_materialx_node_inputs(
 
 
 _KNOWN_NODEDEF_NAMES: frozenset[str] | None = None
+_BUILD_GAPS: dict[str, tuple[str, ...]] | None = None
+
+
+def _nodedef_build_gaps() -> dict[str, tuple[str, ...]]:
+    """Nodedef -> the recorded ShaderGraph builds that cannot build it."""
+    global _BUILD_GAPS
+    if _BUILD_GAPS is None:
+        try:
+            from ..manifest.materialx_nodes import load_manifest
+
+            manifest = load_manifest()
+        except Exception:
+            return {}
+        builds = (manifest.get("metadata") or {}).get("shadergraph_builds") or {}
+        _BUILD_GAPS = {
+            name: tuple(
+                f"{build} ({builds.get(build, 'unrecorded')})"
+                for build in (node.get("policy") or {}).get("unimplemented_in_shadergraph_builds") or ()
+            )
+            for name, node in manifest.get("nodes", {}).items()
+            if (node.get("policy") or {}).get("unimplemented_in_shadergraph_builds")
+        }
+    return _BUILD_GAPS
 
 
 def _known_nodedef_names() -> frozenset[str] | None:
@@ -1362,6 +1385,22 @@ def _check_materialx_nodedefs(
             )
             continue
         if shader_id in known:
+            missing_in = _nodedef_build_gaps().get(shader_id)
+            if missing_in:
+                report.add(
+                    "warning",
+                    "MATERIALX_NODEDEF_UNIMPLEMENTED_IN_SOME_BUILDS",
+                    (
+                        "RealityKit on macOS 27.2 builds this node, but some "
+                        "ShaderGraph builds have no implementation of it and "
+                        "show the material without its shader graph there: "
+                        + "; ".join(missing_in)
+                        + ". Check the material in the app that will show it."
+                    ),
+                    prim.GetPath(),
+                    nodedef=shader_id,
+                    builds=list(missing_in),
+                )
             continue
         report.add(
             "error",

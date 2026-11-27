@@ -7,6 +7,20 @@ and what you have to do differently. Internal refactors are not listed.
 
 ## Unreleased
 
+### New
+
+- **Derivative and filtered-sampling nodes pass the export.** Graphs that use
+  `ND_MTL_dfdx`, `ND_MTL_dfdy` or `ND_MTL_fwidth` (float, vector and half
+  forms), `RealityKitTexture2DGradient` or `RealityKitTexture2DLOD` no longer
+  stop with `UNKNOWN_MATERIALX_NODEDEF`; RealityKit on macOS 27.2 renders them.
+- **The export warns when a node renders on the OS but not in Reality Composer
+  Pro.** `ND_hextiledimage` renders on macOS 27.2, but Reality Composer Pro 3
+  cannot build it; a material using it now exports with a warning that names
+  the ShaderGraph builds that will show it without its shader graph.
+- `scripts/check_shader_implementations.py --shadergraph os|rcp|xcode|all`
+  checks an export against the OS's, Xcode's or every installed ShaderGraph
+  build, not only Reality Composer Pro's.
+
 ### Fixed
 
 - **Roughness, metallic and AO maps now render at their authored values in
