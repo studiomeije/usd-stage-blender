@@ -165,13 +165,13 @@ never authored, because of how RealityKit reads them
 | Blender Principled input | PBR Surface 2 input |
 |---|---|
 | Base Color, Metallic, Roughness | `baseColor`, `metallic`, `roughness` |
-| Normal, Coat Normal | `normal`, `clearcoatNormal`, in tangent space ([normal maps](#normal-maps)) |
+| Normal, Coat Normal | `normal`, `clearcoatNormal`, in tangent space ([normal maps](#normal-maps)); under an active coat with Coat Normal unlinked, the Normal goes to `clearcoatNormal` too, as Cycles' coat follows it |
 | Emission Color × Strength | `emissiveColor` |
 | Alpha, cutout threshold, premultiplied alpha | `opacity`, `opacityThreshold`, `hasPremultipliedAlpha` |
 | The [declared ambient-occlusion source](#ambient-occlusion) | `ambientOcclusion` |
 | Specular IOR Level and IOR, folded into one reflectance | `specular` ([specular and IOR](#specular-and-ior)) |
 | Specular Tint (achromatic, ≤ 1) | `specularColor` |
-| Coat Weight / Roughness / IOR | `clearcoat`, `clearcoatRoughness`, `clearcoatIOR` |
+| Coat Weight / Roughness, constant or linked | `clearcoat`, `clearcoatRoughness`; a texture is read as data |
 | Subsurface Weight / Radius / Scale / Anisotropy | `subsurface*` |
 | Sheen Weight × Tint, while Sheen Weight is on | `sheenColor` |
 | Anisotropic, Anisotropic Rotation, with a UV Map Tangent | `specularAnisotropyLevel`, `specularAnisotropyAngle`, and a scaled `roughness` ([anisotropy](#anisotropy)) |
@@ -189,7 +189,8 @@ The strict validator refuses these (`_unsupported_principled_inputs`):
 | Transmission Weight | No surface input; the message says the material would be opaque |
 | Thin Wall, while transmission or subsurface is active | RealityKit has no thin-wall shading |
 | Thin Film Thickness / IOR, Subsurface IOR | No surface input |
-| Linked Coat Weight / Roughness / Tint | Linked coat controls are not preserved; constants are |
+| Coat IOR other than 1.5, or linked, under an active coat | RealityKit ignores `clearcoatIOR`: its coat always reflects F0 0.04, Cycles' coat at IOR 1.5 |
+| Linked Coat Tint | No RealityKit surface carries a coat tint |
 
 Each refusal names the input; most tell you to bake. An input counts only
 when linked or away from its neutral value, and subordinate controls only

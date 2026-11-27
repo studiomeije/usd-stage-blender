@@ -71,7 +71,7 @@ inputs; every node that feeds them is in [Shader nodes](#shader-nodes).
 | Ambient occlusion | Opt-in | Declared with the material custom property `usd_stage_ambient_occlusion` (`Node` or `Node:Output`) or a node labelled `Ambient Occlusion`. Darkens image-based diffuse light only. See [ambient occlusion](MATERIAL_TRANSLATION.md#ambient-occlusion). |
 | Subsurface | Partial | Weight, Radius, Scale and Anisotropy are carried. A Subsurface IOR other than 1.4 is refused. |
 | Sheen | Partial | Weight and Tint are carried while Weight is on. RealityKit's sheen replaces the specular lobe, so a warning says the highlight and metallic reflection disappear, unless the base is black, non-metallic and at Specular IOR Level 0, as in the Sheen BSDF. A linked Sheen Roughness, or one other than 0.5, is refused. |
-| Coat | Partial | Weight, Roughness and IOR constants are carried. Linked coat controls and a non-white Coat Tint are refused. |
+| Coat | Partial | Weight and Roughness, constant or textured, and Coat Normal are carried; with Coat Normal unlinked the coat follows Normal, as in Cycles. RealityKit's coat always reflects like IOR 1.5, so another Coat IOR is refused, as is a non-white Coat Tint. |
 | Specular Tint | Partial | White only. A coloured or linked tint is refused; an overbright grey is refused unless **Clamp Overbright Specular Tint** clamps it. |
 | Anisotropic, Anisotropic Rotation | Partial | Constant values, with the Tangent from a Tangent node in UV Map mode on the render UV map, export with Cycles' highlight shape. See [anisotropy](MATERIAL_TRANSLATION.md#anisotropy). |
 | Transmission, Thin Wall, Thin Film | Refused | Export stops and names the Principled input to bake or clear. |

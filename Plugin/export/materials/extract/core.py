@@ -79,6 +79,28 @@ def material_has_transparency(material) -> bool:
     return _principled_alpha_is_transparent(surface_node)
 
 
+def _coat_follows_base_normal(principled, data, input_graphs) -> None:
+    """Give the coat the base normal where Cycles does.
+
+    Cycles' coat takes the shading normal, Normal input included, when Coat
+    Normal is unlinked; RealityKit's ``clearcoatNormal`` is independent of
+    ``normal`` (measured on macOS 27.2.1: a tilted base normal leaves the coat
+    highlight untouched). So under an active coat the base normal is authored
+    on the coat too.
+    """
+    coat = principled.inputs.get('Coat Weight')
+    coat_normal = principled.inputs.get('Coat Normal')
+    if coat is None or coat_normal is None or coat_normal.is_linked:
+        return
+    if not coat.is_linked and float(coat.default_value) <= 0.0:
+        return
+    if 'normal' in input_graphs:
+        input_graphs.setdefault('clearcoatNormal', input_graphs['normal'])
+    elif 'normal_texture' in data:
+        for key in [k for k in data if k.startswith('normal_texture')]:
+            data.setdefault('clearcoat_' + key, data[key])
+
+
 def _extract_ambient_occlusion(material, input_graphs, cache, unresolved_warnings) -> None:
     """Route the material's declared AO source to ``ambientOcclusion``.
 
@@ -203,7 +225,8 @@ def extract_blender_material_data(material) -> Dict[str, Any]:
             'Specular Tint': 'specularColor',
             'Anisotropic': 'specularAnisotropyLevel',
             'Anisotropic Rotation': 'specularAnisotropyAngle',
-            'Coat IOR': 'clearcoatIOR',
+            'Coat Weight': 'clearcoat',
+            'Coat Roughness': 'clearcoatRoughness',
             'Sheen Weight': '_sheenWeight',
             'Sheen Roughness': '_sheenRoughness',
             'Sheen Tint': '_sheenTint',
@@ -227,7 +250,8 @@ def extract_blender_material_data(material) -> Dict[str, Any]:
             'Specular Tint': 'color3',
             'Anisotropic': 'float',
             'Anisotropic Rotation': 'float',
-            'Coat IOR': 'float',
+            'Coat Weight': 'float',
+            'Coat Roughness': 'float',
             'Sheen Weight': 'float',
             'Sheen Roughness': 'float',
             'Sheen Tint': 'color3',
@@ -422,6 +446,7 @@ def extract_blender_material_data(material) -> Dict[str, Any]:
                 data[key] = _coerce_constant_value(constant, expected)
 
 
+        _coat_follows_base_normal(principled, data, input_graphs)
         _extract_ambient_occlusion(material, input_graphs, resolve_cache, unresolved_warnings)
         _apply_surface_closure(material, closure, principled, data, input_graphs, unresolved_warnings)
         if unresolved_warnings:

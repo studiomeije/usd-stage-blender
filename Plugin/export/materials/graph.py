@@ -736,7 +736,6 @@ class MaterialXGraphBuilder:
             'subsurface_radius': 'subsurfaceRadius',
             'subsurface_radius_scale': 'subsurfaceRadiusScale',
             'subsurface_anisotropy': 'subsurfaceScatterAnisotropy',
-            'clearcoat_ior': 'clearcoatIOR',
             'clearcoat_anisotropy': 'clearcoatAnisotropyLevel',
             'clearcoat_anisotropy_rotation': 'clearcoatAnisotropyAngle',
             'specular_tint': 'specularColor',

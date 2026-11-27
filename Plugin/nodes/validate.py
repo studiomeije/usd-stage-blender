@@ -525,18 +525,22 @@ def _unsupported_principled_inputs(
         ),
     )
 
-    # Coat constants are mapped, but linked Coat Weight/Roughness/Tint values
-    # have no graph_input_map entry in extraction.  Reject those links until
-    # they can be preserved rather than accepting a default value.
-    linked_coat_inputs = {
-        name
-        for name in ('Coat Weight', 'Coat Roughness', 'Coat Tint')
-        if _linked(name) and (name == 'Coat Weight' or coat_active)
-    }
+    # Coat Weight and Coat Roughness export constant or linked. Coat Tint has
+    # no surface input, linked or not.
+    linked_coat_inputs = {'Coat Tint'} if coat_active and _linked('Coat Tint') else set()
     for name in sorted(linked_coat_inputs):
         issues.append(
-            f"Principled '{name}' is linked, but linked coat controls are not exportable; "
-            "bake the material or use an unlinked constant."
+            f"Principled '{name}' is linked, but no RealityKit surface carries a coat tint; "
+            "bake the material or set it to white."
+        )
+    # RealityKit ignores clearcoatIOR: its coat always reflects F0 0.04, which
+    # is Cycles' coat at IOR 1.5 (measured on macOS 27.2.1, IOR 1.2 to 2.5
+    # render identically).
+    if coat_active and _active('Coat IOR', 1.5):
+        issues.append(
+            "Principled 'Coat IOR' is not 1.5, but RealityKit's coat always reflects like "
+            "IOR 1.5 (F0 0.04) and ignores clearcoatIOR; set Coat IOR to 1.5, or bake the "
+            "material."
         )
 
     # Anisotropy maps exactly onto PBR Surface 2 under the conditions

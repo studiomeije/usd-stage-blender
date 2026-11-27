@@ -710,11 +710,19 @@ def test_stock_blender_52_principled_defaults_raise_nothing():
     assert result["errors"] == []
 
 
-@pytest.mark.parametrize("socket_name", ["Coat Weight", "Coat Roughness", "Coat Tint"])
-def test_linked_coat_controls_fail_closed(socket_name):
+@pytest.mark.parametrize("socket_name", ["Coat Weight", "Coat Roughness"])
+def test_linked_coat_weight_and_roughness_are_exported(socket_name):
     inputs = {socket_name: _Socket(0.5, linked=True)}
     if socket_name != "Coat Weight":
         inputs["Coat Weight"] = _Socket(0.5)
+    result = _validate_principled_inputs(inputs)
+
+    assert not any(socket_name in issue["message"] for issue in result["errors"])
+
+
+def test_linked_coat_tint_fails_closed():
+    socket_name = "Coat Tint"
+    inputs = {socket_name: _Socket(0.5, linked=True), "Coat Weight": _Socket(0.5)}
     result = _validate_principled_inputs(
         inputs,
     )

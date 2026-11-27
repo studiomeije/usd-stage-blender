@@ -35,7 +35,17 @@ and what you have to do differently. Internal refactors are not listed.
   anisotropy, or where the adjusted roughness would exceed 1, the export stops
   and says why.
 
+- **Textured clearcoat.** Coat Weight and Coat Roughness driven by a texture
+  (an ORM-style channel, a Math node, any data chain) now export instead of
+  stopping with `UNSUPPORTED_MATERIAL_NODES`, and read at their authored
+  values. With Coat Normal unlinked, the coat now follows the Normal input as
+  it does in Cycles.
+
 ### Before you update
+
+- **A Coat IOR other than 1.5 stops the export.** RealityKit ignores the
+  coat IOR and always reflects like IOR 1.5, so the exported coat was brighter
+  or dimmer than Cycles'. Set Coat IOR to 1.5, or bake the material.
 
 - **An image node whose name contains "ao" no longer becomes ambient
   occlusion.** The exporter used to route any such image linked to the
