@@ -1,7 +1,10 @@
 """Integration test — a Non-Color image on Base Color is exportable.
 
 ``textures._materialx_file_colorspace`` decides that a Blender Non-Color image
-feeding a perceptual colour input is scene-linear and authors ``lin_rec709``.
+feeding a perceptual colour input is scene-linear. RealityKit decodes a color3
+read as sRGB whatever its token (``lin_rec709`` is honoured only over
+three-channel files), so the read is authored as an untagged
+``ND_image_vector3`` converted to a colour.
 Exports used to keep Blender's UsdPreviewSurface network too, which tagged its
 own copy of that same file ``data``, so the two networks disagreed about one
 image and preflight - which inspects the whole stage - rejected the export with
@@ -95,9 +98,11 @@ def test_non_color_base_color_exports(tmp_path):
     )
     assert stage.exists()
     text = stage.read_text()
-    assert 'colorSpace = "lin_rec709"' in text, (
-        "a Non-Color image on a colour input must be authored as scene-linear"
+    assert 'info:id = "ND_image_vector3"' in text, (
+        "a Non-Color image on a colour input must be read as stored"
     )
+    assert 'info:id = "ND_convert_vector3_color3"' in text
+    assert 'info:id = "ND_image_color3"' not in text
 
 
 def test_srgb_base_color_is_left_alone(tmp_path):

@@ -152,6 +152,7 @@ def _create_texture_connection(
                     texture_kind,
                     texture_spec,
                     diagnostics,
+                    semantic_type=cached.get("semantic") or current_type,
                 )
 
     image_type = _image_output_hint(
@@ -164,6 +165,15 @@ def _create_texture_connection(
     if override_type:
         image_type = override_type
     image_type = _IMAGE_OUTPUT_SUBSTITUTIONS.get(image_type, image_type)
+    file_colorspace = _materialx_file_colorspace(texture_spec, input_name, diagnostics)
+    semantic_type = image_type
+    if image_type == 'color3' and reads_linear_through_color3(file_colorspace):
+        # RealityKit decodes every color3 image read as sRGB, whatever the
+        # token says, except lin_rec709 over a three-channel file. A vector3
+        # read of the same file is linear for RGB and greyscale alike, so a
+        # read that must not be decoded is authored as one, untagged.
+        image_type = 'vector3'
+        file_colorspace = ""
     nodedef_name, output_sdf_type = _image_nodedef_for_output(manifest, image_type)
     current_type = image_type
 
@@ -173,7 +183,6 @@ def _create_texture_connection(
 
     file_input = texture_shader.CreateInput("file", Sdf.ValueTypeNames.Asset)
     file_input.Set(texture_path)
-    file_colorspace = _materialx_file_colorspace(texture_spec, input_name, diagnostics)
     if file_colorspace:
         file_input.GetAttr().SetColorSpace(file_colorspace)
 
@@ -256,7 +265,11 @@ def _create_texture_connection(
     texture_output = texture_shader.CreateOutput("out", output_sdf_type)
 
     if texture_cache is not None:
-        texture_cache[cache_key] = {"output": texture_output, "type": current_type}
+        texture_cache[cache_key] = {
+            "output": texture_output,
+            "type": current_type,
+            "semantic": semantic_type,
+        }
 
     return _postprocess_texture_output(
         manifest,
@@ -270,6 +283,7 @@ def _create_texture_connection(
         texture_kind,
         texture_spec,
         diagnostics,
+        semantic_type=semantic_type,
     )
 
 
@@ -285,8 +299,13 @@ def _postprocess_texture_output(
     texture_kind: str,
     texture_spec: Dict[str, Any],
     diagnostics=None,
+    semantic_type: Optional[str] = None,
 ):
-    """Apply per-use decode/swizzle/scale operations to a cached raw reader."""
+    """Apply per-use decode/swizzle/scale operations to a cached raw reader.
+
+    ``semantic_type`` is what the read stands for when it differs from the
+    reader's type: a colour read authored as a linear vector3 reader.
+    """
     if texture_kind == 'normal_texture':
         # RealityKit's dedicated tangent normal decoder is part of the RCP
         # contract. The cache stores only the raw image output, so every use
@@ -359,6 +378,7 @@ def _postprocess_texture_output(
         texture_kind,
         bool(texture_spec.get("force_separate4")),
         diagnostics,
+        semantic_type=semantic_type,
     )
 
     scale = texture_spec.get('scale')
@@ -760,6 +780,7 @@ def _resolve_texture_output(
     texture_kind: str,
     force_separate4: bool,
     diagnostics=None,
+    semantic_type: Optional[str] = None,
 ):
     """Resolve texture output conversions including RGBA separation."""
     if not texture_output:
@@ -768,6 +789,14 @@ def _resolve_texture_output(
     current_type = (current_type or '').lower()
     desired_type = (desired_type or '').lower()
     channel = (channel or '').lower()
+
+    if current_type == 'vector3' and (semantic_type or '').lower() == 'color3':
+        linear = _resolve_linear_colour_read(
+            manifest, stage, nodegraph_path, input_name, texture_output,
+            desired_type, channel, diagnostics,
+        )
+        if linear is not None:
+            return linear, desired_type
 
     # A float consumer of a channelless colour read takes Blender's implicit
     # conversion, linear RGB to gray, which the convert below authors; reading
@@ -841,6 +870,59 @@ def _resolve_texture_output(
         current_type = desired_type
 
     return texture_output, current_type
+
+
+#: File color-space tokens under which a read must not be decoded: none at
+#: all (the data contract) and the linear Rec.709 family.
+_LINEAR_READ_COLOR_SPACES = frozenset({"", "lin_rec709", "lin_rec709_scene"})
+
+
+def reads_linear_through_color3(file_colorspace: Optional[str]) -> bool:
+    """Whether a color3 reader under this token is meant to read texels as stored.
+
+    Measured on macOS 27.2.1: ``ND_image_color3`` and the RealityKit color3
+    texture nodes decode as sRGB when untagged, ``raw`` or ``srgb_texture``;
+    ``lin_rec709_scene`` reads linearly only over a three-channel file, and a
+    greyscale PNG or JPEG is still decoded. Untagged ``ND_image_vector3`` and
+    ``ND_image_float`` read linearly for RGB and greyscale, 8 and 16 bits.
+    """
+    return (file_colorspace or "").strip().lower() in _LINEAR_READ_COLOR_SPACES
+
+
+def _resolve_linear_colour_read(
+    manifest: Dict[str, Any],
+    stage,
+    nodegraph_path: str,
+    input_name: str,
+    vector_output,
+    desired_type: str,
+    channel: str,
+    diagnostics=None,
+):
+    """Serve a colour read from a linear vector3 reader, or None to fall through.
+
+    A channel is a dot with its unit mask, a channelless float read is
+    Blender's gray conversion, and a colour consumer takes one convert. Other
+    requests (a vector consumer) need no conversion and fall through.
+    """
+    if channel:
+        # A channel read of a vector3 reader is the same unit-mask dot.
+        return None
+    if desired_type == 'float':
+        from .extract.core import _RGB_TO_GRAY
+
+        dot_name = _sanitize_name(f"gray_{input_name}")
+        dot = UsdShade.Shader(stage.DefinePrim(f"{nodegraph_path}/{dot_name}", "Shader"))
+        dot.CreateIdAttr("ND_dotproduct_vector3")
+        dot.CreateInput("in1", Sdf.ValueTypeNames.Float3).ConnectToSource(vector_output)
+        dot.CreateInput("in2", Sdf.ValueTypeNames.Float3).Set(Gf.Vec3f(*_RGB_TO_GRAY))
+        return dot.CreateOutput("out", Sdf.ValueTypeNames.Float)
+    if desired_type in ('color3', 'color4'):
+        return _create_convert_output(
+            manifest, stage, nodegraph_path, input_name, vector_output,
+            'vector3', desired_type, diagnostics,
+        )
+    return None
 
 
 class _LazyChannelOutputs(dict):
@@ -1036,7 +1118,11 @@ def _create_swizzle_output(
                 f"input '{input_name}'."
             )
         return None
-    index = order.find(channel[:1].lower())
+    letter = channel[:1].lower()
+    if order == "xyz" and letter in "rgb":
+        # A colour read served by a linear vector3 reader.
+        letter = "xyz"["rgb".index(letter)]
+    index = order.find(letter)
     if index < 0:
         # e.g. alpha asked of a three-channel read.
         if diagnostics:

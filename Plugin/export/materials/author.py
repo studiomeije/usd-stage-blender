@@ -28,6 +28,7 @@ from .textures import (
     _create_texture_connection,
     _materialx_file_colorspace,
     _texture_cache_key,
+    reads_linear_through_color3,
     texture_source_lacks_alpha,
 )
 from .mapping import require_realitykit_mapping_contract
@@ -103,6 +104,13 @@ def create_materialx_material(
             continue
         node_def = _get_node_def(manifest, node_id)
         shader_nodedef = _get_nodedef_name(node_id, node_def)
+        linear_read = _graph_image_reads_linear(shader_nodedef, node)
+        if linear_read:
+            # RealityKit decodes a color3 read as sRGB whatever its token; an
+            # untagged vector3 read of the same file is linear. The consumers
+            # still take a color3, through the convert the connection inserts.
+            node_def = manifest.get("nodes", {}).get("ND_image_vector3")
+            shader_nodedef = _get_nodedef_name("ND_image_vector3", node_def)
         if diagnostics and not node_def:
             diagnostics.add_warning(
                 f"Missing nodedef for node '{node_id}' in material '{material_name}'."
@@ -147,7 +155,7 @@ def create_materialx_material(
                 file_colorspace = _materialx_file_colorspace(
                     input_value, input_name, diagnostics
                 )
-                if file_colorspace:
+                if file_colorspace and not linear_read:
                     shader_input.GetAttr().SetColorSpace(file_colorspace)
                 continue
 
@@ -340,6 +348,18 @@ def create_materialx_material(
         )
 
     return material
+
+
+def _graph_image_reads_linear(shader_nodedef: str, node: Dict[str, Any]) -> bool:
+    """Whether a graph-authored color3 image node must read its file linearly."""
+    if shader_nodedef != "ND_image_color3":
+        return False
+    file_value = (node.get("inputs") or {}).get("file")
+    if not isinstance(file_value, dict) or file_value.get("type") != "file_asset":
+        return False
+    return reads_linear_through_color3(
+        _materialx_file_colorspace(file_value, "file")
+    )
 
 
 def _author_materialx_profile_metadata(stage, material_prim, graph: Dict[str, Any]) -> None:

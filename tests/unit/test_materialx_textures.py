@@ -113,3 +113,77 @@ def test_alpha_of_a_file_without_alpha_reads_one_as_blender_does():
     assert not roughness.HasConnectedSource()
     assert float(roughness.Get()) == 1.0
     assert "ND_image_" not in stage.GetRootLayer().ExportToString()
+
+
+def _linear_read(stage, manifest, input_name, cache, **spec):
+    base = {"path": "textures/orm.png", "type": "texture", "colorspace": "raw"}
+    base.update(spec)
+    return _create_texture_connection(
+        stage, "/M", input_name, base, manifest, "M", texture_cache=cache,
+    )
+
+
+def _shader(stage, path):
+    from Plugin.export.usd_utils import UsdShade
+
+    return UsdShade.Shader(stage.GetPrimAtPath(path))
+
+
+def test_data_reads_share_one_untagged_vector3_reader():
+    """RealityKit decodes every color3 read as sRGB (measured, macOS 27.2.1);
+    an untagged vector3 read is linear for RGB and greyscale files."""
+    stage = Usd.Stage.CreateInMemory()
+    manifest = load_manifest()
+    cache = {}
+
+    rough = _linear_read(stage, manifest, "roughness", cache, output_type="float",
+                         channel="g", colorspace_role="data")
+    metal = _linear_read(stage, manifest, "metallic", cache, output_type="float",
+                         channel="b", colorspace_role="data")
+    grey = _linear_read(stage, manifest, "ambientOcclusion", cache, output_type="float",
+                        colorspace_role="data")
+
+    reader = _shader(stage, "/M/Image")
+    assert reader.GetIdAttr().Get() == "ND_image_vector3"
+    assert reader.GetInput("file").GetAttr().GetColorSpace() == ""
+    assert not stage.GetPrimAtPath("/M/Image_1")
+    for output, mask in ((rough, (0, 1, 0)), (metal, (0, 0, 1))):
+        dot = _shader_of(output)
+        assert dot.GetIdAttr().Get() == "ND_dotproduct_vector3"
+        assert tuple(dot.GetInput("in2").Get()) == mask
+        assert dot.GetInput("in1").GetConnectedSources()[0][0].source.GetPrim() == reader.GetPrim()
+    gray = _shader_of(grey)
+    assert gray.GetIdAttr().Get() == "ND_dotproduct_vector3"
+    assert tuple(round(v, 5) for v in gray.GetInput("in2").Get()) == (0.21264, 0.71517, 0.07219)
+    assert "ND_image_color3" not in stage.GetRootLayer().ExportToString()
+
+
+def test_a_linear_colour_map_is_a_vector3_read_converted_to_colour():
+    stage = Usd.Stage.CreateInMemory()
+    manifest = load_manifest()
+
+    output = _linear_read(stage, manifest, "baseColor", {}, output_type="color3",
+                          colorspace="linear rec.709", colorspace_role="color")
+
+    reader = _shader(stage, "/M/Image")
+    assert reader.GetIdAttr().Get() == "ND_image_vector3"
+    assert reader.GetInput("file").GetAttr().GetColorSpace() == ""
+    assert _shader_of(output).GetIdAttr().Get() == "ND_convert_vector3_color3"
+
+
+def test_an_srgb_read_stays_a_decoding_color3_read():
+    stage = Usd.Stage.CreateInMemory()
+    manifest = load_manifest()
+
+    _linear_read(stage, manifest, "roughness", {}, output_type="float",
+                 colorspace="srgb", colorspace_role="data")
+
+    reader = _shader(stage, "/M/Image")
+    assert reader.GetIdAttr().Get() == "ND_image_color3"
+    assert reader.GetInput("file").GetAttr().GetColorSpace() == "srgb_texture"
+
+
+def _shader_of(output):
+    from Plugin.export.usd_utils import UsdShade
+
+    return UsdShade.Shader(output.GetPrim())

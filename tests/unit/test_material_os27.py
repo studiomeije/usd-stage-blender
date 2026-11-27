@@ -261,13 +261,13 @@ def test_texture_file_metadata_is_role_correct_and_unknown_spaces_fail_closed():
         manifest,
         "Material",
     )
-    # A packed scalar is read through the same three-channel reader every
-    # working RealityKit package uses, and a data texture authors no color
-    # space at all: an absent MaterialX color space is the no-transform
-    # contract "raw" was meant to express, and RCP 3.0 replaces a material
-    # whose reader carries the lowercase token with a striped placeholder.
+    # A packed scalar is read through an untagged vector3 reader: RealityKit
+    # decodes every color3 read as sRGB, tagged or not, while an untagged
+    # vector3 read is linear for RGB and greyscale files. No color space is
+    # authored: RCP 3.0 replaces a material whose reader carries the lowercase
+    # "raw" token with a striped placeholder.
     data_image = UsdShade.Shader(stage.GetPrimAtPath("/Material/Image_1"))
-    assert data_image.GetIdAttr().Get() == "ND_image_color3"
+    assert data_image.GetIdAttr().Get() == "ND_image_vector3"
     assert data_image.GetInput("file").GetAttr().GetColorSpace() == ""
     dot = UsdShade.Shader(stage.GetPrimAtPath("/Material/channel_roughness_g"))
     assert dot.GetIdAttr().Get() == "ND_dotproduct_vector3"

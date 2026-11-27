@@ -218,20 +218,32 @@ warning; **Info** = diagnostics sidecar only; **Silent** = no record.
 
 | Trigger | What happens | Told? |
 |---|---|---|
-| Color input, image tagged **sRGB** or untagged | authored `srgb_texture` | — |
-| Color input, image tagged **Linear Rec.709** | authored `lin_rec709` | — |
-| Color input, image tagged **Non-Color** | authored `lin_rec709` | **Warning** |
-| Data input, image tagged **Non-Color** or **Linear Rec.709** | no color space authored | — |
-| Data input, image tagged **sRGB** | authored `srgb_texture`, so the input reads decoded values, as in Cycles | **Warning** |
-| Data input reading the **alpha channel**, any tagging | no color space authored | **Silent** |
+| Color input, image tagged **sRGB** or untagged | `ND_image_color3`, authored `srgb_texture` | — |
+| Color input, image tagged **Linear Rec.709** | untagged `ND_image_vector3`, converted to a colour | — |
+| Color input, image tagged **Non-Color** | untagged `ND_image_vector3`, converted to a colour | **Warning** |
+| Data input, image tagged **Non-Color** or **Linear Rec.709** | untagged `ND_image_vector3` | — |
+| Data input, image tagged **sRGB** | `ND_image_color3`, authored `srgb_texture`, so the input reads decoded values, as in Cycles | **Warning** |
+| Data input reading the **alpha channel**, any tagging | `ND_image_color4`, no color space authored | **Silent** |
 | Any other Blender color space | **export fails** | **Error** |
 | Blend file working color space other than **Linear Rec.709** | **export fails**, naming the working space | **Error** |
 | Baked AO texture | tagged Non-Color | **Silent** |
 | `ColorSpaceAPI` token `srgb_rec709_display` | renamed `srgb_rec709_scene` | **Info** |
 
-**A data texture carries no color space at all.** An absent MaterialX color
-space is the no-transform contract, which is what a roughness, metallic or
-normal image needs.
+**A texture read as stored goes through a vector3 reader.** RealityKit
+decodes every `ND_image_color3` read as sRGB, whatever its token says, with
+one exception that does not help: `lin_rec709_scene` reads linearly over a
+three-channel file but a greyscale PNG or JPEG is still decoded. An untagged
+`ND_image_vector3` reads every file as stored
+([measured](REALITYKIT_USD_SUPPORT.md#texture-reads)). So a roughness,
+metallic, AO, ORM, opacity, height or other data map, and a colour map tagged
+Linear Rec.709 or Non-Color, is read by an untagged `ND_image_vector3`; a
+channel is a dot product with its unit mask, a channelless read into a float
+input is the [gray conversion](#type-coercion), and a colour input takes one
+`ND_convert_vector3_color3`. Normal maps were already read this way. Only an
+sRGB read stays `ND_image_color3` with `srgb_texture`, because that read is
+meant to decode. Preflight refuses any `ND_image_color3` read that is untagged
+or tagged linear (`TEXTURE_LINEAR_READ_DECODED_AS_SRGB`), wherever it came
+from.
 
 **An sRGB image is decoded whatever it feeds.** Cycles decodes an image by its
 color space before any node reads it, so Roughness fed by an sRGB image,
@@ -705,13 +717,15 @@ The reader follows what the shader input needs, not what the file contains
 | Situation | Reader |
 |---|---|
 | normal map | `ND_image_vector3` |
-| a scalar input (roughness, metallic, occlusion) fed the Color output | `ND_image_color3`, then the [gray conversion](#type-coercion) |
-| a Separate Color channel | `ND_image_color3`, then a channel read |
+| a scalar input (roughness, metallic, occlusion) fed the Color output of a linear image | untagged `ND_image_vector3`, then the [gray conversion](#type-coercion) |
+| a Separate Color channel of a linear image | untagged `ND_image_vector3`, then a channel read |
 | an input that needs alpha | `ND_image_color4`, then a channel read |
-| everything else | `ND_image_color3` |
+| a colour input fed a linear image | untagged `ND_image_vector3`, then `ND_convert_vector3_color3` |
+| an sRGB image, whatever it feeds | `ND_image_color3` with `srgb_texture` |
 
-A channel read is a `convert` to a vector (`ND_convert_color3_vector3` or
-`ND_convert_color4_vector4`) followed by a `dotproduct` with a unit mask
+A channel read is a `dotproduct` of the vector3 read with a unit mask, or, for
+a colour read, a `convert` to a vector (`ND_convert_color3_vector3` or
+`ND_convert_color4_vector4`) followed by the same `dotproduct`
 (`_create_swizzle_output`, `_create_separate4_outputs`). One file is one
 reader: the reader cache (`_texture_cache_key`) ignores the channel, and the
 `convert` is named after the reader, so channel reads of one file share both.
@@ -749,8 +763,7 @@ def Material "Mat" (customData = { dictionary USDStage = { string surfaceProfile
         float3  inputs:normal.connect    = <NormalMap_normal.outputs:out>
     }
     def Shader "Image"   { ND_image_color3  inputs:file ( colorSpace = "srgb_texture" ) }
-    def Shader "Image_1" { ND_image_color3  inputs:file }
-    def Shader "convert_Image_1_vector3" { ND_convert_color3_vector3 }
+    def Shader "Image_1" { ND_image_vector3  inputs:file }
     def Shader "channel_metallic_b"  { ND_dotproduct_vector3  inputs:in2 = (0, 0, 1) }
     def Shader "channel_roughness_g" { ND_dotproduct_vector3  inputs:in2 = (0, 1, 0) }
     def Shader "Image_2" { ND_image_vector3  inputs:default = (0.5, 0.5, 1) }

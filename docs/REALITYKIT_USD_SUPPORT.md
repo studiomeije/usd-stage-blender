@@ -129,6 +129,28 @@ summary belongs here.
 | UDIM tile sets | assumed | No | Not probed, not authored. |
 | Lightmaps (`RealityFoundation.LightmapComponent`) | observed | No | New in the v27 component set. The preflight already reports whether a mesh has a second UV set for Reality Composer Pro's lightmap baker, but nothing is authored, and the `require_lightmap_uv` flag that would promote those reports to errors is read from settings that never define it. |
 
+### Texture reads
+
+What RealityKit reads from a uniform PNG whose stored value is 128 (0.502),
+by reader and color-space token. Measured on macOS 27.2.1 (26B131) with the
+a board built on the [RealityKit material probe harness](https://github.com/studiomeije/immersivestudio/tree/dev/scripts/generation-host/realitykit-material-probes),
+unlit, tone mapping off. The same holds at 8 and 16 bits.
+
+| Reader | Token | RGB file | Greyscale file |
+|---|---|---|---|
+| `ND_image_color3`, `RealityKitTexture2D_color3`, `RealityKitTexture2DGradient_color3` | none | 0.216, decoded | 0.216, decoded |
+| the same | `raw` | 0.216, decoded | 0.216, decoded |
+| the same | `srgb_texture` | 0.216, decoded | 0.216, decoded |
+| the same | `lin_rec709_scene` | 0.502 | 0.216, decoded |
+| `ND_image_vector3` | none | 0.502 | 0.502 |
+| `ND_image_float` | none | 0.502 | 0.502 |
+| `RealityKitTexture2D_vector4`, `RealityKitTexture2DGradient_vector4` | none or `raw` | 0.502 | 0.502 |
+
+So a colour reader always decodes, and the exporter reads every texture that
+must arrive as stored through an untagged `ND_image_vector3`
+([color space](MATERIAL_TRANSLATION.md#color-space)). `ND_image_color4`, which
+alpha reads use, was not measured.
+
 ## Animation and deformation
 
 | Feature | RealityKit | We author | Notes |

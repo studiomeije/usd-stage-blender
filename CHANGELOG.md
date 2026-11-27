@@ -5,6 +5,19 @@ Notable changes to USD Stage for Blender, newest first. Dates are release dates.
 Entries describe what changed for you — what now works, what stops the export,
 and what you have to do differently. Internal refactors are not listed.
 
+## Unreleased
+
+### Fixed
+
+- **Roughness, metallic and AO maps now render at their authored values in
+  RealityKit; before, they rendered darker.** RealityKit decodes every colour
+  texture read as sRGB, even one tagged as data, so a Non-Color roughness
+  texel of 0.5 rendered as 0.22. Data maps (roughness, metallic, AO, ORM
+  channels, opacity masks and any other non-colour input) and colour maps
+  tagged Linear Rec.709 or Non-Color are now read through a linear reader, for
+  RGB and greyscale files alike. sRGB colour maps are unchanged. Re-export
+  assets that use data maps.
+
 ## 1.2.0 — 2026-11-18
 
 ### Before you update

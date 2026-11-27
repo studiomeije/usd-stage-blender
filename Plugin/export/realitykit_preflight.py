@@ -151,6 +151,12 @@ RCP_UNSUPPORTED_NODEDEFS = frozenset(
 #: at all, which is MaterialX's no-transform contract.
 _UNSUPPORTED_FILE_COLOR_SPACES = frozenset({"raw"})
 
+#: Normalized effective color-space tokens under which an image reader is meant to
+#: read its texels as stored. Measured on macOS 27.2.1, RealityKit decodes an
+#: ``ND_image_color3`` read as sRGB under every one of them (``lin_rec709``
+#: only over a three-channel file), so such a read must be a vector3 read.
+_LINEAR_READ_SPACES = frozenset({"", "lin_rec709", "lin_rec709_scene"})
+
 
 @dataclass(frozen=True)
 class PreflightIssue:
@@ -1781,6 +1787,21 @@ def _check_textures(
             own_space = _normalize_color_space(
                 _attribute_color_space(shader_input)
             )
+            if shader_id == "ND_image_color3" and normalized_space in _LINEAR_READ_SPACES:
+                report.add(
+                    "error",
+                    "TEXTURE_LINEAR_READ_DECODED_AS_SRGB",
+                    (
+                        "RealityKit decodes a color3 image read as sRGB "
+                        "whatever its color-space token (lin_rec709 is honoured "
+                        "only on three-channel files), so this read of "
+                        "untransformed texels would render darker. Read the "
+                        "file through an untagged ND_image_vector3 instead."
+                    ),
+                    prim_path,
+                    texture=authored_path,
+                    actual=color_space or None,
+                )
             if is_materialx_reader and own_space in _UNSUPPORTED_FILE_COLOR_SPACES:
                 report.add(
                     "error",
