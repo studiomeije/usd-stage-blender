@@ -686,19 +686,6 @@ class MaterialXGraphBuilder:
         if 'alpha_threshold' in material_data:
             inputs['opacityThreshold'] = material_data['alpha_threshold']
 
-        if 'ao_texture' in material_data:
-            inputs['ambientOcclusion'] = self._create_texture_input(
-                material_data['ao_texture'],
-                'float',
-                channel=material_data.get('ao_texture_channel', ''),
-                texcoord=material_data.get('ao_texture_texcoord'),
-                mapping=material_data.get('ao_texture_mapping'),
-                colorspace=material_data.get('ao_texture_colorspace'),
-                alpha_mode=material_data.get('ao_texture_alpha_mode'),
-                sampling=material_data.get('ao_texture_sampling'),
-                texture_role='data',
-            )
-
         if 'clearcoat' in material_data:
             inputs['clearcoat'] = material_data['clearcoat']
             if 'clearcoat_roughness' in material_data:

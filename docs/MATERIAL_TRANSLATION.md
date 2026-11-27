@@ -168,7 +168,7 @@ never authored, because of how RealityKit reads them
 | Normal, Coat Normal | `normal`, `clearcoatNormal`, in tangent space ([normal maps](#normal-maps)) |
 | Emission Color × Strength | `emissiveColor` |
 | Alpha, cutout threshold, premultiplied alpha | `opacity`, `opacityThreshold`, `hasPremultipliedAlpha` |
-| AO (baked) | `ambientOcclusion` |
+| The [declared ambient-occlusion source](#ambient-occlusion) | `ambientOcclusion` |
 | Specular IOR Level and IOR, folded into one reflectance | `specular` ([specular and IOR](#specular-and-ior)) |
 | Specular Tint (achromatic, ≤ 1) | `specularColor` |
 | Coat Weight / Roughness / IOR | `clearcoat`, `clearcoatRoughness`, `clearcoatIOR` |
@@ -226,7 +226,6 @@ warning; **Info** = diagnostics sidecar only; **Silent** = no record.
 | Data input reading the **alpha channel**, any tagging | `ND_image_color4`, no color space authored | **Silent** |
 | Any other Blender color space | **export fails** | **Error** |
 | Blend file working color space other than **Linear Rec.709** | **export fails**, naming the working space | **Error** |
-| Baked AO texture | tagged Non-Color | **Silent** |
 | `ColorSpaceAPI` token `srgb_rec709_display` | renamed `srgb_rec709_scene` | **Info** |
 
 **A texture read as stored goes through a vector3 reader.** RealityKit
@@ -363,6 +362,28 @@ The tint clamp is the exporter's only value rewrite
 (`safe_overbright_achromatic_specular_tint`): a coloured value is never clamped
 because that would shift hue, and the warning says the `.blend` file was not
 changed. Control: `clamp_specular_tint`.
+
+### Ambient occlusion
+
+The Principled BSDF has no ambient-occlusion input, so a material says where
+its AO comes from; nothing is inferred from node names
+(`Plugin/export/materials/extract/occlusion.py`). RealityKit's
+`ambientOcclusion` darkens image-based diffuse light only: 0.5 halves it, 0
+removes it, and direct light is unchanged (measured on macOS 27.2.1).
+
+| Trigger | What happens | Told? |
+|---|---|---|
+| Material custom property `usd_stage_ambient_occlusion` = `"Node"` | the first output of the node with that name (or, failing that, that unique label) | — |
+| The same, `"Node:Output"`, such as `"ORM Split:Red"` | that output | — |
+| No property, one node labelled exactly `Ambient Occlusion` | its first output | — |
+| Both | the property wins | — |
+| Neither | `ambientOcclusion` not authored | — |
+| Two nodes labelled `Ambient Occlusion`; a property naming no node, an output the node lacks, or not a string | **export fails**, naming the fix | **Error** |
+
+The source need not be linked to the shader. It is read as data, like
+Roughness: an image's Color takes the [gray conversion](#type-coercion), a
+Separate Color output one channel, both through the linear reader. Its nodes
+are validated like the rest of the material. Unlit materials drop it.
 
 ### Emission, subsurface, sheen, and diffuse roughness
 

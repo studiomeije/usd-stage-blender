@@ -79,6 +79,34 @@ def material_has_transparency(material) -> bool:
     return _principled_alpha_is_transparent(surface_node)
 
 
+def _extract_ambient_occlusion(material, input_graphs, cache, unresolved_warnings) -> None:
+    """Route the material's declared AO source to ``ambientOcclusion``.
+
+    The source is declared, never inferred (``extract/occlusion.py``); a
+    declaration that cannot be honoured stops the export.
+    """
+    from .occlusion import as_linked_input, ambient_occlusion_source
+
+    source = ambient_occlusion_source(material)
+    if source is None:
+        return
+    node, socket = source
+    resolved = _resolve_socket_value(
+        as_linked_input(socket), cache=cache, expected_type="float",
+    )
+    if not resolved or resolved.get("kind") == "unresolved":
+        chain = " -> ".join((resolved or {}).get("provenance") or [node.name])
+        reason = (resolved or {}).get("reason")
+        unresolved_warnings.append(
+            f"Material '{material.name}': Unable to resolve 'Ambient Occlusion' "
+            f"through chain: {chain}" + (f" ({reason})" if reason else "")
+        )
+        return
+    if resolved.get("kind") == "texture":
+        resolved = dict(resolved, colorspace_role="data")
+    input_graphs["ambientOcclusion"] = resolved
+
+
 def _principled_alpha_is_transparent(principled) -> bool:
     alpha_socket = principled.inputs.get('Alpha')
     if not alpha_socket:
@@ -389,12 +417,8 @@ def extract_blender_material_data(material) -> Dict[str, Any]:
                 key, expected = constant_map[input_name]
                 data[key] = _coerce_constant_value(constant, expected)
 
-            from_node = input_socket.links[0].from_node
-            if from_node.type == 'TEX_IMAGE' and 'ao' in from_node.name.lower():
-                texture_path = _resolve_image_path(from_node.image)
-                if texture_path:
-                    data['ao_texture'] = texture_path
 
+        _extract_ambient_occlusion(material, input_graphs, resolve_cache, unresolved_warnings)
         _apply_surface_closure(material, closure, principled, data, input_graphs, unresolved_warnings)
         if unresolved_warnings:
             data['unresolved_warnings'] = unresolved_warnings

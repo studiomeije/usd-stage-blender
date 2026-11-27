@@ -801,6 +801,13 @@ def _validate_material(
         _add_issue(result, "errors", None, surface_refusal + ".", removable=False)
         result["ok"] = False
 
+    from ..export.materials.extract.occlusion import ambient_occlusion_refusal
+
+    occlusion_refusal = ambient_occlusion_refusal(material)
+    if occlusion_refusal is not None:
+        _add_issue(result, "errors", None, occlusion_refusal, removable=False)
+        result["ok"] = False
+
     from ..export.materials.extract.core import srgb_data_image_notices
 
     for image_node, notice in srgb_data_image_notices(material):
@@ -1368,10 +1375,24 @@ def _collect_used_nodes(material) -> Set[object]:
         _collect_used_nodes as export_walk,
     )
 
+    from ..export.materials.extract.occlusion import (
+        AmbientOcclusionError,
+        ambient_occlusion_source,
+        upstream_nodes,
+    )
+
     used_nodes, _volume_linked, _displacement_linked = export_walk(material)
     active_output = _active_output_node(material)
     if active_output is not None:
         used_nodes.add(active_output)
+        # The declared ambient-occlusion source is exported too, though no
+        # link from the output reaches it.
+        try:
+            occlusion = ambient_occlusion_source(material)
+        except AmbientOcclusionError:
+            occlusion = None
+        if occlusion is not None:
+            used_nodes |= upstream_nodes(occlusion[1])
     return used_nodes
 
 

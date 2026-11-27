@@ -68,6 +68,7 @@ inputs; every node that feeds them is in [Shader nodes](#shader-nodes).
 | Emission Color and Strength | Yes | Constant or linked. |
 | Alpha (opacity) | Yes | Constant or linked. A Mix Shader with a Transparent BSDF also becomes opacity. |
 | Alpha cutout | Partial | Opt-in: set the material custom property `usd_stage_alpha_cutout_threshold` to a number from 0 to 1 on a transparent material. Blender's render method never implies a cutout. |
+| Ambient occlusion | Opt-in | Declared with the material custom property `usd_stage_ambient_occlusion` (`Node` or `Node:Output`) or a node labelled `Ambient Occlusion`. Darkens image-based diffuse light only. See [ambient occlusion](MATERIAL_TRANSLATION.md#ambient-occlusion). |
 | Subsurface | Partial | Weight, Radius, Scale and Anisotropy are carried. A Subsurface IOR other than 1.4 is refused. |
 | Sheen | Partial | Weight and Tint are carried while Weight is on. RealityKit's sheen replaces the specular lobe, so a warning says the highlight and metallic reflection disappear, unless the base is black, non-metallic and at Specular IOR Level 0, as in the Sheen BSDF. A linked Sheen Roughness, or one other than 0.5, is refused. |
 | Coat | Partial | Weight, Roughness and IOR constants are carried. Linked coat controls and a non-white Coat Tint are refused. |

@@ -21,6 +21,18 @@ and what you have to do differently. Internal refactors are not listed.
   checks an export against the OS's, Xcode's or every installed ShaderGraph
   build, not only Reality Composer Pro's.
 
+- **Ambient occlusion is declared, not guessed.** Set the material custom
+  property `usd_stage_ambient_occlusion` to a node, or `Node:Output` such as
+  `ORM Split:Red`, or label one node `Ambient Occlusion`; the property wins.
+  The source need not be connected to the shader.
+
+### Before you update
+
+- **An image node whose name contains "ao" no longer becomes ambient
+  occlusion.** The exporter used to route any such image linked to the
+  Principled BSDF into `ambientOcclusion` as well, so a "Chaos AO" base colour
+  also darkened the lighting. Declare the AO source as described above.
+
 ### Fixed
 
 - **Roughness, metallic and AO maps now render at their authored values in
