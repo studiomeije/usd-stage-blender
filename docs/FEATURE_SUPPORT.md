@@ -73,7 +73,8 @@ inputs; every node that feeds them is in [Shader nodes](#shader-nodes).
 | Sheen | Partial | Weight and Tint are carried while Weight is on. RealityKit's sheen replaces the specular lobe, so a warning says the highlight and metallic reflection disappear, unless the base is black, non-metallic and at Specular IOR Level 0, as in the Sheen BSDF. A linked Sheen Roughness, or one other than 0.5, is refused. |
 | Coat | Partial | Weight, Roughness and IOR constants are carried. Linked coat controls and a non-white Coat Tint are refused. |
 | Specular Tint | Partial | White only. A coloured or linked tint is refused; an overbright grey is refused unless **Clamp Overbright Specular Tint** clamps it. |
-| Transmission, Thin Wall, Thin Film, Anisotropic | Refused | Export stops and names the Principled input to bake or clear. |
+| Anisotropic, Anisotropic Rotation | Partial | Constant values, with the Tangent from a Tangent node in UV Map mode on the render UV map, export with Cycles' highlight shape. See [anisotropy](MATERIAL_TRANSLATION.md#anisotropy). |
+| Transmission, Thin Wall, Thin Film | Refused | Export stops and names the Principled input to bake or clear. |
 
 ## Shader nodes
 
@@ -133,7 +134,7 @@ always names the node and, where one exists, the remedy.
 | Principled Hair BSDF | Partial | Direct coloring only, exported as RealityKit's hair surface: colour and roughness, and under the Huang model the two reflection weights. The transmission lobe, cuticle Offset, radial roughness and the melanin controls have no input on it, and the export says so. Melanin or Absorption coloring is refused. The strand direction is +U of the mesh's UV map, so strands must run along +U; use it on mesh hair cards. |
 | Hair BSDF | Refused | A single-lobe Cycles shader with no RealityKit form; use Principled Hair BSDF. |
 | Volume Absorption, Volume Scatter, Principled Volume, Volume Coefficients | Refused | RealityKit has no volume shading. |
-| Light Path, Ambient Occlusion, Tangent, Bevel, Wireframe, Curves Info, Particle Info, Point Info, Volume Info, Holdout | Refused | No reader with settled semantics on the platform. |
+| Light Path, Ambient Occlusion, Tangent, Bevel, Wireframe, Curves Info, Particle Info, Point Info, Volume Info, Holdout | Refused | No reader with settled semantics on the platform. A Tangent node in UV Map mode feeding only shader Tangent inputs is accepted as the [anisotropy](MATERIAL_TRANSLATION.md#anisotropy) frame. |
 | World Output, Light Output, AOV Output, Background | Refused | Not part of a material. |
 | Frame, Reroute | Yes | Ignored and passed through. |
 | Node groups | Partial | RealityKit node groups from the add-on's own catalog export; other groups are refused. |

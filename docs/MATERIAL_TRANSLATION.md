@@ -174,6 +174,7 @@ never authored, because of how RealityKit reads them
 | Coat Weight / Roughness / IOR | `clearcoat`, `clearcoatRoughness`, `clearcoatIOR` |
 | Subsurface Weight / Radius / Scale / Anisotropy | `subsurface*` |
 | Sheen Weight × Tint, while Sheen Weight is on | `sheenColor` |
+| Anisotropic, Anisotropic Rotation, with a UV Map Tangent | `specularAnisotropyLevel`, `specularAnisotropyAngle`, and a scaled `roughness` ([anisotropy](#anisotropy)) |
 | Diffuse Roughness | not authored; the surface shades as Lambert |
 
 The strict validator refuses these (`_unsupported_principled_inputs`):
@@ -184,7 +185,7 @@ The strict validator refuses these (`_unsupported_principled_inputs`):
 | Sheen Roughness other than `0.5` | The surface has no such input |
 | Specular Tint, coloured or linked | Colour semantics are not verified against the surface |
 | Specular Tint, achromatic and brighter than 1 | Outside the verified range, unless [clamped](#specular-and-ior) |
-| Anisotropic, Anisotropic Rotation, Tangent | Blender's level factor and tangent rotation are not reproduced |
+| Anisotropic or Anisotropic Rotation linked; anisotropy without a [UV Map Tangent](#anisotropy) on the render UV map; a roughness the mapping would raise above 1 | Not reproduced; see [anisotropy](#anisotropy) |
 | Transmission Weight | No surface input; the message says the material would be opaque |
 | Thin Wall, while transmission or subsurface is active | RealityKit has no thin-wall shading |
 | Thin Film Thickness / IOR, Subsurface IOR | No surface input |
@@ -362,6 +363,39 @@ The tint clamp is the exporter's only value rewrite
 (`safe_overbright_achromatic_specular_tint`): a coloured value is never clamped
 because that would shift hue, and the warning says the `.blend` file was not
 changed. Control: `clamp_specular_tint`.
+
+### Anisotropy
+
+Cycles and RealityKit both stretch a GGX highlight, with alpha = roughness²,
+but split the alpha differently (`Plugin/export/materials/anisotropy.py`):
+
+| | Along the tangent | Across it |
+|---|---|---|
+| Cycles, Anisotropic `A`, `s = √(1 − 0.9 A)` | `r² / s` | `r² · s` |
+| RealityKit, `specularAnisotropyLevel` `L` | `r² (1 + L²)` | `r² (1 − L²)` |
+
+Both rows are measured: a Cycles render and a RealityKit render (macOS
+27.2.1) of a metal sphere, each fitted for its two alphas
+([measurements](REALITYKIT_USD_SUPPORT.md#anisotropy)). So the export authors
+`L = √(0.9 A / (2 − 0.9 A))` and multiplies Roughness by `√((1/s + s) / 2)`,
+which reproduces both of Cycles' alphas; rendered back in RealityKit, the
+mapped highlight matches Cycles' within 1.5%. At `A = 1`, `L` is 0.905 and
+the roughness factor 1.319.
+
+| Trigger | What happens | Told? |
+|---|---|---|
+| Constant Anisotropic > 0, Tangent from a Tangent node in UV Map mode on the render UV map | level, angle and scaled roughness authored | — |
+| Anisotropic Rotation `R` | `specularAnisotropyAngle = −R` modulo 1: Blender turns the highlight counter-clockwise as the camera sees it, RealityKit clockwise | — |
+| Roughness linked | multiplied by the factor in the graph; texels above `1 / factor` clamp at 1 in RealityKit | **Warning** |
+| Tangent unlinked (Cycles' default is radial around the object's Z), from anything but a UV Map Tangent node, or from a UV map other than the render one | **export fails**: RealityKit stretches along the render UV map's +u only | **Error** |
+| Anisotropic or Anisotropic Rotation linked | **export fails** | **Error** |
+| Constant Roughness × factor above 1 | **export fails**: RealityKit's roughness stops at 1 | **Error** |
+
+The Glossy and Metallic BSDFs' Anisotropy, Rotation and Tangent follow the
+same rules through their Principled stand-ins. The rotation direction was
+measured on UV islands that are not mirrored; on a mirrored island the two
+may turn opposite ways. A Tangent node that feeds only shader Tangent inputs
+is accepted for this, and nowhere else.
 
 ### Ambient occlusion
 

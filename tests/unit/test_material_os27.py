@@ -818,12 +818,13 @@ def test_unmapped_principled_controls_fail_closed(
         ("Tangent", (1.0, 0.0, 0.0), "Anisotropic", 0.4),
     ],
 )
-def test_unverified_anisotropy_mapping_fails_closed(
+def test_anisotropy_without_a_uv_tangent_fails_closed(
     socket_name,
     active_value,
     controller_name,
     controller_value,
 ):
+    """Cycles' default Tangent is radial around Z; RealityKit stretches along +u."""
     inputs = {socket_name: _Socket(active_value)}
     if controller_name is not None:
         inputs[controller_name] = _Socket(controller_value)
@@ -832,7 +833,7 @@ def test_unverified_anisotropy_mapping_fails_closed(
     )
 
     assert result["ok"] is False
-    assert any(socket_name in issue["message"] for issue in result["errors"])
+    assert any("'Tangent' is unlinked" in issue["message"] for issue in result["errors"])
 
 
 def _normal_map_material(strength, space):

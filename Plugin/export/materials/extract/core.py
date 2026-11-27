@@ -335,6 +335,10 @@ def extract_blender_material_data(material) -> Dict[str, Any]:
         for input_name, input_socket in principled.inputs.items():
             if not input_socket.is_linked:
                 continue
+            if input_name == 'Tangent':
+                # Validation requires a UV Map Tangent on the render UV map,
+                # which is the tangent RealityKit's anisotropy follows.
+                continue
 
             expected_type = expected_type_map.get(input_name)
             if input_name in ('Normal', 'Coat Normal'):
@@ -706,6 +710,12 @@ def collect_material_warnings(material) -> List[str]:
                 f"Material '{material.name}': Node '{node_name}' ({node_type}) requires baking for RCP."
             )
             continue
+
+        if node_type == 'TANGENT':
+            from ..anisotropy import tangent_node_feeds_only_anisotropy
+
+            if tangent_node_feeds_only_anisotropy(node):
+                continue
 
         if node_type in unsupported_types:
             warnings.append(

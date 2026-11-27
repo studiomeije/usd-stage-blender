@@ -505,7 +505,6 @@ def _unsupported_principled_inputs(
     sheen_active = _active('Sheen Weight')
     transmission_active = _active('Transmission Weight')
     thin_film_active = _active('Thin Film Thickness')
-    anisotropy_active = _active('Anisotropic')
 
     thin_wall = node.inputs.get('Thin Wall')
     if (
@@ -540,21 +539,11 @@ def _unsupported_principled_inputs(
             "bake the material or use an unlinked constant."
         )
 
-    # Blender's anisotropy level and rotation do not map one-to-one to the
-    # PBR Surface 2 inputs: native Blender 5.2 applies a level
-    # factor and tangent rotation that this exporter does not reproduce.  A
-    # partially mapped result is worse than an actionable failure.
-    anisotropy_inputs = (
-        ('Anisotropic', 0.0, None),
-        ('Anisotropic Rotation', 0.0, 'Anisotropic'),
-        ('Tangent', (0.0, 0.0, 0.0), 'Anisotropic'),
-    )
-    for name, neutral, controller in anisotropy_inputs:
-        if (controller is None or anisotropy_active) and _active(name, neutral):
-            issues.append(
-                f"Principled '{name}' requires a verified Blender tangent/anisotropy "
-                "mapping; bake the material before export."
-            )
+    # Anisotropy maps exactly onto PBR Surface 2 under the conditions
+    # ``anisotropy_issues`` checks (see Plugin/export/materials/anisotropy.py).
+    from ..export.materials.anisotropy import anisotropy_issues
+
+    issues.extend(anisotropy_issues(node))
 
     active_controllers = {
         'Subsurface Weight': subsurface_active,
@@ -1073,6 +1062,11 @@ def _validate_material(
             )
             continue
 
+        if node_type == 'TANGENT' and _tangent_declares_anisotropy(node):
+            # Only declares the frame an anisotropic shader stretches along;
+            # that shader's own check judges it.
+            continue
+
         if node_type in UNSUPPORTED_TYPES:
             add_issue("errors", node, "Node is not supported by RealityKit export.")
             continue
@@ -1394,6 +1388,12 @@ def _collect_used_nodes(material) -> Set[object]:
         if occlusion is not None:
             used_nodes |= upstream_nodes(occlusion[1])
     return used_nodes
+
+
+def _tangent_declares_anisotropy(node) -> bool:
+    from ..export.materials.anisotropy import tangent_node_feeds_only_anisotropy
+
+    return tangent_node_feeds_only_anisotropy(node)
 
 
 def _is_supported_mix(node) -> bool:

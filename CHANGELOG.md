@@ -26,6 +26,15 @@ and what you have to do differently. Internal refactors are not listed.
   `ORM Split:Red`, or label one node `Ambient Occlusion`; the property wins.
   The source need not be connected to the shader.
 
+- **Anisotropy exports.** Principled Anisotropic and Anisotropic Rotation,
+  and the Glossy and Metallic BSDFs' Anisotropy and Rotation, export to
+  RealityKit with Cycles' highlight shape: the exporter sets RealityKit's
+  anisotropy level and angle and adjusts Roughness so the stretch matches,
+  measured against both renderers. Link a Tangent node set to UV Map (on the
+  render UV map) to the shader's Tangent input; without it, with a linked
+  anisotropy, or where the adjusted roughness would exceed 1, the export stops
+  and says why.
+
 ### Before you update
 
 - **An image node whose name contains "ao" no longer becomes ambient

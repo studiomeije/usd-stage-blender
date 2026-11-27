@@ -129,6 +129,30 @@ summary belongs here.
 | UDIM tile sets | assumed | No | Not probed, not authored. |
 | Lightmaps (`RealityFoundation.LightmapComponent`) | observed | No | New in the v27 component set. The preflight already reports whether a mesh has a second UV set for Reality Composer Pro's lightmap baker, but nothing is authored, and the `require_lightmap_uv` flag that would promote those reports to errors is read from settings that never define it. |
 
+### Anisotropy
+
+Measured on macOS 27.2.1 (26B131): white metal spheres 460 pixels across,
+lit along the view, rendered by `RealityRenderer` with the
+[RealityKit material probe harness](https://github.com/studiomeije/immersivestudio/tree/dev/scripts/generation-host/realitykit-material-probes)'s
+renderer, and both GGX alphas fitted to the highlight.
+
+| `roughness` | `specularAnisotropyLevel` | alpha along +u | alpha across |
+|---|---|---|---|
+| 0.3 | 0.4 | 0.105 | 0.076 |
+| 0.3 | 0.8 | 0.148 | 0.032 |
+| 0.3 | 0.9 | 0.163 | 0.017 |
+| 0.3 | 0.95 | 0.169 | 0.009 |
+| 0.6 | 0.2, 0.4, 0.6, 0.8 | 0.40, 0.45, 0.55, 0.70 | 0.36, 0.31, 0.23, 0.13 |
+| either | 1.0 | | the highlight collapses to a line |
+
+At roughness 0.3 these are `r² (1 + L²)` and `r² (1 − L²)` within 1%; at 0.6
+the across-tangent alpha still is, and the along-tangent fit runs high as the
+highlight reaches the sphere's edge. `specularAnisotropyAngle` is a fraction
+of a turn, turning the highlight clockwise as the camera sees it from +u (the
+harness measured 0.25 at 90° and 0.125 at −45°). How the exporter maps
+Blender's anisotropy onto these is in
+[MATERIAL_TRANSLATION.md](MATERIAL_TRANSLATION.md#anisotropy).
+
 ### Texture reads
 
 What RealityKit reads from a uniform PNG whose stored value is 128 (0.502),

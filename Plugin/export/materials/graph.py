@@ -739,8 +739,6 @@ class MaterialXGraphBuilder:
             'clearcoat_ior': 'clearcoatIOR',
             'clearcoat_anisotropy': 'clearcoatAnisotropyLevel',
             'clearcoat_anisotropy_rotation': 'clearcoatAnisotropyAngle',
-            'anisotropic': 'specularAnisotropyLevel',
-            'anisotropic_rotation': 'specularAnisotropyAngle',
             'specular_tint': 'specularColor',
         }
         for source_name, target_name in pbr2_fields.items():
@@ -749,6 +747,19 @@ class MaterialXGraphBuilder:
                 if target_name in {'subsurfaceRadiusScale', 'specularColor'}:
                     value = self._convert_color(value)
                 inputs[target_name] = value
+
+        anisotropy = self._anisotropy(material_data)
+        if anisotropy is not None:
+            level, angle, roughness_scale = anisotropy
+            inputs['specularAnisotropyLevel'] = level
+            inputs['specularAnisotropyAngle'] = angle
+            roughness = inputs.get('roughness')
+            if isinstance(roughness, dict):
+                roughness['scale'] = float(roughness.get('scale') or 1.0) * roughness_scale
+            elif roughness is not None:
+                inputs['roughness'] = float(roughness) * roughness_scale
+            elif 'roughness' not in (material_data.get('input_graphs') or {}):
+                inputs['roughness'] = 0.5 * roughness_scale
 
         if 'subsurfaceWeight' in inputs:
             if 'baseColor' in inputs and 'subsurfaceColor' not in inputs:
@@ -815,6 +826,17 @@ class MaterialXGraphBuilder:
             self.diagnostics.add_warning(
                 "RealityKit PBR Surface 2 has no sheen roughness input; bake this control."
             )
+        anisotropy = self._anisotropy(material_data)
+        if anisotropy is not None and 'roughness' in graph_inputs:
+            # The roughness scale that matches Cycles' anisotropic alphas.
+            graph_inputs['roughness'] = {
+                'kind': 'node',
+                'node_id': self._nodedef_for_graph('multiply', 'float'),
+                'inputs': {
+                    'in1': graph_inputs['roughness'],
+                    'in2': {'kind': 'constant', 'value': anisotropy[2]},
+                },
+            }
         specular_ior = graph_inputs.pop('specularIOR', None)
         if specular_level is not None or specular_ior is not None:
             graph_inputs.update(
@@ -824,6 +846,16 @@ class MaterialXGraphBuilder:
                 )
             )
         return graph_inputs
+
+    @staticmethod
+    def _anisotropy(material_data: Dict[str, Any]):
+        """(level, angle, roughness scale) for an anisotropic surface, or None."""
+        from .anisotropy import realitykit_anisotropy
+
+        anisotropic = float(material_data.get('anisotropic', 0.0) or 0.0)
+        if anisotropic <= 1e-6:
+            return None
+        return realitykit_anisotropy(anisotropic, float(material_data.get('anisotropic_rotation', 0.0) or 0.0))
 
     def _specular_graphs(
         self,
