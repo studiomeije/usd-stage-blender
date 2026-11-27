@@ -151,6 +151,12 @@ RCP_UNSUPPORTED_NODEDEFS = frozenset(
 #: at all, which is MaterialX's no-transform contract.
 _UNSUPPORTED_FILE_COLOR_SPACES = frozenset({"raw"})
 
+#: Normalized effective color-space tokens under which an image reader is meant to
+#: read its texels as stored. Measured on macOS 27.2.1, RealityKit decodes an
+#: ``ND_image_color3`` read as sRGB under every one of them (``lin_rec709``
+#: only over a three-channel file), so such a read must be a vector3 read.
+_LINEAR_READ_SPACES = frozenset({"", "lin_rec709", "lin_rec709_scene"})
+
 
 @dataclass(frozen=True)
 class PreflightIssue:
@@ -383,6 +389,8 @@ def _check_composed_stage(
     _check_materialx_nodedefs(prims, report)
     _check_materialx_node_inputs(prims, report)
     _check_geompropvalue_primvar_types(prims, report)
+    _check_second_uv_set_reads(prims, report)
+    _check_geompropvalue_reads(prims, report)
     _check_skeletons(stage, prims, report)
     _check_textures(prims, report, asset_path, settings)
     _check_accessibility(stage, prims, report, settings)
@@ -933,8 +941,24 @@ def _check_meshes(
                 uv_sets=uv_names,
             )
 
-        if len(uv_primvars) >= 2:
-            lightmap_uv = uv_primvars[1]
+        lightmap_uv = next(
+            (primvar for primvar in uv_primvars if str(primvar.GetPrimvarName()) == "st1"),
+            None,
+        )
+        if lightmap_uv is None and len(uv_primvars) >= 2:
+            # RealityKit's second texcoord reads st1 only; a second set under
+            # another name is unreachable from a material or a lightmap.
+            report.add(
+                "error" if require_lightmap_uv else "warning",
+                "SECOND_UV_SET_NOT_ST1",
+                (
+                    "The mesh's second UV set is not named st1, so RealityKit's texcoord "
+                    "index 1 cannot read it; the export renames it only in layers it owns."
+                ),
+                path,
+                uv_sets=uv_names,
+            )
+        elif lightmap_uv is not None:
             try:
                 lightmap_values = lightmap_uv.ComputeFlattened()
             except Exception:
@@ -959,7 +983,7 @@ def _check_meshes(
                     path,
                     uv_set=str(lightmap_uv.GetPrimvarName()),
                 )
-        else:
+        if lightmap_uv is None and len(uv_primvars) < 2:
             severity = "error" if require_lightmap_uv else "info"
             report.add(
                 severity,
@@ -1285,6 +1309,29 @@ def _check_materialx_node_inputs(
 
 
 _KNOWN_NODEDEF_NAMES: frozenset[str] | None = None
+_BUILD_GAPS: dict[str, tuple[str, ...]] | None = None
+
+
+def _nodedef_build_gaps() -> dict[str, tuple[str, ...]]:
+    """Nodedef -> the recorded ShaderGraph builds that cannot build it."""
+    global _BUILD_GAPS
+    if _BUILD_GAPS is None:
+        try:
+            from ..manifest.materialx_nodes import load_manifest
+
+            manifest = load_manifest()
+        except Exception:
+            return {}
+        builds = (manifest.get("metadata") or {}).get("shadergraph_builds") or {}
+        _BUILD_GAPS = {
+            name: tuple(
+                f"{build} ({builds.get(build, 'unrecorded')})"
+                for build in (node.get("policy") or {}).get("unimplemented_in_shadergraph_builds") or ()
+            )
+            for name, node in manifest.get("nodes", {}).items()
+            if (node.get("policy") or {}).get("unimplemented_in_shadergraph_builds")
+        }
+    return _BUILD_GAPS
 
 
 def _known_nodedef_names() -> frozenset[str] | None:
@@ -1356,6 +1403,22 @@ def _check_materialx_nodedefs(
             )
             continue
         if shader_id in known:
+            missing_in = _nodedef_build_gaps().get(shader_id)
+            if missing_in:
+                report.add(
+                    "warning",
+                    "MATERIALX_NODEDEF_UNIMPLEMENTED_IN_SOME_BUILDS",
+                    (
+                        "RealityKit on macOS 27.2 builds this node, but some "
+                        "ShaderGraph builds have no implementation of it and "
+                        "show the material without its shader graph there: "
+                        + "; ".join(missing_in)
+                        + ". Check the material in the app that will show it."
+                    ),
+                    prim.GetPath(),
+                    nodedef=shader_id,
+                    builds=list(missing_in),
+                )
             continue
         report.add(
             "error",
@@ -1398,6 +1461,84 @@ _PRIMVAR_CHANNEL_COUNTS = {
     "half4[]": 4, "float4[]": 4, "double4[]": 4,
     "color4h[]": 4, "color4f[]": 4, "color4d[]": 4,
 }
+
+
+#: geompropvalue types RealityKit was measured not to read (macOS 27.2.1,
+#: material probe harness, probe "primvars_geompropvalue"): float shows the
+#: default, vector3 reads zeros, color3 renders an error pattern. Only
+#: vector2 reads the primvar.
+_GEOMPROPVALUE_TYPES_NOT_READ = frozenset({"float", "vector3", "color3"})
+
+
+def _check_geompropvalue_reads(prims: Iterable[Any], report: RealityKitPreflightReport) -> None:
+    """Warn on a geometric-property read of a type RealityKit does not read."""
+    for prim in prims:
+        shader = UsdShade.Shader(prim)
+        if not shader:
+            continue
+        shader_id = str(shader.GetIdAttr().Get() or "")
+        if not shader_id.startswith("ND_geompropvalue_"):
+            continue
+        if shader_id[len("ND_geompropvalue_"):] not in _GEOMPROPVALUE_TYPES_NOT_READ:
+            continue
+        geomprop = shader.GetInput("geomprop")
+        report.add(
+            "warning",
+            "GEOMPROPVALUE_TYPE_NOT_READ",
+            (
+                f"RealityKit on macOS 27.2.1 does not read a primvar through {shader_id} "
+                "(measured: float shows the default, vector3 reads zeros, color3 an error "
+                "pattern; only vector2 reads the primvar), so this input renders its "
+                "default. Bake the material to keep the effect."
+            ),
+            prim.GetPath(),
+            nodedef=shader_id,
+            primvar=str(geomprop.Get()) if geomprop else None,
+        )
+
+
+def _reads_second_uv_set(material) -> bool:
+    for shader_prim in _upstream_material_prims(material.GetPrim()):
+        shader = UsdShade.Shader(shader_prim)
+        if not shader or not str(shader.GetIdAttr().Get() or "").startswith("ND_texcoord_"):
+            continue
+        index = shader.GetInput("index")
+        if index and int(index.Get() or 0) == 1:
+            return True
+    return False
+
+
+def _check_second_uv_set_reads(
+    prims: Iterable[Any], report: RealityKitPreflightReport
+) -> None:
+    """A material reading texcoord index 1 needs primvars:st1 on its geometry.
+
+    Measured on macOS 27.2.1: RealityKit's texcoord index 1 reads
+    ``primvars:st1`` and nothing else.
+    """
+    for prim in prims:
+        if not (prim.IsA(UsdGeom.Mesh) or prim.IsA(UsdGeom.Subset)):
+            continue
+        try:
+            material, _binding = UsdShade.MaterialBindingAPI(prim).ComputeBoundMaterial()
+        except Exception:
+            continue
+        if not material or not _reads_second_uv_set(material):
+            continue
+        mesh = prim if prim.IsA(UsdGeom.Mesh) else prim.GetParent()
+        if UsdGeom.PrimvarsAPI(mesh).FindPrimvarWithInheritance("st1"):
+            continue
+        report.add(
+            "error",
+            "SECOND_UV_SET_MISSING",
+            (
+                "The material reads the second UV set (texcoord index 1), which "
+                "RealityKit takes from primvars:st1, and this mesh has none; give the "
+                "mesh a second UV map."
+            ),
+            prim.GetPath(),
+            material=str(material.GetPath()),
+        )
 
 
 def _check_geompropvalue_primvar_types(
@@ -1554,7 +1695,7 @@ def _texture_coordinate_semantic(shader, input_name: str) -> str:
     source = UsdShade.Shader(sources[0])
     source_id = str(source.GetIdAttr().Get() or "")
     if "texcoord" in source_id.lower():
-        return "UV0"
+        return "UV1" if int(_constant_shader_input(source, "index", 0) or 0) == 1 else "UV0"
     for name in ("geomprop", "varname"):
         source_input = source.GetInput(name)
         if not source_input:
@@ -1753,6 +1894,11 @@ def _check_textures(
                     texture=authored_path,
                 )
 
+            if prim.IsA(UsdShade.Material):
+                # A material-interface parameter: the reader it feeds holds
+                # the same asset and is judged as a reader, and one material
+                # reaches every input, so its roles say nothing.
+                continue
             roles = _downstream_texture_roles(str(prim_path), consumers)
             color_space = _texture_color_space(shader_input, connectable)
             normalized_space = _normalize_color_space(color_space)
@@ -1781,6 +1927,21 @@ def _check_textures(
             own_space = _normalize_color_space(
                 _attribute_color_space(shader_input)
             )
+            if shader_id == "ND_image_color3" and normalized_space in _LINEAR_READ_SPACES:
+                report.add(
+                    "error",
+                    "TEXTURE_LINEAR_READ_DECODED_AS_SRGB",
+                    (
+                        "RealityKit decodes a color3 image read as sRGB "
+                        "whatever its color-space token (lin_rec709 is honoured "
+                        "only on three-channel files), so this read of "
+                        "untransformed texels would render darker. Read the "
+                        "file through an untagged ND_image_vector3 instead."
+                    ),
+                    prim_path,
+                    texture=authored_path,
+                    actual=color_space or None,
+                )
             if is_materialx_reader and own_space in _UNSUPPORTED_FILE_COLOR_SPACES:
                 report.add(
                     "error",

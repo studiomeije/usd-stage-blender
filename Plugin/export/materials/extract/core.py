@@ -79,6 +79,56 @@ def material_has_transparency(material) -> bool:
     return _principled_alpha_is_transparent(surface_node)
 
 
+def _coat_follows_base_normal(principled, data, input_graphs) -> None:
+    """Give the coat the base normal where Cycles does.
+
+    Cycles' coat takes the shading normal, Normal input included, when Coat
+    Normal is unlinked; RealityKit's ``clearcoatNormal`` is independent of
+    ``normal`` (measured on macOS 27.2.1: a tilted base normal leaves the coat
+    highlight untouched). So under an active coat the base normal is authored
+    on the coat too.
+    """
+    coat = principled.inputs.get('Coat Weight')
+    coat_normal = principled.inputs.get('Coat Normal')
+    if coat is None or coat_normal is None or coat_normal.is_linked:
+        return
+    if not coat.is_linked and float(coat.default_value) <= 0.0:
+        return
+    if 'normal' in input_graphs:
+        input_graphs.setdefault('clearcoatNormal', input_graphs['normal'])
+    elif 'normal_texture' in data:
+        for key in [k for k in data if k.startswith('normal_texture')]:
+            data.setdefault('clearcoat_' + key, data[key])
+
+
+def _extract_ambient_occlusion(material, input_graphs, cache, unresolved_warnings) -> None:
+    """Route the material's declared AO source to ``ambientOcclusion``.
+
+    The source is declared, never inferred (``extract/occlusion.py``); a
+    declaration that cannot be honoured stops the export.
+    """
+    from .occlusion import as_linked_input, ambient_occlusion_source
+
+    source = ambient_occlusion_source(material)
+    if source is None:
+        return
+    node, socket = source
+    resolved = _resolve_socket_value(
+        as_linked_input(socket), cache=cache, expected_type="float",
+    )
+    if not resolved or resolved.get("kind") == "unresolved":
+        chain = " -> ".join((resolved or {}).get("provenance") or [node.name])
+        reason = (resolved or {}).get("reason")
+        unresolved_warnings.append(
+            f"Material '{material.name}': Unable to resolve 'Ambient Occlusion' "
+            f"through chain: {chain}" + (f" ({reason})" if reason else "")
+        )
+        return
+    if resolved.get("kind") == "texture":
+        resolved = dict(resolved, colorspace_role="data")
+    input_graphs["ambientOcclusion"] = resolved
+
+
 def _principled_alpha_is_transparent(principled) -> bool:
     alpha_socket = principled.inputs.get('Alpha')
     if not alpha_socket:
@@ -121,6 +171,57 @@ def opacity_threshold_from_material(
     return threshold
 
 
+_UNLIT_TONE_MAP_PROPERTY = "usd_stage_unlit_tonemap"
+
+
+def unlit_tone_map_from_material(material) -> Optional[bool]:
+    """The material's ``usd_stage_unlit_tonemap`` choice, or None when unset.
+
+    RealityKit's unlit surface tone-maps its colour with the rest of the frame
+    unless ``applyPostProcessToneMap`` is false. Measured on macOS 27.2.1 with
+    the camera's tone mapping on: a 0.18 unlit grey reads 0.129 and 1.0 reads
+    0.666 by default, and 0.180 and 1.0 with the input false. A screen or UI
+    surface that must show exact sRGB sets the property to False. Anything but
+    a boolean (or 0 / 1) is refused rather than guessed at.
+    """
+    try:
+        value = material.get(_UNLIT_TONE_MAP_PROPERTY)
+    except Exception:
+        return None
+    if value is None:
+        return None
+    if isinstance(value, bool) or value in (0, 1):
+        return bool(value)
+    raise ValueError(
+        f"Material property '{_UNLIT_TONE_MAP_PROPERTY}' is {value!r}; set it to False "
+        "for exact colour on an unlit surface, True for RealityKit's tone mapping, or "
+        "delete it"
+    )
+
+
+_TEXTURE_PARAMETERS_PROPERTY = "usd_stage_texture_parameters"
+
+
+def texture_parameters_from_material(material) -> bool:
+    """Whether the material asks for its textures as interface parameters.
+
+    The material custom property ``usd_stage_texture_parameters`` set to True
+    opts in; anything but a boolean (or 0 / 1) is refused.
+    """
+    try:
+        value = material.get(_TEXTURE_PARAMETERS_PROPERTY)
+    except Exception:
+        return False
+    if value is None:
+        return False
+    if isinstance(value, bool) or value in (0, 1):
+        return bool(value)
+    raise ValueError(
+        f"Material property '{_TEXTURE_PARAMETERS_PROPERTY}' is {value!r}; set it to True "
+        "to expose the material's textures as RealityKit parameters, or delete it"
+    )
+
+
 def extract_blender_material_data(material) -> Dict[str, Any]:
     """Extract supported material parameters from a Blender material."""
     data = {
@@ -133,6 +234,11 @@ def extract_blender_material_data(material) -> Dict[str, Any]:
         "DITHERED",
     )
     data['is_transparent'] = material_has_transparency(material)
+    tone_map = unlit_tone_map_from_material(material)
+    if tone_map is not None:
+        data['unlit_tone_map'] = tone_map
+    if texture_parameters_from_material(material):
+        data['texture_parameters'] = True
 
     surface_node = _get_surface_shader_node(material)
     if surface_node and surface_node.type == 'GROUP':
@@ -175,7 +281,8 @@ def extract_blender_material_data(material) -> Dict[str, Any]:
             'Specular Tint': 'specularColor',
             'Anisotropic': 'specularAnisotropyLevel',
             'Anisotropic Rotation': 'specularAnisotropyAngle',
-            'Coat IOR': 'clearcoatIOR',
+            'Coat Weight': 'clearcoat',
+            'Coat Roughness': 'clearcoatRoughness',
             'Sheen Weight': '_sheenWeight',
             'Sheen Roughness': '_sheenRoughness',
             'Sheen Tint': '_sheenTint',
@@ -199,7 +306,8 @@ def extract_blender_material_data(material) -> Dict[str, Any]:
             'Specular Tint': 'color3',
             'Anisotropic': 'float',
             'Anisotropic Rotation': 'float',
-            'Coat IOR': 'float',
+            'Coat Weight': 'float',
+            'Coat Roughness': 'float',
             'Sheen Weight': 'float',
             'Sheen Roughness': 'float',
             'Sheen Tint': 'color3',
@@ -307,6 +415,10 @@ def extract_blender_material_data(material) -> Dict[str, Any]:
         for input_name, input_socket in principled.inputs.items():
             if not input_socket.is_linked:
                 continue
+            if input_name == 'Tangent':
+                # Validation requires a UV Map Tangent on the render UV map,
+                # which is the tangent RealityKit's anisotropy follows.
+                continue
 
             expected_type = expected_type_map.get(input_name)
             if input_name in ('Normal', 'Coat Normal'):
@@ -389,12 +501,9 @@ def extract_blender_material_data(material) -> Dict[str, Any]:
                 key, expected = constant_map[input_name]
                 data[key] = _coerce_constant_value(constant, expected)
 
-            from_node = input_socket.links[0].from_node
-            if from_node.type == 'TEX_IMAGE' and 'ao' in from_node.name.lower():
-                texture_path = _resolve_image_path(from_node.image)
-                if texture_path:
-                    data['ao_texture'] = texture_path
 
+        _coat_follows_base_normal(principled, data, input_graphs)
+        _extract_ambient_occlusion(material, input_graphs, resolve_cache, unresolved_warnings)
         _apply_surface_closure(material, closure, principled, data, input_graphs, unresolved_warnings)
         if unresolved_warnings:
             data['unresolved_warnings'] = unresolved_warnings
@@ -682,6 +791,12 @@ def collect_material_warnings(material) -> List[str]:
                 f"Material '{material.name}': Node '{node_name}' ({node_type}) requires baking for RCP."
             )
             continue
+
+        if node_type == 'TANGENT':
+            from ..anisotropy import tangent_node_feeds_only_anisotropy
+
+            if tangent_node_feeds_only_anisotropy(node):
+                continue
 
         if node_type in unsupported_types:
             warnings.append(
@@ -4275,6 +4390,8 @@ def _uv_set_expr(texcoord: str) -> Dict[str, Any]:
     """A resolved texture-coordinate set as a vector3 with z = 0, as Cycles reads UVs."""
     if texcoord == "UV0":
         return _make_node_expr(_nodedef_for("texcoord", "vector3"), {})
+    if texcoord == "UV1":
+        return _make_node_expr(_nodedef_for("texcoord", "vector3"), {"index": _constant_expr(1)})
     return _make_node_expr(
         _nodedef_for("convert", "vector3", input_type="vector2"),
         {"in": _make_node_expr(_nodedef_for("geompropvalue", "vector2"), {"geomprop": _constant_expr(texcoord)})},
@@ -4317,9 +4434,10 @@ def uv_set_resolution(node, uv_map: Optional[str]) -> Tuple[str, Optional[str]]:
 
     Blender's USD exporter (``rename_uvmaps``) writes each mesh's render UV
     map as ``primvars:st``, which RealityKit's ``texcoord`` reader returns, and
-    every other UV map under its own name. So a name is ``UV0`` only where it
-    is the render UV map of every mesh using the material, and a
-    ``geompropvalue`` of that name where it is none's. An empty name is the
+    every other UV map under its own name, which the export renames ``st1``
+    (``Plugin/export/uv_sets.py``). So a name is ``UV0`` where it is the
+    render UV map of every mesh using the material, and ``UV1``, texcoord
+    index 1, where it is none's. An empty name is the
     render UV map, as in Cycles. Measured by export: with ``Detail`` the render
     map, ``primvars:st`` held Detail and ``primvars:UVMap`` the other set.
     """
@@ -4339,20 +4457,17 @@ def uv_set_resolution(node, uv_map: Optional[str]) -> Tuple[str, Optional[str]]:
                 "so the export has no such coordinates to read; add the UV map or pick one "
                 "every mesh has"
             )
-        resolved.add("UV0" if _render_uv_layer_name(mesh) == name else name)
+        resolved.add("UV0" if _render_uv_layer_name(mesh) == name else "UV1")
     if len(resolved) > 1:
         return name, (
             f"UV map '{name}' is the render UV map on some meshes using this material and not "
             "on others, and the export writes the two under different names; make it the "
             "render UV map on all of them or on none"
         )
-    texcoord = resolved.pop()
-    if texcoord != "UV0" and (texcoord.lower() == "st" or not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', texcoord)):
-        return name, (
-            f"UV map '{name}' is not the render UV map and its name is not a primvar the export "
-            "can address by name (letters, digits and underscores, not 'st'); rename it"
-        )
-    return texcoord, None
+    # Not the render map: the mesh's second UV set, which the export writes as
+    # primvars:st1 and RealityKit reads as texcoord index 1 (uv_sets.py). A
+    # mesh with a third UV set fails the preflight's TOO_MANY_UV_SETS.
+    return resolved.pop(), None
 
 
 def _normalize_colorspace(name: Optional[str]) -> Optional[str]:

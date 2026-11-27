@@ -467,7 +467,13 @@ def test_usdz_texture_format_and_linear_color_role_are_enforced(tmp_path):
     assert "TEXTURE_ASSET_MISSING" not in _codes(report)
 
 
-def test_materialx_linear_rec709_is_valid_for_perceptual_color(tmp_path):
+@pytest.mark.parametrize("file_color_space", ["lin_rec709", "lin_rec709_scene", None])
+def test_a_linear_color3_read_is_refused_because_realitykit_decodes_it(
+    tmp_path, file_color_space
+):
+    """Measured on macOS 27.2.1: RealityKit decodes ND_image_color3 as sRGB
+    untagged, and under lin_rec709_scene over a greyscale file, so texel 128
+    reads 0.216 instead of 0.502. A read meant to be linear must be vector3."""
     stage, _mesh = _stage_with_mesh()
     (tmp_path / "base-color.png").write_bytes(b"texture")
     _author_materialx_texture(
@@ -477,7 +483,7 @@ def test_materialx_linear_rec709_is_valid_for_perceptual_color(tmp_path):
         consumer_name="base_color",
         consumer_type=Sdf.ValueTypeNames.Color3f,
         output_type=Sdf.ValueTypeNames.Color3f,
-        file_color_space="lin_rec709",
+        file_color_space=file_color_space,
     )
 
     report = validate_stage(
@@ -486,8 +492,8 @@ def test_materialx_linear_rec709_is_valid_for_perceptual_color(tmp_path):
         SimpleNamespace(export_format="USDC"),
     )
 
-    assert report.ok
-    assert "TEXTURE_COLOR_SPACE_MISMATCH" not in _codes(report)
+    assert "TEXTURE_LINEAR_READ_DECODED_AS_SRGB" in _codes(report)
+    assert not report.ok
 
 
 def test_non_color_image_on_base_color_survives_the_exporters_own_preflight(tmp_path):
@@ -509,7 +515,11 @@ def test_non_color_image_on_base_color_survives_the_exporters_own_preflight(tmp_
     assert surface is not None
 
     authored = stage.GetRootLayer().ExportToString()
-    assert 'colorSpace = "lin_rec709"' in authored
+    # Linear colour is read through an untagged vector3 reader, which
+    # RealityKit reads as stored for RGB and greyscale files alike; a color3
+    # reader would be decoded as sRGB whatever its token.
+    assert 'info:id = "ND_image_vector3"' in authored
+    assert 'info:id = "ND_convert_vector3_color3"' in authored
     assert 'colorSpace = "raw"' not in authored
 
     report = validate_stage(
@@ -695,7 +705,7 @@ def test_one_materialx_reader_may_feed_color_and_data(tmp_path):
         consumer_name="base_color",
         consumer_type=Sdf.ValueTypeNames.Color3f,
         output_type=Sdf.ValueTypeNames.Color3f,
-        file_color_space="lin_rec709",
+        file_color_space="srgb_texture",
     )
     data_output = texture.CreateOutput("roughness", Sdf.ValueTypeNames.Float)
     surface.CreateInput("roughness", Sdf.ValueTypeNames.Float).ConnectToSource(

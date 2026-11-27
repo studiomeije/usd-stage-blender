@@ -61,6 +61,7 @@ UI paths below start from the **USD Stage** tab. Where a row says "see below", t
 | `quad_method` | Advanced USD ▸ Geometry ▸ Quad Method | both | No effect unless `triangulate_meshes` is on. |
 | `ngon_method` | Advanced USD ▸ Geometry ▸ N-gon Method | both | No effect unless `triangulate_meshes` is on. |
 | `export_subdivision` | Advanced USD ▸ Geometry ▸ Subdivision | both | Passed to Blender's USD exporter unchanged. |
+| `require_lightmap_uv` | Advanced USD ▸ Geometry ▸ Require Lightmap UVs | both | Off by default. On, a mesh with no second UV map (`st1`), an empty one, or one the export could not rename `st1` stops the export instead of being reported. See [the second UV set](EXPORT_PIPELINE.md#the-second-uv-set). |
 | `export_armatures` | Advanced USD ▸ Rigging ▸ Armatures | both | Off drops armature objects, so a selected skinned mesh no longer brings its armature along. |
 | `only_deform_bones` | Advanced USD ▸ Rigging ▸ Only Deform Bones | both | Meaningful only with `export_armatures` on. The panel does not gray it out. |
 | `export_shapekeys` | Advanced USD ▸ Rigging ▸ Shape Keys | both | Also gates shape-key animation. |
@@ -208,7 +209,7 @@ Textures that a bake copies rather than bakes follow the direct-export rules abo
    │  ├─ General  ▸ root_prim_name · root_prim_kind · export_colliders · payload_geometry
    │  │             · export_custom_properties [· custom_properties_namespace] · author_blender_name
    │  │             · allow_unicode · evaluation_mode · use_instancing [· author_animation_library]
-   │  ├─ Geometry ▸ triangulate_meshes [· quad_method · ngon_method] · export_subdivision
+   │  ├─ Geometry ▸ triangulate_meshes [· quad_method · ngon_method] · export_subdivision · require_lightmap_uv
    │  └─ Rigging  ▸ export_shapekeys · export_armatures · only_deform_bones
    └─ Diagnostics                            (collapsed)
       └─ diagnostics_enabled · [Show Diagnostics] [Create Support Bundle] · Documentation

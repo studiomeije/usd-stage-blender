@@ -1,10 +1,11 @@
 """Integration test — a UV Map node reads the UV map it names.
 
 Blender's USD exporter writes the render UV map as ``primvars:st`` and keeps
-every other UV map under its own name. A UV Map node naming ``UVMap`` on a
-mesh whose render UV map is ``Detail`` used to be read through ``texcoord``,
-which is Detail. The export must read ``primvars:UVMap`` instead, and the
-render UV map through ``texcoord``.
+every other UV map under its own name; the export renames that second map
+``primvars:st1``, which RealityKit's ``texcoord`` index 1 reads (measured on
+macOS 27.2.1). A UV Map node naming ``UVMap`` on a mesh whose render UV map is
+``Detail`` must read ``texcoord`` index 1, and the render UV map ``texcoord``
+index 0.
 """
 
 from __future__ import annotations
@@ -81,17 +82,53 @@ def test_uv_map_nodes_read_the_sets_they_name(tmp_path):
     text = stage.read_text()
 
     # What the exporter measures against: st holds the render map (Detail,
-    # whose u stays within [0.25, 0.75]); UVMap keeps the default unwrap.
+    # whose u stays within [0.25, 0.75]); UVMap, the default unwrap, is st1.
     st = re.search(r"texCoord2f\[\] primvars:st = \[([^\]]*)\]", text)
-    uvmap = re.search(r"texCoord2f\[\] primvars:UVMap = \[([^\]]*)\]", text)
-    assert st and uvmap, text[:2000]
+    st1 = re.search(r"texCoord2f\[\] primvars:st1 = \[([^\]]*)\]", text)
+    assert st and st1, text[:2000]
+    assert "primvars:UVMap" not in text
     st_u = [float(u) for u in re.findall(r"\(([-\d.e]+),", st.group(1))]
-    uvmap_u = [float(u) for u in re.findall(r"\(([-\d.e]+),", uvmap.group(1))]
+    st1_u = [float(u) for u in re.findall(r"\(([-\d.e]+),", st1.group(1))]
     assert min(st_u) >= 0.25 - 1e-6 and max(st_u) <= 0.75 + 1e-6
-    assert min(uvmap_u) == pytest.approx(0.0) and max(uvmap_u) == pytest.approx(1.0)
+    assert min(st1_u) == pytest.approx(0.0) and max(st1_u) == pytest.approx(1.0)
 
-    # Base Color names UVMap: a geompropvalue of that primvar. Roughness names
-    # the render map: the texcoord reader, never a primvars:Detail read.
-    assert re.search(r'string inputs:geomprop = "UVMap"', text)
-    assert 'inputs:geomprop = "Detail"' not in text
+    # Base Color names UVMap: texcoord index 1. Roughness names the render
+    # map: texcoord index 0. Neither reads a primvar by name.
+    assert "inputs:geomprop" not in text
+    assert re.search(r"int inputs:index = 1", text)
     assert 'info:id = "ND_texcoord_vector2"' in text
+
+
+_LIGHTMAP_BUILD = r'''
+import bpy, sys
+out, case = sys.argv[sys.argv.index("--") + 1:][:2]
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.mesh.primitive_cube_add()
+mesh = bpy.context.active_object.data
+if case != "one":
+    mesh.uv_layers.new(name="Lightmap")
+bpy.ops.wm.save_as_mainfile(filepath=out)
+'''
+
+
+@pytest.mark.parametrize("case", ["two", "one"])
+def test_the_second_uv_map_is_written_as_st1(tmp_path, case):
+    script = tmp_path / "build.py"
+    script.write_text(_LIGHTMAP_BUILD)
+    blend = tmp_path / "cube.blend"
+    subprocess.run(
+        [blender_executable(), "--background", "--factory-startup", "--python", str(script),
+         "--", str(blend), case],
+        capture_output=True, text=True, timeout=300,
+    )
+    assert blend.exists()
+    stage = tmp_path / "cube.usda"
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "Plugin"), "--json", "export", str(blend),
+         "-o", str(stage), "--format", "USDA"],
+        capture_output=True, text=True, timeout=900,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    text = stage.read_text()
+    assert ("texCoord2f[] primvars:st1" in text) is (case == "two")
+    assert "primvars:Lightmap" not in text

@@ -72,6 +72,7 @@ SETTING_GROUPS: dict[str, set[str]] = {
         "quad_method",
         "ngon_method",
         "export_subdivision",
+        "require_lightmap_uv",
     },
     "rigging": {
         "export_armatures",

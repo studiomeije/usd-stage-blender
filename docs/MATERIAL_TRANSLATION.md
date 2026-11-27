@@ -148,9 +148,21 @@ nothing to select.
    sets (`resolve_force_unlit`): `LIT_ALBEDO` builds PBR, the other modes build
    unlit. See [BAKING.md](BAKING.md#2-the-bake-modes).
 
-The unlit surface carries only `color`, `opacity`, `opacityThreshold` and
-`hasPremultipliedAlpha`; other linked inputs are dropped with a warning naming
-them (`_unlit_input_graphs`), and other constants are not mapped. A Principled
+The unlit surface carries only `color`, `opacity`, `opacityThreshold`,
+`hasPremultipliedAlpha` and `applyPostProcessToneMap`; other linked inputs are
+dropped with a warning naming them (`_unlit_input_graphs`), and other
+constants are not mapped.
+
+**Tone mapping.** RealityKit tone-maps an unlit surface with the rest of the
+frame unless `applyPostProcessToneMap` is false: with the camera's tone
+mapping on, a 0.18 unlit grey reads 0.129 and 1.0 reads 0.666, and with the
+input false they read 0.180 and 1.0 (measured on macOS 27.2.1). Set the
+material custom property `usd_stage_unlit_tonemap` to False on a screen or UI
+material that must show its exact colour; the export then authors the input
+false. Unset or True authors nothing, RealityKit's default. A value that is
+not a boolean (or 0 or 1) stops the export, and the property on a material
+that exports lit warns that it has no effect
+(`unlit_tone_map_from_material`). A Principled
 material built unlit takes its Base Color as `color`, textured or constant,
 never scaled by Emission Strength, which scales only the emission.
 
@@ -165,15 +177,16 @@ never authored, because of how RealityKit reads them
 | Blender Principled input | PBR Surface 2 input |
 |---|---|
 | Base Color, Metallic, Roughness | `baseColor`, `metallic`, `roughness` |
-| Normal, Coat Normal | `normal`, `clearcoatNormal`, in tangent space ([normal maps](#normal-maps)) |
+| Normal, Coat Normal | `normal`, `clearcoatNormal`, in tangent space ([normal maps](#normal-maps)); under an active coat with Coat Normal unlinked, the Normal goes to `clearcoatNormal` too, as Cycles' coat follows it |
 | Emission Color × Strength | `emissiveColor` |
 | Alpha, cutout threshold, premultiplied alpha | `opacity`, `opacityThreshold`, `hasPremultipliedAlpha` |
-| AO (baked) | `ambientOcclusion` |
+| The [declared ambient-occlusion source](#ambient-occlusion) | `ambientOcclusion` |
 | Specular IOR Level and IOR, folded into one reflectance | `specular` ([specular and IOR](#specular-and-ior)) |
 | Specular Tint (achromatic, ≤ 1) | `specularColor` |
-| Coat Weight / Roughness / IOR | `clearcoat`, `clearcoatRoughness`, `clearcoatIOR` |
+| Coat Weight / Roughness, constant or linked | `clearcoat`, `clearcoatRoughness`; a texture is read as data |
 | Subsurface Weight / Radius / Scale / Anisotropy | `subsurface*` |
 | Sheen Weight × Tint, while Sheen Weight is on | `sheenColor` |
+| Anisotropic, Anisotropic Rotation, with a UV Map Tangent | `specularAnisotropyLevel`, `specularAnisotropyAngle`, and a scaled `roughness` ([anisotropy](#anisotropy)) |
 | Diffuse Roughness | not authored; the surface shades as Lambert |
 
 The strict validator refuses these (`_unsupported_principled_inputs`):
@@ -184,11 +197,12 @@ The strict validator refuses these (`_unsupported_principled_inputs`):
 | Sheen Roughness other than `0.5` | The surface has no such input |
 | Specular Tint, coloured or linked | Colour semantics are not verified against the surface |
 | Specular Tint, achromatic and brighter than 1 | Outside the verified range, unless [clamped](#specular-and-ior) |
-| Anisotropic, Anisotropic Rotation, Tangent | Blender's level factor and tangent rotation are not reproduced |
+| Anisotropic or Anisotropic Rotation linked; anisotropy without a [UV Map Tangent](#anisotropy) on the render UV map; a roughness the mapping would raise above 1 | Not reproduced; see [anisotropy](#anisotropy) |
 | Transmission Weight | No surface input; the message says the material would be opaque |
 | Thin Wall, while transmission or subsurface is active | RealityKit has no thin-wall shading |
 | Thin Film Thickness / IOR, Subsurface IOR | No surface input |
-| Linked Coat Weight / Roughness / Tint | Linked coat controls are not preserved; constants are |
+| Coat IOR other than 1.5, or linked, under an active coat | RealityKit ignores `clearcoatIOR`: its coat always reflects F0 0.04, Cycles' coat at IOR 1.5 |
+| Linked Coat Tint | No RealityKit surface carries a coat tint |
 
 Each refusal names the input; most tell you to bake. An input counts only
 when linked or away from its neutral value, and subordinate controls only
@@ -218,20 +232,31 @@ warning; **Info** = diagnostics sidecar only; **Silent** = no record.
 
 | Trigger | What happens | Told? |
 |---|---|---|
-| Color input, image tagged **sRGB** or untagged | authored `srgb_texture` | — |
-| Color input, image tagged **Linear Rec.709** | authored `lin_rec709` | — |
-| Color input, image tagged **Non-Color** | authored `lin_rec709` | **Warning** |
-| Data input, image tagged **Non-Color** or **Linear Rec.709** | no color space authored | — |
-| Data input, image tagged **sRGB** | authored `srgb_texture`, so the input reads decoded values, as in Cycles | **Warning** |
-| Data input reading the **alpha channel**, any tagging | no color space authored | **Silent** |
+| Color input, image tagged **sRGB** or untagged | `ND_image_color3`, authored `srgb_texture` | — |
+| Color input, image tagged **Linear Rec.709** | untagged `ND_image_vector3`, converted to a colour | — |
+| Color input, image tagged **Non-Color** | untagged `ND_image_vector3`, converted to a colour | **Warning** |
+| Data input, image tagged **Non-Color** or **Linear Rec.709** | untagged `ND_image_vector3` | — |
+| Data input, image tagged **sRGB** | `ND_image_color3`, authored `srgb_texture`, so the input reads decoded values, as in Cycles | **Warning** |
+| Data input reading the **alpha channel**, any tagging | `ND_image_color4`, no color space authored | **Silent** |
 | Any other Blender color space | **export fails** | **Error** |
 | Blend file working color space other than **Linear Rec.709** | **export fails**, naming the working space | **Error** |
-| Baked AO texture | tagged Non-Color | **Silent** |
 | `ColorSpaceAPI` token `srgb_rec709_display` | renamed `srgb_rec709_scene` | **Info** |
 
-**A data texture carries no color space at all.** An absent MaterialX color
-space is the no-transform contract, which is what a roughness, metallic or
-normal image needs.
+**A texture read as stored goes through a vector3 reader.** RealityKit
+decodes every `ND_image_color3` read as sRGB, whatever its token says, with
+one exception that does not help: `lin_rec709_scene` reads linearly over a
+three-channel file but a greyscale PNG or JPEG is still decoded. An untagged
+`ND_image_vector3` reads every file as stored
+([measured](REALITYKIT_USD_SUPPORT.md#texture-reads)). So a roughness,
+metallic, AO, ORM, opacity, height or other data map, and a colour map tagged
+Linear Rec.709 or Non-Color, is read by an untagged `ND_image_vector3`; a
+channel is a dot product with its unit mask, a channelless read into a float
+input is the [gray conversion](#type-coercion), and a colour input takes one
+`ND_convert_vector3_color3`. Normal maps were already read this way. Only an
+sRGB read stays `ND_image_color3` with `srgb_texture`, because that read is
+meant to decode. Preflight refuses any `ND_image_color3` read that is untagged
+or tagged linear (`TEXTURE_LINEAR_READ_DECODED_AS_SRGB`), wherever it came
+from.
 
 **An sRGB image is decoded whatever it feeds.** Cycles decodes an image by its
 color space before any node reads it, so Roughness fed by an sRGB image,
@@ -352,6 +377,61 @@ The tint clamp is the exporter's only value rewrite
 because that would shift hue, and the warning says the `.blend` file was not
 changed. Control: `clamp_specular_tint`.
 
+### Anisotropy
+
+Cycles and RealityKit both stretch a GGX highlight, with alpha = roughness²,
+but split the alpha differently (`Plugin/export/materials/anisotropy.py`):
+
+| | Along the tangent | Across it |
+|---|---|---|
+| Cycles, Anisotropic `A`, `s = √(1 − 0.9 A)` | `r² / s` | `r² · s` |
+| RealityKit, `specularAnisotropyLevel` `L` | `r² (1 + L²)` | `r² (1 − L²)` |
+
+Both rows are measured: a Cycles render and a RealityKit render (macOS
+27.2.1) of a metal sphere, each fitted for its two alphas
+([measurements](REALITYKIT_USD_SUPPORT.md#anisotropy)). So the export authors
+`L = √(0.9 A / (2 − 0.9 A))` and multiplies Roughness by `√((1/s + s) / 2)`,
+which reproduces both of Cycles' alphas; rendered back in RealityKit, the
+mapped highlight matches Cycles' within 1.5%. At `A = 1`, `L` is 0.905 and
+the roughness factor 1.319.
+
+| Trigger | What happens | Told? |
+|---|---|---|
+| Constant Anisotropic > 0, Tangent from a Tangent node in UV Map mode on the render UV map | level, angle and scaled roughness authored | — |
+| Anisotropic Rotation `R` | `specularAnisotropyAngle = −R` modulo 1: Blender turns the highlight counter-clockwise as the camera sees it, RealityKit clockwise | — |
+| Roughness linked | multiplied by the factor in the graph; texels above `1 / factor` clamp at 1 in RealityKit | **Warning** |
+| Tangent unlinked (Cycles' default is radial around the object's Z), from anything but a UV Map Tangent node, or from a UV map other than the render one | **export fails**: RealityKit stretches along the render UV map's +u only | **Error** |
+| Anisotropic or Anisotropic Rotation linked | **export fails** | **Error** |
+| Constant Roughness × factor above 1 | **export fails**: RealityKit's roughness stops at 1 | **Error** |
+
+The Glossy and Metallic BSDFs' Anisotropy, Rotation and Tangent follow the
+same rules through their Principled stand-ins. The rotation direction was
+measured on UV islands that are not mirrored; on a mirrored island the two
+may turn opposite ways. A Tangent node that feeds only shader Tangent inputs
+is accepted for this, and nowhere else.
+
+### Ambient occlusion
+
+The Principled BSDF has no ambient-occlusion input, so a material says where
+its AO comes from; nothing is inferred from node names
+(`Plugin/export/materials/extract/occlusion.py`). RealityKit's
+`ambientOcclusion` darkens image-based diffuse light only: 0.5 halves it, 0
+removes it, and direct light is unchanged (measured on macOS 27.2.1).
+
+| Trigger | What happens | Told? |
+|---|---|---|
+| Material custom property `usd_stage_ambient_occlusion` = `"Node"` | the first output of the node with that name (or, failing that, that unique label) | — |
+| The same, `"Node:Output"`, such as `"ORM Split:Red"` | that output | — |
+| No property, one node labelled exactly `Ambient Occlusion` | its first output | — |
+| Both | the property wins | — |
+| Neither | `ambientOcclusion` not authored | — |
+| Two nodes labelled `Ambient Occlusion`; a property naming no node, an output the node lacks, or not a string | **export fails**, naming the fix | **Error** |
+
+The source need not be linked to the shader. It is read as data, like
+Roughness: an image's Color takes the [gray conversion](#type-coercion), a
+Separate Color output one channel, both through the linear reader. Its nodes
+are validated like the rest of the material. Unlit materials drop it.
+
 ### Emission, subsurface, sheen, and diffuse roughness
 
 | Trigger | What happens | Told? |
@@ -384,8 +464,8 @@ reconstruction, not a translation.
 |---|---|---|
 | No UV named | `texcoord` node, the render UV map | **Silent** |
 | UV map named that is the render UV map of every mesh using the material | `texcoord` node | **Silent** |
-| UV map named that none of those meshes renders with | `geompropvalue` with `geomprop = <name>` | **Silent** |
-| A named UV map a mesh lacks, that is the render UV map on only some meshes, or that is not the render UV map and is called `st` or is not a valid primvar name | **export fails**, naming the map | **Error** |
+| UV map named that none of those meshes renders with | `texcoord` index 1, which reads the mesh's second UV map, written as `primvars:st1` ([the second UV set](EXPORT_PIPELINE.md#the-second-uv-set)) | **Silent** |
+| A named UV map a mesh lacks, or that is the render UV map on only some meshes | **export fails**, naming the map | **Error** |
 | Point Mapping node with identity values | no transform authored | **Silent** |
 | Non-identity Point Mapping without X or Y rotation or a zero X or Y scale | one `place2d`, rotation converted to degrees | **Silent** |
 | Two textures, same effective mapping and UV set | one shared `place2d` | **Silent** |
@@ -394,9 +474,10 @@ reconstruction, not a translation.
 | Image coordinates from any other node; a Mapping in Texture, Vector or Normal mode, with linked sockets, with X or Y rotation or with a zero X or Y scale; a straight-alpha image [premultiplied as Cycles hands it](#image-color-and-alpha); or any image inside a Bump height or a computed Normal Map | read at the computed coordinate, no `place2d`, not counted toward the one transform (`_computed_image_expr`) | **Silent** |
 
 Blender's USD exporter writes each mesh's render UV map as `primvars:st`, which
-`texcoord` reads, and every other UV map under its own name, so a name resolves
-against the meshes that use the material (`uv_set_resolution`). A UV map called
-`UVMap` that is not the render map reads its own primvar.
+`texcoord` reads, and the export writes the other as `primvars:st1`, which
+`texcoord` index 1 reads, so a name resolves against the meshes that use the
+material (`uv_set_resolution`). A UV map called `UVMap` that is not the render
+map reads the second set.
 
 RealityKit honors one 2D texture transform per material, and its `place2d`
 has no operation order, so only a Point mapping it can express keeps the UV
@@ -435,7 +516,7 @@ The gate is the module constants in `Plugin/nodes/validate.py`
 `SUPPORTED_VECTOR_MATH_OPERATIONS`) plus the hair, closure, reader,
 displacement and driver rules in `Plugin/export/materials/extract/` (`core.py` and its section modules),
 where `_resolve_socket_value` decides what the export contains. Referenceable
-nodedefs are in `Plugin/manifest/rk_nodes_manifest.json` (1,232, of which the
+nodedefs are in `Plugin/manifest/rk_nodes_manifest.json` (1,256, of which the
 56 flagged `policy.editor_unresolvable` are refused). Non-`RK_*` node groups and
 unrecognized node types are refused. Per-node verdicts:
 [FEATURE_SUPPORT.md](FEATURE_SUPPORT.md#shader-nodes); platform side:
@@ -705,16 +786,22 @@ The reader follows what the shader input needs, not what the file contains
 | Situation | Reader |
 |---|---|
 | normal map | `ND_image_vector3` |
-| a scalar input (roughness, metallic, occlusion) fed the Color output | `ND_image_color3`, then the [gray conversion](#type-coercion) |
-| a Separate Color channel | `ND_image_color3`, then a channel read |
+| a scalar input (roughness, metallic, occlusion) fed the Color output of a linear image | untagged `ND_image_vector3`, then the [gray conversion](#type-coercion) |
+| a Separate Color channel of a linear image | untagged `ND_image_vector3`, then a channel read |
 | an input that needs alpha | `ND_image_color4`, then a channel read |
-| everything else | `ND_image_color3` |
+| a colour input fed a linear image | untagged `ND_image_vector3`, then `ND_convert_vector3_color3` |
+| an sRGB image, whatever it feeds | `ND_image_color3` with `srgb_texture` |
 
-A channel read is a `convert` to a vector (`ND_convert_color3_vector3` or
-`ND_convert_color4_vector4`) followed by a `dotproduct` with a unit mask
+A channel read is a `dotproduct` of the vector3 read with a unit mask, or, for
+a colour read, a `convert` to a vector (`ND_convert_color3_vector3` or
+`ND_convert_color4_vector4`) followed by the same `dotproduct`
 (`_create_swizzle_output`, `_create_separate4_outputs`). One file is one
 reader: the reader cache (`_texture_cache_key`) ignores the channel, and the
 `convert` is named after the reader, so channel reads of one file share both.
+A channel read, gray conversion or normal decode is shared only by consumers
+of the same reader; one that reads a different file gets its own name, so two
+Separate Color nodes on two images each keep their own channel read
+(`_shared_shader_name`). Scales and UV transforms are never shared.
 Four-channel vector readers and extractors (`ND_image_vector4` and kin) are
 never authored, because Reality Composer Pro replaces such a material with a
 striped placeholder.
@@ -723,6 +810,28 @@ Image Texture Extension **Extend**, **Clip** and **Mirror** become
 `uaddressmode`/`vaddressmode` `"clamp"`, `"constant"` and `"mirror"`;
 Interpolation **Closest** and **Cubic**/**Smart** become `filtertype`
 `"closest"` and `"cubic"` (`_image_node_sampling`).
+
+### Textures as material parameters
+
+RealityKit's `ShaderGraphMaterial.setParameter(name:value:)` rebinds the
+inputs of a material's interface, not those of the shaders inside it. Set the
+material custom property `usd_stage_texture_parameters` to True and every
+texture file input becomes a material input the reader connects to
+(`promote_texture_parameters`), after Blender's preview network is removed:
+
+| Reader feeds | Parameter |
+|---|---|
+| `baseColor` (and the `subsurfaceColor` copied from it) | `baseColorTexture` |
+| `roughness` and `metallic`, one ORM file | `metallicRoughnessTexture` |
+| `normal` | `normalTexture` |
+| any other set of surface inputs | their names, joined in camel case, then `Texture` |
+
+A second parameter with the same name gets `_2`. The parameter holds the
+staged asset and the reader's colour-space token, and the reader keeps the
+same value under its connection. Measured on macOS 27.2.1: RealityKit lists
+exactly these names in `ShaderGraphMaterial.parameterNames`, and the material
+renders as it does without them (largest pixel difference 0.0016). Without
+the property nothing changes; a value that is not a boolean stops the export.
 
 ### When a texture has no alpha
 
@@ -749,8 +858,7 @@ def Material "Mat" (customData = { dictionary USDStage = { string surfaceProfile
         float3  inputs:normal.connect    = <NormalMap_normal.outputs:out>
     }
     def Shader "Image"   { ND_image_color3  inputs:file ( colorSpace = "srgb_texture" ) }
-    def Shader "Image_1" { ND_image_color3  inputs:file }
-    def Shader "convert_Image_1_vector3" { ND_convert_color3_vector3 }
+    def Shader "Image_1" { ND_image_vector3  inputs:file }
     def Shader "channel_metallic_b"  { ND_dotproduct_vector3  inputs:in2 = (0, 0, 1) }
     def Shader "channel_roughness_g" { ND_dotproduct_vector3  inputs:in2 = (0, 1, 0) }
     def Shader "Image_2" { ND_image_vector3  inputs:default = (0.5, 0.5, 1) }
