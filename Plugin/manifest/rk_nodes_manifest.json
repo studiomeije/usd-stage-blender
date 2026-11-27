@@ -38099,10 +38099,7 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38129,10 +38126,7 @@
       "policy": {
         "half_type": true,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38159,10 +38153,7 @@
       "policy": {
         "half_type": true,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38189,10 +38180,7 @@
       "policy": {
         "half_type": true,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38219,10 +38207,7 @@
       "policy": {
         "half_type": true,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38249,10 +38234,7 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38279,10 +38261,7 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38309,10 +38288,7 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38339,10 +38315,7 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38369,10 +38342,7 @@
       "policy": {
         "half_type": true,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38399,10 +38369,7 @@
       "policy": {
         "half_type": true,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38429,10 +38396,7 @@
       "policy": {
         "half_type": true,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38459,10 +38423,7 @@
       "policy": {
         "half_type": true,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38489,10 +38450,7 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38519,10 +38477,7 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38549,10 +38504,7 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38579,10 +38531,7 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38609,10 +38558,7 @@
       "policy": {
         "half_type": true,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38639,10 +38585,7 @@
       "policy": {
         "half_type": true,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38669,10 +38612,7 @@
       "policy": {
         "half_type": true,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38699,10 +38639,7 @@
       "policy": {
         "half_type": true,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38729,10 +38666,7 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38759,10 +38693,7 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -38789,10 +38720,7 @@
       "policy": {
         "half_type": false,
         "editor_unresolvable": false,
-        "runtime_overlay": true,
-        "unimplemented_in_shadergraph_builds": [
-          "159.40.3"
-        ]
+        "runtime_overlay": true
       },
       "source_file": "measured:ShaderGraph.framework/Apple/apple_nodedefs/apple_metal_nodedefs.mtlx"
     },
@@ -66858,8 +66786,7 @@
     },
     "shadergraph_builds": {
       "159.0.5": "Reality Composer Pro 3.0 (RealityComposerPro.app/Contents/SystemFrameworks)",
-      "159.40.2": "macOS 27.2.1 26B131 (/System/Library/SubFrameworks)",
-      "159.40.3": "Xcode 27.2 27B52 (Xcode.app/Contents/SystemFrameworks)"
+      "159.40.2": "macOS 27.2.1 26B131 (/System/Library/SubFrameworks)"
     }
   }
 }

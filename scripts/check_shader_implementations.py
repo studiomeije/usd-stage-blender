@@ -344,16 +344,31 @@ def implementation_tables(framework: str) -> dict:
     }
 
 
+#: A Metal library this small holds no functions. Xcode's ShaderGraph copy
+#: ships 118-byte stubs: it parses graphs and renders nothing.
+_STUB_LIBRARY_BYTES = 4096
+
+
+def renders(framework: str) -> bool:
+    """Whether a ShaderGraph copy carries real Metal libraries."""
+    library = Path(metal_libraries(framework)["1.39"])
+    return library.exists() and library.stat().st_size > _STUB_LIBRARY_BYTES
+
+
 def _selected_frameworks(choice: str) -> list[tuple[str, str]]:
     """(label, framework) pairs for ``--shadergraph``: a name, a path, or all."""
     if choice == "all":
-        return [
-            (name, path)
-            for name, path in SHADERGRAPH_FRAMEWORKS.items()
-            if Path(metal_libraries(path)["1.38"]).exists()
-        ]
+        selected = []
+        for name, path in SHADERGRAPH_FRAMEWORKS.items():
+            if not Path(metal_libraries(path)["1.38"]).exists():
+                continue
+            if not renders(path):
+                print(f"Skipping {name} ({path}): its Metal libraries are stubs.")
+                continue
+            selected.append((name, path))
+        return selected
     path = SHADERGRAPH_FRAMEWORKS.get(choice, choice)
-    if not Path(metal_libraries(path)["1.38"]).exists():
+    if not renders(path):
         return []
     return [(choice, path)]
 
@@ -402,14 +417,18 @@ def main() -> int:
         help=(
             "ShaderGraph build to judge against: rcp (Reality Composer Pro, the "
             "default), os (what a RealityKit app on this Mac uses), xcode, a "
-            "framework path, or all installed copies."
+            "framework path, or all installed copies that carry real Metal libraries."
         ),
     )
     args = parser.parse_args()
 
     frameworks = _selected_frameworks(args.shadergraph)
     if not frameworks:
-        print(f"ShaderGraph '{args.shadergraph}' is not installed here.", file=sys.stderr)
+        print(
+            f"ShaderGraph '{args.shadergraph}' is not installed here, or its Metal "
+            "libraries are stubs.",
+            file=sys.stderr,
+        )
         return 2
     targets = _targets(args.paths)
     failures = sum(_check_build(label, path, targets) for label, path in frameworks)

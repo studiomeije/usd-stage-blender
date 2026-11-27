@@ -17,9 +17,9 @@ and what you have to do differently. Internal refactors are not listed.
   Pro.** `ND_hextiledimage` renders on macOS 27.2, but Reality Composer Pro 3
   cannot build it; a material using it now exports with a warning that names
   the ShaderGraph builds that will show it without its shader graph.
-- `scripts/check_shader_implementations.py --shadergraph os|rcp|xcode|all`
-  checks an export against the OS's, Xcode's or every installed ShaderGraph
-  build, not only Reality Composer Pro's.
+- `scripts/check_shader_implementations.py --shadergraph os|rcp|all` checks an
+  export against the OS's or every installed ShaderGraph build, not only
+  Reality Composer Pro's.
 
 - **Ambient occlusion is declared, not guessed.** Set the material custom
   property `usd_stage_ambient_occlusion` to a node, or `Node:Output` such as

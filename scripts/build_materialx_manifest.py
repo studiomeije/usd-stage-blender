@@ -106,25 +106,24 @@ MEASURED_METAL_NODEDEFS = frozenset(
 )
 
 # ShaderGraph builds that lack an implementation of a nodedef they declare.
-# A ShaderGraph copy ships with the OS, with Reality Composer Pro and with
-# Xcode, each its own build, and they disagree. Measured with
+# A ShaderGraph copy ships with the OS and with Reality Composer Pro, each its
+# own build, and they disagree. Measured with
 # `scripts/check_shader_implementations.py --shadergraph all` on macOS 27.2.1:
 # the OS copy (159.40.2) implements all of these; Reality Composer Pro 3's
 # (159.0.5) implements ND_hextiled* for GLSL only, so the editor cannot build
-# them, and Xcode's (159.40.3) ships no IMP_MTL_* functions. The probe harness
-# rendered ND_hextiledimage on macOS 27.2.1.
-UNIMPLEMENTED_IN_SHADERGRAPH_BUILDS = {
-    **dict.fromkeys(("ND_hextiledimage_color3", "ND_hextiledimage_color4", "ND_hextilednormalmap_vector3"), ("159.0.5",)),
-    **dict.fromkeys(sorted(MEASURED_METAL_NODEDEFS), ("159.40.3",)),
-}
+# them. The probe harness rendered ND_hextiledimage on macOS 27.2.1. (Xcode's
+# copy carries stub Metal libraries and renders nothing, so it is no build to
+# record.)
+UNIMPLEMENTED_IN_SHADERGRAPH_BUILDS = dict.fromkeys(
+    ("ND_hextiledimage_color3", "ND_hextiledimage_color4", "ND_hextilednormalmap_vector3"),
+    ("159.0.5",),
+)
 
 # What each recorded build is.
 SHADERGRAPH_BUILDS = {
     "159.0.5": "Reality Composer Pro 3.0 (RealityComposerPro.app/Contents/SystemFrameworks)",
     "159.40.2": "macOS 27.2.1 26B131 (/System/Library/SubFrameworks)",
-    "159.40.3": "Xcode 27.2 27B52 (Xcode.app/Contents/SystemFrameworks)",
 }
-
 
 # The generated manifest is a checked-in interoperability contract, not a
 # snapshot of whichever SDK happens to be installed on a contributor's Mac.

@@ -66,7 +66,7 @@ def test_a_graph_using_the_node_passes_preflight(nodedef):
 
     assert "UNKNOWN_MATERIALX_NODEDEF" not in codes
     assert "MATERIALX_NODEDEF_ABSENT_AT_DECLARED_VERSION" not in codes
-    assert "MATERIALX_NODEDEF_UNIMPLEMENTED_IN_SOME_BUILDS" not in codes or nodedef.startswith("ND_MTL_")
+    assert "MATERIALX_NODEDEF_UNIMPLEMENTED_IN_SOME_BUILDS" not in codes
 
 
 @pytest.mark.parametrize(

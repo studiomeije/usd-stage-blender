@@ -118,16 +118,17 @@ and their textures follow [color space](MATERIAL_TRANSLATION.md#color-space).
 
 ### Builds differ
 
-A ShaderGraph framework ships with the OS, with Reality Composer Pro and with
-Xcode, and each is its own build. They mostly agree, but not everywhere.
-Measured with `scripts/check_shader_implementations.py --shadergraph all` on
-macOS 27.2.1:
+A ShaderGraph framework ships with the OS and with Reality Composer Pro, and
+each is its own build. They mostly agree, but not everywhere. Measured with
+`scripts/check_shader_implementations.py --shadergraph all` on macOS 27.2.1
+(Xcode's copy carries stub Metal libraries and renders nothing, so the
+checker skips it):
 
-| Nodes | OS, 159.40.2 | Reality Composer Pro 3, 159.0.5 | Xcode 27.2, 159.40.3 |
-|---|---|---|---|
-| `ND_MTL_dfdx_*`, `ND_MTL_dfdy_*`, `ND_MTL_fwidth_*` (float, vector2-4 and their half forms) | implemented | implemented | no Metal function |
-| `ND_hextiledimage_color3`, `_color4`, `ND_hextilednormalmap_vector3` | implemented | GLSL only | implemented |
-| `ND_RealityKitTexture2DGradient_*`, `ND_RealityKitTexture2DLOD_*` | implemented | implemented | implemented |
+| Nodes | OS, 159.40.2 | Reality Composer Pro 3, 159.0.5 |
+|---|---|---|
+| `ND_MTL_dfdx_*`, `ND_MTL_dfdy_*`, `ND_MTL_fwidth_*` (float, vector2-4 and their half forms) | implemented | implemented |
+| `ND_hextiledimage_color3`, `_color4`, `ND_hextilednormalmap_vector3` | implemented | GLSL only |
+| `ND_RealityKitTexture2DGradient_*`, `ND_RealityKitTexture2DLOD_*` | implemented | implemented |
 
 The derivative nodes return exact screen-space derivatives from a USD-loaded
 graph, and the gradient and LOD texture nodes honour the derivatives and level

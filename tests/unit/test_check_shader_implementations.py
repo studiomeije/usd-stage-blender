@@ -199,7 +199,7 @@ def _installed_build_tables():
     tables = {}
     for framework in checker.SHADERGRAPH_FRAMEWORKS.values():
         build = checker.shadergraph_build(framework)
-        if build and Path(checker.metal_libraries(framework)["1.39"]).exists():
+        if build and checker.renders(framework):
             tables[build] = checker.implementation_tables(framework)["1.39"]
     return tables
 
