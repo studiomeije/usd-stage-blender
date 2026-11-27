@@ -464,8 +464,8 @@ reconstruction, not a translation.
 |---|---|---|
 | No UV named | `texcoord` node, the render UV map | **Silent** |
 | UV map named that is the render UV map of every mesh using the material | `texcoord` node | **Silent** |
-| UV map named that none of those meshes renders with | `geompropvalue` with `geomprop = <name>` | **Silent** |
-| A named UV map a mesh lacks, that is the render UV map on only some meshes, or that is not the render UV map and is called `st` or is not a valid primvar name | **export fails**, naming the map | **Error** |
+| UV map named that none of those meshes renders with | `texcoord` index 1, which reads the mesh's second UV map, written as `primvars:st1` ([the second UV set](EXPORT_PIPELINE.md#the-second-uv-set)) | **Silent** |
+| A named UV map a mesh lacks, or that is the render UV map on only some meshes | **export fails**, naming the map | **Error** |
 | Point Mapping node with identity values | no transform authored | **Silent** |
 | Non-identity Point Mapping without X or Y rotation or a zero X or Y scale | one `place2d`, rotation converted to degrees | **Silent** |
 | Two textures, same effective mapping and UV set | one shared `place2d` | **Silent** |
@@ -474,9 +474,10 @@ reconstruction, not a translation.
 | Image coordinates from any other node; a Mapping in Texture, Vector or Normal mode, with linked sockets, with X or Y rotation or with a zero X or Y scale; a straight-alpha image [premultiplied as Cycles hands it](#image-color-and-alpha); or any image inside a Bump height or a computed Normal Map | read at the computed coordinate, no `place2d`, not counted toward the one transform (`_computed_image_expr`) | **Silent** |
 
 Blender's USD exporter writes each mesh's render UV map as `primvars:st`, which
-`texcoord` reads, and every other UV map under its own name, so a name resolves
-against the meshes that use the material (`uv_set_resolution`). A UV map called
-`UVMap` that is not the render map reads its own primvar.
+`texcoord` reads, and the export writes the other as `primvars:st1`, which
+`texcoord` index 1 reads, so a name resolves against the meshes that use the
+material (`uv_set_resolution`). A UV map called `UVMap` that is not the render
+map reads the second set.
 
 RealityKit honors one 2D texture transform per material, and its `place2d`
 has no operation order, so only a Point mapping it can express keeps the UV

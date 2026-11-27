@@ -389,6 +389,7 @@ def _check_composed_stage(
     _check_materialx_nodedefs(prims, report)
     _check_materialx_node_inputs(prims, report)
     _check_geompropvalue_primvar_types(prims, report)
+    _check_second_uv_set_reads(prims, report)
     _check_skeletons(stage, prims, report)
     _check_textures(prims, report, asset_path, settings)
     _check_accessibility(stage, prims, report, settings)
@@ -939,8 +940,24 @@ def _check_meshes(
                 uv_sets=uv_names,
             )
 
-        if len(uv_primvars) >= 2:
-            lightmap_uv = uv_primvars[1]
+        lightmap_uv = next(
+            (primvar for primvar in uv_primvars if str(primvar.GetPrimvarName()) == "st1"),
+            None,
+        )
+        if lightmap_uv is None and len(uv_primvars) >= 2:
+            # RealityKit's second texcoord reads st1 only; a second set under
+            # another name is unreachable from a material or a lightmap.
+            report.add(
+                "error" if require_lightmap_uv else "warning",
+                "SECOND_UV_SET_NOT_ST1",
+                (
+                    "The mesh's second UV set is not named st1, so RealityKit's texcoord "
+                    "index 1 cannot read it; the export renames it only in layers it owns."
+                ),
+                path,
+                uv_sets=uv_names,
+            )
+        elif lightmap_uv is not None:
             try:
                 lightmap_values = lightmap_uv.ComputeFlattened()
             except Exception:
@@ -965,7 +982,7 @@ def _check_meshes(
                     path,
                     uv_set=str(lightmap_uv.GetPrimvarName()),
                 )
-        else:
+        if lightmap_uv is None and len(uv_primvars) < 2:
             severity = "error" if require_lightmap_uv else "info"
             report.add(
                 severity,
@@ -1445,6 +1462,50 @@ _PRIMVAR_CHANNEL_COUNTS = {
 }
 
 
+def _reads_second_uv_set(material) -> bool:
+    for shader_prim in _upstream_material_prims(material.GetPrim()):
+        shader = UsdShade.Shader(shader_prim)
+        if not shader or not str(shader.GetIdAttr().Get() or "").startswith("ND_texcoord_"):
+            continue
+        index = shader.GetInput("index")
+        if index and int(index.Get() or 0) == 1:
+            return True
+    return False
+
+
+def _check_second_uv_set_reads(
+    prims: Iterable[Any], report: RealityKitPreflightReport
+) -> None:
+    """A material reading texcoord index 1 needs primvars:st1 on its geometry.
+
+    Measured on macOS 27.2.1: RealityKit's texcoord index 1 reads
+    ``primvars:st1`` and nothing else.
+    """
+    for prim in prims:
+        if not (prim.IsA(UsdGeom.Mesh) or prim.IsA(UsdGeom.Subset)):
+            continue
+        try:
+            material, _binding = UsdShade.MaterialBindingAPI(prim).ComputeBoundMaterial()
+        except Exception:
+            continue
+        if not material or not _reads_second_uv_set(material):
+            continue
+        mesh = prim if prim.IsA(UsdGeom.Mesh) else prim.GetParent()
+        if UsdGeom.PrimvarsAPI(mesh).FindPrimvarWithInheritance("st1"):
+            continue
+        report.add(
+            "error",
+            "SECOND_UV_SET_MISSING",
+            (
+                "The material reads the second UV set (texcoord index 1), which "
+                "RealityKit takes from primvars:st1, and this mesh has none; give the "
+                "mesh a second UV map."
+            ),
+            prim.GetPath(),
+            material=str(material.GetPath()),
+        )
+
+
 def _check_geompropvalue_primvar_types(
     prims: Iterable[Any], report: RealityKitPreflightReport
 ) -> None:
@@ -1599,7 +1660,7 @@ def _texture_coordinate_semantic(shader, input_name: str) -> str:
     source = UsdShade.Shader(sources[0])
     source_id = str(source.GetIdAttr().Get() or "")
     if "texcoord" in source_id.lower():
-        return "UV0"
+        return "UV1" if int(_constant_shader_input(source, "index", 0) or 0) == 1 else "UV0"
     for name in ("geomprop", "varname"):
         source_input = source.GetInput(name)
         if not source_input:

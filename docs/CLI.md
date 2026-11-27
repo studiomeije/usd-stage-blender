@@ -517,7 +517,7 @@ with no `--save` or `--dry-run`. An unknown key fails with
 | Group | Settings |
 |-------|----------|
 | `general` | `filepath`, `export_format`, `root_prim_name`, `export_animation`, `author_animation_library`, `selected_objects_only`, `export_custom_properties`, `custom_properties_namespace`, `author_blender_name`, `allow_unicode`, `evaluation_mode`, `use_instancing` |
-| `geometry` | `triangulate_meshes`, `quad_method`, `ngon_method`, `export_subdivision` |
+| `geometry` | `triangulate_meshes`, `quad_method`, `ngon_method`, `export_subdivision`, `require_lightmap_uv` |
 | `rigging` | `export_armatures`, `only_deform_bones`, `export_shapekeys` |
 | `texture` | `export_texture_settings_enabled`, `bake_resolution`, `bake_resolution_custom`, `bake_image_format`, `bake_margin` |
 | `materials` | `clamp_specular_tint` |

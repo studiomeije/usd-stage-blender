@@ -480,6 +480,8 @@ def _create_geomprop_texcoord(
 ):
     """Create a texcoord or geompropvalue node for texture coordinates."""
     texcoord_name = (texcoord_name or "").strip() or "UV0"
+    if texcoord_name.upper() == "UV1":
+        return _create_texcoord_index(manifest, stage, nodegraph_path, 1, diagnostics)
     if texcoord_name.upper() == "UV0":
         texcoord_nodedef = select_nodedef_name_for_node(
             manifest,
@@ -532,6 +534,24 @@ def _create_geomprop_texcoord(
     geomprop_input = texcoord_shader.CreateInput("geomprop", Sdf.ValueTypeNames.String)
     geomprop_input.Set(texcoord_name)
     return texcoord_shader.CreateOutput("out", Sdf.ValueTypeNames.Float2)
+
+
+def _create_texcoord_index(manifest, stage, nodegraph_path: str, index: int, diagnostics=None):
+    """``ND_texcoord_vector2`` at a set index; index 1 reads ``primvars:st1``."""
+    nodedef = select_nodedef_name_for_node(manifest, "texcoord", output_type="vector2")
+    if not nodedef:
+        if diagnostics:
+            diagnostics.add_error("No texcoord nodedef found for the second UV set.")
+        return None
+    path = f"{nodegraph_path}/TextureCoordinates_{index}"
+    existing = stage.GetPrimAtPath(path)
+    if existing and existing.IsValid():
+        shader = UsdShade.Shader(existing)
+        return shader.GetOutput("out") or shader.CreateOutput("out", Sdf.ValueTypeNames.Float2)
+    shader = UsdShade.Shader(stage.DefinePrim(path, "Shader"))
+    shader.CreateIdAttr(nodedef)
+    shader.CreateInput("index", Sdf.ValueTypeNames.Int).Set(int(index))
+    return shader.CreateOutput("out", Sdf.ValueTypeNames.Float2)
 
 
 def _create_place2d_node(

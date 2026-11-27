@@ -52,7 +52,18 @@ and what you have to do differently. Internal refactors are not listed.
   `normalTexture`, ...) that `ShaderGraphMaterial.setParameter` can rebind at
   runtime. Materials without the property export exactly as before.
 
+- **Second UV set for lightmaps and detail maps.** A mesh's second UV map is
+  now written as `st1`, the set RealityKit's second texture coordinate reads,
+  and a material that samples it reads it there. **Advanced USD ▸ Geometry ▸
+  Require Lightmap UVs** makes a mesh without a second UV map stop the
+  export.
+
 ### Before you update
+
+- **A mesh's second UV map is renamed `st1` in the export.** Code that looked
+  up the primvar by its Blender name (`primvars:UVMap`, say) must use
+  `primvars:st1`. A material reading that map now reads RealityKit's second
+  texture coordinate, which renders the same.
 
 - **A Coat IOR other than 1.5 stops the export.** RealityKit ignores the
   coat IOR and always reflects like IOR 1.5, so the exported coat was brighter

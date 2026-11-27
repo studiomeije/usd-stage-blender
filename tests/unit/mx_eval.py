@@ -272,9 +272,11 @@ def evaluate(expr, env: Optional[Env] = None):
     output = expr.get("output") or "out"
     body = node_id[3:]
 
+    # texcoord index 1 reads primvars:st1 (measured on macOS 27.2.1).
+    uv = env.texcoord if int(inputs.get("index", 0) or 0) == 0 else env.primvars["st1"]
     readers = {
-        "texcoord_vector2": lambda: _vec(env.texcoord),
-        "texcoord_vector3": lambda: _vec(env.texcoord) + (0.0,),
+        "texcoord_vector2": lambda: _vec(uv),
+        "texcoord_vector3": lambda: _vec(uv) + (0.0,),
         "realitykit_surface_world_to_view": lambda: env.world_to_view,
         "realitykit_surface_model_to_world": lambda: env.model_to_world,
         "realitykit_surface_model_to_view": lambda: env.model_to_view or _mat_mul(env.world_to_view, env.model_to_world),

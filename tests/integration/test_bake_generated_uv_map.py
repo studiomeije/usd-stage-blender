@@ -137,19 +137,23 @@ def test_lighting_bake_on_tiled_uvs_writes_into_a_generated_uv_map(tmp_path):
     export = Path(payload["export_path"])
     stage = Usd.Stage.Open(str(export))
     mesh = _plane(stage)
-    assert {"st", "usdstage_bake"} <= _primvar_names(mesh)
+    # The generated map is the mesh's second UV set, written as st1.
+    assert {"st", "st1"} <= _primvar_names(mesh)
+    assert "usdstage_bake" not in _primvar_names(mesh)
     primvars = UsdGeom.PrimvarsAPI(mesh)
     # The plane's own UVs still tile, and are still what st holds.
     assert np.asarray(primvars.GetPrimvar("st").ComputeFlattened()).max() == pytest.approx(2.0)
 
-    geomprops = [
-        UsdShade.Shader(prim).GetInput("geomprop").Get()
-        for prim in stage.Traverse()
-        if UsdShade.Shader(prim) and UsdShade.Shader(prim).GetInput("geomprop")
+    second_set_reads = [
+        prim for prim in stage.Traverse()
+        if UsdShade.Shader(prim)
+        and str(UsdShade.Shader(prim).GetIdAttr().Get()).startswith("ND_texcoord_")
+        and UsdShade.Shader(prim).GetInput("index")
+        and UsdShade.Shader(prim).GetInput("index").Get() == 1
     ]
-    assert "usdstage_bake" in geomprops
+    assert second_set_reads
 
-    bake_uv = np.asarray(primvars.GetPrimvar("usdstage_bake").ComputeFlattened(), dtype=float)
+    bake_uv = np.asarray(primvars.GetPrimvar("st1").ComputeFlattened(), dtype=float)
     assert bake_uv.min() >= 0.0 and bake_uv.max() <= 1.0
     points = np.asarray(mesh.GetPointsAttr().Get(), dtype=float)
     counts = mesh.GetFaceVertexCountsAttr().Get()
@@ -187,4 +191,4 @@ def test_colour_bake_of_a_procedural_texture_on_tiled_uvs_writes_into_a_generate
     payload = _bake(blend, tmp_path / "out" / "tiled.usda", "UNLIT_ALBEDO")
     assert any("usdstage_bake" in warning for warning in payload["warnings"]), payload
     stage = Usd.Stage.Open(payload["export_path"])
-    assert "usdstage_bake" in _primvar_names(_plane(stage))
+    assert "st1" in _primvar_names(_plane(stage))

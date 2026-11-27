@@ -4390,6 +4390,8 @@ def _uv_set_expr(texcoord: str) -> Dict[str, Any]:
     """A resolved texture-coordinate set as a vector3 with z = 0, as Cycles reads UVs."""
     if texcoord == "UV0":
         return _make_node_expr(_nodedef_for("texcoord", "vector3"), {})
+    if texcoord == "UV1":
+        return _make_node_expr(_nodedef_for("texcoord", "vector3"), {"index": _constant_expr(1)})
     return _make_node_expr(
         _nodedef_for("convert", "vector3", input_type="vector2"),
         {"in": _make_node_expr(_nodedef_for("geompropvalue", "vector2"), {"geomprop": _constant_expr(texcoord)})},
@@ -4432,9 +4434,10 @@ def uv_set_resolution(node, uv_map: Optional[str]) -> Tuple[str, Optional[str]]:
 
     Blender's USD exporter (``rename_uvmaps``) writes each mesh's render UV
     map as ``primvars:st``, which RealityKit's ``texcoord`` reader returns, and
-    every other UV map under its own name. So a name is ``UV0`` only where it
-    is the render UV map of every mesh using the material, and a
-    ``geompropvalue`` of that name where it is none's. An empty name is the
+    every other UV map under its own name, which the export renames ``st1``
+    (``Plugin/export/uv_sets.py``). So a name is ``UV0`` where it is the
+    render UV map of every mesh using the material, and ``UV1``, texcoord
+    index 1, where it is none's. An empty name is the
     render UV map, as in Cycles. Measured by export: with ``Detail`` the render
     map, ``primvars:st`` held Detail and ``primvars:UVMap`` the other set.
     """
@@ -4454,20 +4457,17 @@ def uv_set_resolution(node, uv_map: Optional[str]) -> Tuple[str, Optional[str]]:
                 "so the export has no such coordinates to read; add the UV map or pick one "
                 "every mesh has"
             )
-        resolved.add("UV0" if _render_uv_layer_name(mesh) == name else name)
+        resolved.add("UV0" if _render_uv_layer_name(mesh) == name else "UV1")
     if len(resolved) > 1:
         return name, (
             f"UV map '{name}' is the render UV map on some meshes using this material and not "
             "on others, and the export writes the two under different names; make it the "
             "render UV map on all of them or on none"
         )
-    texcoord = resolved.pop()
-    if texcoord != "UV0" and (texcoord.lower() == "st" or not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', texcoord)):
-        return name, (
-            f"UV map '{name}' is not the render UV map and its name is not a primvar the export "
-            "can address by name (letters, digits and underscores, not 'st'); rename it"
-        )
-    return texcoord, None
+    # Not the render map: the mesh's second UV set, which the export writes as
+    # primvars:st1 and RealityKit reads as texcoord index 1 (uv_sets.py). A
+    # mesh with a third UV set fails the preflight's TOO_MANY_UV_SETS.
+    return resolved.pop(), None
 
 
 def _normalize_colorspace(name: Optional[str]) -> Optional[str]:

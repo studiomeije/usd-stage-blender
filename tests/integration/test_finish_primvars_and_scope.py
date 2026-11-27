@@ -543,7 +543,7 @@ def test_an_unworn_finish_resolves_the_render_uv_map(unworn_uv_finish):
 
 def test_a_nested_finish_is_checked_only_where_it_is_offered(tmp_path):
     """Walnut, offered on Square, reads the square top's own ``Detail`` map."""
-    from pxr import Usd, UsdShade
+    from pxr import Usd, UsdGeom, UsdShade
 
     blend = _build(tmp_path, _BUILD_NESTED, "nested")
     output = tmp_path / "out" / "table.usda"
@@ -558,7 +558,14 @@ def test_a_nested_finish_is_checked_only_where_it_is_offered(tmp_path):
     top = _mesh_under(stage, "TopSquare")
     material = UsdShade.MaterialBindingAPI(top).ComputeBoundMaterial()[0]
     assert material.GetPrim().GetName() == "WalnutMat"
-    assert "Detail" in _geomprops_read(material.GetPrim())
+    # Detail is the square top's second UV map: written as st1, read as
+    # texcoord index 1.
+    assert UsdGeom.PrimvarsAPI(top).GetPrimvar("st1")
+    assert any(
+        UsdShade.Shader(prim).GetInput("index") and UsdShade.Shader(prim).GetInput("index").Get() == 1
+        for prim in Usd.PrimRange(material.GetPrim())
+        if str(UsdShade.Shader(prim).GetIdAttr().Get()).startswith("ND_texcoord_")
+    )
 
 
 def test_a_finish_set_outside_a_selected_only_export_refuses_nothing(tmp_path):

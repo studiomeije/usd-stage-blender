@@ -52,6 +52,7 @@ is in [CONTRIBUTING.md](../CONTRIBUTING.md).
 | `Plugin/export/usd_animation_library.py` | The opt-in Reality Composer Pro clip library. |
 | `Plugin/export/variants.py` | Resolves the scene's declared variant sets into object sets, refuses the ones that cannot be authored, and stages every member's visibility for the export. Imports no OpenUSD. |
 | `Plugin/export/variant_authoring.py` | Writes those sets: a shape set activating each variant's members, a finish set rebinding its targets' material, nested inside a shape set when a finish suits only some shapes. |
+| `Plugin/export/uv_sets.py` | The second UV set: renames it `st1`, where RealityKit's texcoord index 1 reads it. |
 | `Plugin/export/colliders.py` | RealityKit collider components, authored from Blender Rigid Body objects and sized from the exported geometry. |
 | `Plugin/export/asset_metadata.py` | The root-prim `kind`, `assetInfo` and `extentsHint` that make an export an asset another stage can reference, instance and size. |
 | `Plugin/export/payload.py` | The optional split into an asset interface and a payload layer. |
@@ -124,6 +125,7 @@ is the phase the diagnostics report records.
 | `author_animation_library` | The Reality Composer Pro clip library, when enabled. |
 | `finalize_assets` | Localizes anything the two passes before it authored. |
 | `normalize_finalized_meshes` | Re-applies the single-sided mesh contract over the final owned layers. |
+| `author_second_uv_set` | Renames each mesh's second UV map `st1`, which RealityKit's texcoord index 1 reads. |
 | `retag_unmapped_color_spaces` | Renames color-space tokens RealityKit has no alias for. |
 | `author_object_random` | Writes each object's Object Info Random value for the materials that read it. |
 | `author_uv_derivatives` | Writes the per-corner UV derivatives the Bump node needs. |
