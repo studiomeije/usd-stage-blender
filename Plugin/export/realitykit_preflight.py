@@ -390,6 +390,7 @@ def _check_composed_stage(
     _check_materialx_node_inputs(prims, report)
     _check_geompropvalue_primvar_types(prims, report)
     _check_second_uv_set_reads(prims, report)
+    _check_geompropvalue_reads(prims, report)
     _check_skeletons(stage, prims, report)
     _check_textures(prims, report, asset_path, settings)
     _check_accessibility(stage, prims, report, settings)
@@ -1460,6 +1461,40 @@ _PRIMVAR_CHANNEL_COUNTS = {
     "half4[]": 4, "float4[]": 4, "double4[]": 4,
     "color4h[]": 4, "color4f[]": 4, "color4d[]": 4,
 }
+
+
+#: geompropvalue types RealityKit was measured not to read (macOS 27.2.1,
+#: material probe harness, probe "primvars_geompropvalue"): float shows the
+#: default, vector3 reads zeros, color3 renders an error pattern. Only
+#: vector2 reads the primvar.
+_GEOMPROPVALUE_TYPES_NOT_READ = frozenset({"float", "vector3", "color3"})
+
+
+def _check_geompropvalue_reads(prims: Iterable[Any], report: RealityKitPreflightReport) -> None:
+    """Warn on a geometric-property read of a type RealityKit does not read."""
+    for prim in prims:
+        shader = UsdShade.Shader(prim)
+        if not shader:
+            continue
+        shader_id = str(shader.GetIdAttr().Get() or "")
+        if not shader_id.startswith("ND_geompropvalue_"):
+            continue
+        if shader_id[len("ND_geompropvalue_"):] not in _GEOMPROPVALUE_TYPES_NOT_READ:
+            continue
+        geomprop = shader.GetInput("geomprop")
+        report.add(
+            "warning",
+            "GEOMPROPVALUE_TYPE_NOT_READ",
+            (
+                f"RealityKit on macOS 27.2.1 does not read a primvar through {shader_id} "
+                "(measured: float shows the default, vector3 reads zeros, color3 an error "
+                "pattern; only vector2 reads the primvar), so this input renders its "
+                "default. Bake the material to keep the effect."
+            ),
+            prim.GetPath(),
+            nodedef=shader_id,
+            primvar=str(geomprop.Get()) if geomprop else None,
+        )
 
 
 def _reads_second_uv_set(material) -> bool:

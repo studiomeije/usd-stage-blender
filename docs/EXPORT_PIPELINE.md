@@ -726,6 +726,7 @@ Warnings and info notes do not stop the export:
 | `USDSKEL_SCHEMA_UNAVAILABLE` | warning | Skeleton bindings could only be checked structurally |
 | `TEXTURE_ALPHA_SOURCE_MISSING` | warning | A four-channel reader points at a texture with no alpha |
 | `LIGHTMAP_UV_EMPTY` | warning | The second UV set has no coordinates |
+| `GEOMPROPVALUE_TYPE_NOT_READ` | warning | A float, vector3 or color3 primvar read, which RealityKit renders as its default ([measured](REALITYKIT_USD_SUPPORT.md#measured-on-macos-2721)) |
 | `SECOND_UV_SET_NOT_ST1` | warning | A second UV set the export could not rename `st1`, which RealityKit cannot read |
 | `ACCESSIBILITY_LABEL_MISSING`, `ACCESSIBILITY_DESCRIPTION_MISSING` | warning | A prim with AccessibilityAPI lacks a label or description |
 | `MATERIALX_MANIFEST_UNAVAILABLE` | warning | The node manifest failed to load, so `info:id` values went unchecked |

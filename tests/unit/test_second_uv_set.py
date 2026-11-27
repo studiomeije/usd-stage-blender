@@ -91,3 +91,17 @@ def test_a_material_reading_texcoord_one_needs_st1(tmp_path):
     UsdShade.MaterialBindingAPI.Apply(mesh.GetPrim()).Bind(material)
 
     assert "SECOND_UV_SET_MISSING" in _codes(validate_stage(stage))
+
+
+@pytest.mark.parametrize("kind,warned", [("float", True), ("vector3", True), ("vector2", False)])
+def test_a_primvar_read_realitykit_does_not_do_warns(tmp_path, kind, warned):
+    stage, _mesh, _path = _stage(tmp_path, ["st"])
+    UsdShade.Material.Define(stage, "/Root/Material")
+    reader = UsdShade.Shader.Define(stage, "/Root/Material/Read")
+    reader.CreateIdAttr(f"ND_geompropvalue_{kind}")
+    reader.CreateInput("geomprop", Sdf.ValueTypeNames.String).Set("blenderObjectRandom")
+
+    report = validate_stage(stage)
+    issues = [i for i in report.issues if i.code == "GEOMPROPVALUE_TYPE_NOT_READ"]
+    assert bool(issues) is warned
+    assert all(i.severity == "warning" for i in issues)

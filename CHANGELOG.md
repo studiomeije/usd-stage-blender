@@ -74,6 +74,13 @@ and what you have to do differently. Internal refactors are not listed.
   Principled BSDF into `ambientOcclusion` as well, so a "Chaos AO" base colour
   also darkened the lighting. Declare the AO source as described above.
 
+- **The export warns where RealityKit will not read a primvar.** RealityKit
+  reads only two-component primvars through a material: float, vector3 and
+  colour reads render their default (measured on macOS 27.2.1). Object Info
+  Random and the Bump node are exported that way, so they have no effect in
+  RealityKit; the export now says so with `GEOMPROPVALUE_TYPE_NOT_READ`. Bake
+  the material to keep them.
+
 ### Fixed
 
 - **Roughness, metallic and AO maps now render at their authored values in
