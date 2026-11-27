@@ -31,6 +31,11 @@ and what you have to do differently. Internal refactors are not listed.
   tagged Linear Rec.709 or Non-Color are now read through a linear reader, for
   RGB and greyscale files alike. sRGB colour maps are unchanged. Re-export
   assets that use data maps.
+- **A material with two Separate Color nodes, or any repeated node reading
+  a texture, exports every read.** Two channel reads feeding the same input
+  name of different nodes were written to one node, so the second texture
+  replaced the first: a scan with tile detail rendered its roughness from the
+  tile map alone. Each read now keeps its own node.
 
 ## 1.2.0 — 2026-11-18
 

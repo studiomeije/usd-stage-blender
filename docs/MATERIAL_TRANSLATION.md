@@ -729,6 +729,10 @@ a colour read, a `convert` to a vector (`ND_convert_color3_vector3` or
 (`_create_swizzle_output`, `_create_separate4_outputs`). One file is one
 reader: the reader cache (`_texture_cache_key`) ignores the channel, and the
 `convert` is named after the reader, so channel reads of one file share both.
+A channel read, gray conversion or normal decode is shared only by consumers
+of the same reader; one that reads a different file gets its own name, so two
+Separate Color nodes on two images each keep their own channel read
+(`_shared_shader_name`). Scales and UV transforms are never shared.
 Four-channel vector readers and extractors (`ND_image_vector4` and kin) are
 never authored, because Reality Composer Pro replaces such a material with a
 striped placeholder.

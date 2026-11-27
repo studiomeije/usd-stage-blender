@@ -10,7 +10,12 @@ from ...manifest.materialx_nodes import (
     select_nodedef_name_for_node,
 )
 from .conversions import _map_mtlx_type_to_sdf, _create_convert_output
-from .helpers import _image_shader_name, _sanitize_name
+from .helpers import (
+    _image_shader_name,
+    _sanitize_name,
+    _shared_shader_name,
+    _unique_shader_name,
+)
 from .mapping import effective_texture_mapping_contract
 
 
@@ -344,7 +349,9 @@ def _postprocess_texture_output(
             output_type="vector3",
         ) or "ND_normal_map_decode"
 
-        normalmap_name = _sanitize_name(f"NormalMap_{input_name}")
+        normalmap_name = _shared_shader_name(
+            stage, nodegraph_path, _sanitize_name(f"NormalMap_{input_name}"), texture_output, "in"
+        )
         normalmap_path = f"{nodegraph_path}/{normalmap_name}"
         existing = stage.GetPrimAtPath(normalmap_path)
         if existing and existing.IsValid():
@@ -548,7 +555,7 @@ def _create_place2d_node(
             diagnostics.add_error("No place2d nodedef found for UV mapping transforms.")
         return None
 
-    node_name = _sanitize_name(f"place2d_{input_name}")
+    node_name = _unique_shader_name(stage, nodegraph_path, _sanitize_name(f"place2d_{input_name}"))
     place_prim = stage.DefinePrim(f"{nodegraph_path}/{node_name}", "Shader")
     place_shader = UsdShade.Shader(place_prim)
     place_shader.CreateIdAttr(nodedef_name)
@@ -610,7 +617,7 @@ def _create_scale_output(
     # The scale is a literal, so it goes straight onto the multiply's second
     # input; an ND_constant_* node would add a prim and nothing else.
 
-    mult_name = _sanitize_name(f"scale_mult_{input_name}")
+    mult_name = _unique_shader_name(stage, nodegraph_path, _sanitize_name(f"scale_mult_{input_name}"))
     mult_prim = stage.DefinePrim(f"{nodegraph_path}/{mult_name}", "Shader")
     mult_shader = UsdShade.Shader(mult_prim)
     mult_shader.CreateIdAttr(nodedef_name)
@@ -745,6 +752,16 @@ def _apply_tangent_space_normal_strength(
     # this is a compile-time constant.
     strength = float(strength_value)
     saturated = min(max(strength, 0.0), 1.0)
+    # Two uses of one decoded normal map may carry different strengths, so the
+    # chain gets fresh names rather than redefining the first use's prims.
+    stem, index = normalmap_path, 1
+    while any(
+        stage.GetPrimAtPath(f"{stem}{suffix}")
+        for suffix in ("_strength", "_strength_z", "_normalize")
+    ):
+        index += 1
+        stem = f"{normalmap_path}_{index}"
+    normalmap_path = stem
 
     scale_shader = UsdShade.Shader(stage.DefinePrim(f"{normalmap_path}_strength", "Shader"))
     scale_shader.CreateIdAttr("ND_multiply_vector3")
@@ -911,7 +928,9 @@ def _resolve_linear_colour_read(
     if desired_type == 'float':
         from .extract.core import _RGB_TO_GRAY
 
-        dot_name = _sanitize_name(f"gray_{input_name}")
+        dot_name = _shared_shader_name(
+            stage, nodegraph_path, _sanitize_name(f"gray_{input_name}"), vector_output
+        )
         dot = UsdShade.Shader(stage.DefinePrim(f"{nodegraph_path}/{dot_name}", "Shader"))
         dot.CreateIdAttr("ND_dotproduct_vector3")
         dot.CreateInput("in1", Sdf.ValueTypeNames.Float3).ConnectToSource(vector_output)
@@ -1149,7 +1168,9 @@ def _create_swizzle_output(
             "out", Sdf.ValueTypeNames.Float3 if width == 3 else Sdf.ValueTypeNames.Float4
         )
 
-    dot_name = _sanitize_name(f"channel_{input_name}_{channel}")
+    dot_name = _shared_shader_name(
+        stage, nodegraph_path, _sanitize_name(f"channel_{input_name}_{channel}"), source
+    )
     dot_prim = stage.DefinePrim(f"{nodegraph_path}/{dot_name}", "Shader")
     dot_shader = UsdShade.Shader(dot_prim)
     dot_shader.CreateIdAttr(f"ND_dotproduct_{vector_type}")
