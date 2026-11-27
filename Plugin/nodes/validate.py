@@ -505,7 +505,6 @@ def _unsupported_principled_inputs(
     sheen_active = _active('Sheen Weight')
     transmission_active = _active('Transmission Weight')
     thin_film_active = _active('Thin Film Thickness')
-    anisotropy_active = _active('Anisotropic')
 
     thin_wall = node.inputs.get('Thin Wall')
     if (
@@ -526,35 +525,29 @@ def _unsupported_principled_inputs(
         ),
     )
 
-    # Coat constants are mapped, but linked Coat Weight/Roughness/Tint values
-    # have no graph_input_map entry in extraction.  Reject those links until
-    # they can be preserved rather than accepting a default value.
-    linked_coat_inputs = {
-        name
-        for name in ('Coat Weight', 'Coat Roughness', 'Coat Tint')
-        if _linked(name) and (name == 'Coat Weight' or coat_active)
-    }
+    # Coat Weight and Coat Roughness export constant or linked. Coat Tint has
+    # no surface input, linked or not.
+    linked_coat_inputs = {'Coat Tint'} if coat_active and _linked('Coat Tint') else set()
     for name in sorted(linked_coat_inputs):
         issues.append(
-            f"Principled '{name}' is linked, but linked coat controls are not exportable; "
-            "bake the material or use an unlinked constant."
+            f"Principled '{name}' is linked, but no RealityKit surface carries a coat tint; "
+            "bake the material or set it to white."
+        )
+    # RealityKit ignores clearcoatIOR: its coat always reflects F0 0.04, which
+    # is Cycles' coat at IOR 1.5 (measured on macOS 27.2.1, IOR 1.2 to 2.5
+    # render identically).
+    if coat_active and _active('Coat IOR', 1.5):
+        issues.append(
+            "Principled 'Coat IOR' is not 1.5, but RealityKit's coat always reflects like "
+            "IOR 1.5 (F0 0.04) and ignores clearcoatIOR; set Coat IOR to 1.5, or bake the "
+            "material."
         )
 
-    # Blender's anisotropy level and rotation do not map one-to-one to the
-    # PBR Surface 2 inputs: native Blender 5.2 applies a level
-    # factor and tangent rotation that this exporter does not reproduce.  A
-    # partially mapped result is worse than an actionable failure.
-    anisotropy_inputs = (
-        ('Anisotropic', 0.0, None),
-        ('Anisotropic Rotation', 0.0, 'Anisotropic'),
-        ('Tangent', (0.0, 0.0, 0.0), 'Anisotropic'),
-    )
-    for name, neutral, controller in anisotropy_inputs:
-        if (controller is None or anisotropy_active) and _active(name, neutral):
-            issues.append(
-                f"Principled '{name}' requires a verified Blender tangent/anisotropy "
-                "mapping; bake the material before export."
-            )
+    # Anisotropy maps exactly onto PBR Surface 2 under the conditions
+    # ``anisotropy_issues`` checks (see Plugin/export/materials/anisotropy.py).
+    from ..export.materials.anisotropy import anisotropy_issues
+
+    issues.extend(anisotropy_issues(node))
 
     active_controllers = {
         'Subsurface Weight': subsurface_active,
@@ -799,6 +792,25 @@ def _validate_material(
     surface_refusal = surface_output_refusal(material)
     if surface_refusal is not None:
         _add_issue(result, "errors", None, surface_refusal + ".", removable=False)
+        result["ok"] = False
+
+    from ..export.materials.extract.core import (
+        texture_parameters_from_material,
+        unlit_tone_map_from_material,
+    )
+
+    try:
+        unlit_tone_map_from_material(material)
+        texture_parameters_from_material(material)
+    except ValueError as error:
+        _add_issue(result, "errors", None, f"{error}.", removable=False)
+        result["ok"] = False
+
+    from ..export.materials.extract.occlusion import ambient_occlusion_refusal
+
+    occlusion_refusal = ambient_occlusion_refusal(material)
+    if occlusion_refusal is not None:
+        _add_issue(result, "errors", None, occlusion_refusal, removable=False)
         result["ok"] = False
 
     from ..export.materials.extract.core import srgb_data_image_notices
@@ -1064,6 +1076,11 @@ def _validate_material(
                 "Node requires baking for RealityKit.",
                 force_error=strict,
             )
+            continue
+
+        if node_type == 'TANGENT' and _tangent_declares_anisotropy(node):
+            # Only declares the frame an anisotropic shader stretches along;
+            # that shader's own check judges it.
             continue
 
         if node_type in UNSUPPORTED_TYPES:
@@ -1368,11 +1385,31 @@ def _collect_used_nodes(material) -> Set[object]:
         _collect_used_nodes as export_walk,
     )
 
+    from ..export.materials.extract.occlusion import (
+        AmbientOcclusionError,
+        ambient_occlusion_source,
+        upstream_nodes,
+    )
+
     used_nodes, _volume_linked, _displacement_linked = export_walk(material)
     active_output = _active_output_node(material)
     if active_output is not None:
         used_nodes.add(active_output)
+        # The declared ambient-occlusion source is exported too, though no
+        # link from the output reaches it.
+        try:
+            occlusion = ambient_occlusion_source(material)
+        except AmbientOcclusionError:
+            occlusion = None
+        if occlusion is not None:
+            used_nodes |= upstream_nodes(occlusion[1])
     return used_nodes
+
+
+def _tangent_declares_anisotropy(node) -> bool:
+    from ..export.materials.anisotropy import tangent_node_feeds_only_anisotropy
+
+    return tangent_node_feeds_only_anisotropy(node)
 
 
 def _is_supported_mix(node) -> bool:

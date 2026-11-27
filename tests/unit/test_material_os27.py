@@ -261,13 +261,13 @@ def test_texture_file_metadata_is_role_correct_and_unknown_spaces_fail_closed():
         manifest,
         "Material",
     )
-    # A packed scalar is read through the same three-channel reader every
-    # working RealityKit package uses, and a data texture authors no color
-    # space at all: an absent MaterialX color space is the no-transform
-    # contract "raw" was meant to express, and RCP 3.0 replaces a material
-    # whose reader carries the lowercase token with a striped placeholder.
+    # A packed scalar is read through an untagged vector3 reader: RealityKit
+    # decodes every color3 read as sRGB, tagged or not, while an untagged
+    # vector3 read is linear for RGB and greyscale files. No color space is
+    # authored: RCP 3.0 replaces a material whose reader carries the lowercase
+    # "raw" token with a striped placeholder.
     data_image = UsdShade.Shader(stage.GetPrimAtPath("/Material/Image_1"))
-    assert data_image.GetIdAttr().Get() == "ND_image_color3"
+    assert data_image.GetIdAttr().Get() == "ND_image_vector3"
     assert data_image.GetInput("file").GetAttr().GetColorSpace() == ""
     dot = UsdShade.Shader(stage.GetPrimAtPath("/Material/channel_roughness_g"))
     assert dot.GetIdAttr().Get() == "ND_dotproduct_vector3"
@@ -710,11 +710,19 @@ def test_stock_blender_52_principled_defaults_raise_nothing():
     assert result["errors"] == []
 
 
-@pytest.mark.parametrize("socket_name", ["Coat Weight", "Coat Roughness", "Coat Tint"])
-def test_linked_coat_controls_fail_closed(socket_name):
+@pytest.mark.parametrize("socket_name", ["Coat Weight", "Coat Roughness"])
+def test_linked_coat_weight_and_roughness_are_exported(socket_name):
     inputs = {socket_name: _Socket(0.5, linked=True)}
     if socket_name != "Coat Weight":
         inputs["Coat Weight"] = _Socket(0.5)
+    result = _validate_principled_inputs(inputs)
+
+    assert not any(socket_name in issue["message"] for issue in result["errors"])
+
+
+def test_linked_coat_tint_fails_closed():
+    socket_name = "Coat Tint"
+    inputs = {socket_name: _Socket(0.5, linked=True), "Coat Weight": _Socket(0.5)}
     result = _validate_principled_inputs(
         inputs,
     )
@@ -818,12 +826,13 @@ def test_unmapped_principled_controls_fail_closed(
         ("Tangent", (1.0, 0.0, 0.0), "Anisotropic", 0.4),
     ],
 )
-def test_unverified_anisotropy_mapping_fails_closed(
+def test_anisotropy_without_a_uv_tangent_fails_closed(
     socket_name,
     active_value,
     controller_name,
     controller_value,
 ):
+    """Cycles' default Tangent is radial around Z; RealityKit stretches along +u."""
     inputs = {socket_name: _Socket(active_value)}
     if controller_name is not None:
         inputs[controller_name] = _Socket(controller_value)
@@ -832,7 +841,7 @@ def test_unverified_anisotropy_mapping_fails_closed(
     )
 
     assert result["ok"] is False
-    assert any(socket_name in issue["message"] for issue in result["errors"])
+    assert any("'Tangent' is unlinked" in issue["message"] for issue in result["errors"])
 
 
 def _normal_map_material(strength, space):

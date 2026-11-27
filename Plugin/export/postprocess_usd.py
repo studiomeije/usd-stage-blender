@@ -29,6 +29,7 @@ from . import variant_scope
 from . import variants
 from .usd_assets import prepare_assets
 from .usd_utils import Usd, require_pxr
+from .uv_sets import rename_second_uv_sets
 
 
 @dataclass
@@ -133,6 +134,11 @@ PASSES = (
     ("normalize_finalized_meshes",
      lambda run: _normalize_finalized_meshes(
          run.stage, run.writable_layer_paths, run.diagnostics),
+     None),
+    # RealityKit's texcoord index 1 reads primvars:st1; Blender writes a
+    # mesh's second UV map under its own name.
+    ("author_second_uv_set",
+     lambda run: rename_second_uv_sets(run.stage, run.writable_layer_paths, run.diagnostics),
      None),
     ("retag_unmapped_color_spaces",
      lambda run: _retag_unmapped_color_space_names(run.stage, run.diagnostics), None),

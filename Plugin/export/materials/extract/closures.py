@@ -737,6 +737,12 @@ def principled_notices(principled) -> List[str]:
                 "black, non-metallic base with Specular IOR Level 0, as in the Sheen BSDF."
             )
 
+    from ..anisotropy import roughness_notice
+
+    anisotropic_roughness = roughness_notice(principled)
+    if anisotropic_roughness is not None:
+        notices.append(anisotropic_roughness)
+
     diffuse_roughness = _principled_constant(principled, 'Diffuse Roughness', 0.0)
     if diffuse_roughness is None or not diffuse_roughness_is_lambert(diffuse_roughness):
         notices.append(

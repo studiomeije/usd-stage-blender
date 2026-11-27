@@ -405,6 +405,16 @@ class USDStageExportSettings(PropertyGroup):
         update=_on_settings_changed,
     )
 
+    require_lightmap_uv: BoolProperty(
+        name="Require Lightmap UVs",
+        description=(
+            "Stop the export when a mesh has no second UV map (written as st1, "
+            "RealityKit's second texture-coordinate set) for lightmap baking"
+        ),
+        default=False,
+        update=_on_settings_changed,
+    )
+
     export_armatures: BoolProperty(
         name="Armatures",
         description="Export armatures as USD skeletons",
@@ -1037,6 +1047,7 @@ def _draw_usd_geometry_section(layout, settings):
         layout.prop(settings, "quad_method")
         layout.prop(settings, "ngon_method")
     layout.prop(settings, "export_subdivision")
+    layout.prop(settings, "require_lightmap_uv")
 
 
 def _draw_usd_rigging_section(layout, settings):

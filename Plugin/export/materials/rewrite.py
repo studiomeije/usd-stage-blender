@@ -16,7 +16,7 @@ from ...manifest.materialx_nodes import load_manifest
 from .graph import MaterialXGraphBuilder
 from .extract import extract_blender_material_data, collect_material_warnings
 from .extract.core import working_color_space_refusal
-from .author import create_materialx_material
+from .author import create_materialx_material, promote_texture_parameters
 from .helpers import _get_blender_data_name
 from .mapping import require_realitykit_mapping_contract
 from ..stage_prims import composed_prims
@@ -222,6 +222,8 @@ def rewrite_materials(
                     "mapped to a RealityKit graph."
                 )
             require_realitykit_mapping_contract(graph, blender_name)
+            if material_data.get('texture_parameters'):
+                graph['texture_parameters'] = True
         except Exception as exc:
             _record_material_failure(
                 diagnostics,
@@ -268,6 +270,8 @@ def rewrite_materials(
                 blender_name,
             )
             _remove_preview_network(stage, new_material)
+            if graph.get('texture_parameters'):
+                promote_texture_parameters(new_material)
             authored_materials.append(blender_name)
         except Exception as exc:
             _record_material_failure(

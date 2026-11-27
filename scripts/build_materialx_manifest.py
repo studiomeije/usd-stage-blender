@@ -91,6 +91,40 @@ EDITOR_UNRESOLVABLE_NODEDEFS = {
 }
 
 
+# Nodedefs from Apple's Metal intrinsic library (apple_metal_nodedefs.mtlx)
+# admitted to the overlay. That file is otherwise excluded: it declares
+# Metal-language helpers with no RealityKit contract. These derivative nodes
+# are the measured exception: on macOS 27.2.1 (26B131) ND_MTL_dfdx/dfdy/fwidth
+# compile from a USD-loaded ShaderGraph and return exact screen-space
+# derivatives, in float and half, unlit and inside PBR Surface 2 (RealityKit
+# material probe harness, probe "derivatives"). The half variants are admitted
+# with them, since half is how the measurement ran.
+MEASURED_METAL_NODEDEFS = frozenset(
+    f"ND_MTL_{op}_{kind}"
+    for op in ("dfdx", "dfdy", "fwidth")
+    for kind in ("float", "half", "vector2", "half2", "vector3", "half3", "vector4", "half4")
+)
+
+# ShaderGraph builds that lack an implementation of a nodedef they declare.
+# A ShaderGraph copy ships with the OS and with Reality Composer Pro, each its
+# own build, and they disagree. Measured with
+# `scripts/check_shader_implementations.py --shadergraph all` on macOS 27.2.1:
+# the OS copy (159.40.2) implements all of these; Reality Composer Pro 3's
+# (159.0.5) implements ND_hextiled* for GLSL only, so the editor cannot build
+# them. The probe harness rendered ND_hextiledimage on macOS 27.2.1. (Xcode's
+# copy carries stub Metal libraries and renders nothing, so it is no build to
+# record.)
+UNIMPLEMENTED_IN_SHADERGRAPH_BUILDS = dict.fromkeys(
+    ("ND_hextiledimage_color3", "ND_hextiledimage_color4", "ND_hextilednormalmap_vector3"),
+    ("159.0.5",),
+)
+
+# What each recorded build is.
+SHADERGRAPH_BUILDS = {
+    "159.0.5": "Reality Composer Pro 3.0 (RealityComposerPro.app/Contents/SystemFrameworks)",
+    "159.40.2": "macOS 27.2.1 26B131 (/System/Library/SubFrameworks)",
+}
+
 # The generated manifest is a checked-in interoperability contract, not a
 # snapshot of whichever SDK happens to be installed on a contributor's Mac.
 MATERIALX_PROFILE = "1.39"
@@ -307,6 +341,7 @@ def build_manifest(
         _apply_runtime_overlay(manifest, runtime_library)
     elif carry_forward_from is not None:
         _carry_forward_overlay(manifest, carry_forward_from)
+    _record_build_availability(manifest)
 
     # Index at the end: the overlay may append inputs to existing entries,
     # which changes their signatures.
@@ -453,8 +488,10 @@ def _find_runtime_library() -> Optional[Path]:
     return None
 
 
-def _runtime_file_excluded(relpath: str) -> bool:
+def _runtime_file_excluded(relpath: str, nodedef_name: str = "") -> bool:
     """Files whose declarations are never overlay material."""
+    if nodedef_name in MEASURED_METAL_NODEDEFS:
+        return False
     lower = relpath.lower()
     if "private" in lower or "internal" in lower:
         return True
@@ -466,6 +503,8 @@ def _runtime_file_excluded(relpath: str) -> bool:
 
 
 def _runtime_name_excluded(nodedef_name: str) -> bool:
+    if nodedef_name in MEASURED_METAL_NODEDEFS:
+        return False
     return (
         nodedef_name.startswith("_")
         or "ND_Internal" in nodedef_name
@@ -712,17 +751,20 @@ def _apply_runtime_overlay(manifest: Dict[str, Any], runtime_root: Path) -> None
             continue
         if _runtime_name_excluded(nodedef_name):
             continue
+        measured = nodedef_name in MEASURED_METAL_NODEDEFS
         kept = [
             decl
             for decl in decls[nodedef_name]
-            if not _runtime_file_excluded(decl["relpath"])
+            if not _runtime_file_excluded(decl["relpath"], nodedef_name)
             and not decl["deprecated"]
-            and not _decl_has_half_types(decl)
+            and (measured or not _decl_has_half_types(decl))
             and not _runtime_nodegroup_excluded(decl)
         ]
         if not kept:
             continue
         canonical = min(kept, key=_decl_rank)
+        if measured:
+            canonical["info"]["policy"]["half_type"] = _decl_has_half_types(canonical)
         manifest["nodes"][nodedef_name] = canonical["info"]
         added_names.append(nodedef_name)
 
@@ -740,6 +782,15 @@ def _apply_runtime_overlay(manifest: Dict[str, Any], runtime_root: Path) -> None
             "ShaderGraph.framework MaterialX libraries; no .mtlx content is vendored."
         ),
     }
+
+
+def _record_build_availability(manifest: Dict[str, Any]) -> None:
+    """Mark the nodedefs some recorded ShaderGraph build cannot build."""
+    for name, builds in UNIMPLEMENTED_IN_SHADERGRAPH_BUILDS.items():
+        node = manifest["nodes"].get(name)
+        if node is not None:
+            node["policy"]["unimplemented_in_shadergraph_builds"] = list(builds)
+    manifest["metadata"]["shadergraph_builds"] = dict(SHADERGRAPH_BUILDS)
 
 
 def _index_node(manifest: Dict[str, Any], node_info: Dict[str, Any]) -> None:

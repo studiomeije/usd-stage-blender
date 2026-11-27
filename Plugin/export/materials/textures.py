@@ -10,7 +10,12 @@ from ...manifest.materialx_nodes import (
     select_nodedef_name_for_node,
 )
 from .conversions import _map_mtlx_type_to_sdf, _create_convert_output
-from .helpers import _image_shader_name, _sanitize_name
+from .helpers import (
+    _image_shader_name,
+    _sanitize_name,
+    _shared_shader_name,
+    _unique_shader_name,
+)
 from .mapping import effective_texture_mapping_contract
 
 
@@ -152,6 +157,7 @@ def _create_texture_connection(
                     texture_kind,
                     texture_spec,
                     diagnostics,
+                    semantic_type=cached.get("semantic") or current_type,
                 )
 
     image_type = _image_output_hint(
@@ -164,6 +170,15 @@ def _create_texture_connection(
     if override_type:
         image_type = override_type
     image_type = _IMAGE_OUTPUT_SUBSTITUTIONS.get(image_type, image_type)
+    file_colorspace = _materialx_file_colorspace(texture_spec, input_name, diagnostics)
+    semantic_type = image_type
+    if image_type == 'color3' and reads_linear_through_color3(file_colorspace):
+        # RealityKit decodes every color3 image read as sRGB, whatever the
+        # token says, except lin_rec709 over a three-channel file. A vector3
+        # read of the same file is linear for RGB and greyscale alike, so a
+        # read that must not be decoded is authored as one, untagged.
+        image_type = 'vector3'
+        file_colorspace = ""
     nodedef_name, output_sdf_type = _image_nodedef_for_output(manifest, image_type)
     current_type = image_type
 
@@ -173,7 +188,6 @@ def _create_texture_connection(
 
     file_input = texture_shader.CreateInput("file", Sdf.ValueTypeNames.Asset)
     file_input.Set(texture_path)
-    file_colorspace = _materialx_file_colorspace(texture_spec, input_name, diagnostics)
     if file_colorspace:
         file_input.GetAttr().SetColorSpace(file_colorspace)
 
@@ -256,7 +270,11 @@ def _create_texture_connection(
     texture_output = texture_shader.CreateOutput("out", output_sdf_type)
 
     if texture_cache is not None:
-        texture_cache[cache_key] = {"output": texture_output, "type": current_type}
+        texture_cache[cache_key] = {
+            "output": texture_output,
+            "type": current_type,
+            "semantic": semantic_type,
+        }
 
     return _postprocess_texture_output(
         manifest,
@@ -270,6 +288,7 @@ def _create_texture_connection(
         texture_kind,
         texture_spec,
         diagnostics,
+        semantic_type=semantic_type,
     )
 
 
@@ -285,8 +304,13 @@ def _postprocess_texture_output(
     texture_kind: str,
     texture_spec: Dict[str, Any],
     diagnostics=None,
+    semantic_type: Optional[str] = None,
 ):
-    """Apply per-use decode/swizzle/scale operations to a cached raw reader."""
+    """Apply per-use decode/swizzle/scale operations to a cached raw reader.
+
+    ``semantic_type`` is what the read stands for when it differs from the
+    reader's type: a colour read authored as a linear vector3 reader.
+    """
     if texture_kind == 'normal_texture':
         # RealityKit's dedicated tangent normal decoder is part of the RCP
         # contract. The cache stores only the raw image output, so every use
@@ -325,7 +349,9 @@ def _postprocess_texture_output(
             output_type="vector3",
         ) or "ND_normal_map_decode"
 
-        normalmap_name = _sanitize_name(f"NormalMap_{input_name}")
+        normalmap_name = _shared_shader_name(
+            stage, nodegraph_path, _sanitize_name(f"NormalMap_{input_name}"), texture_output, "in"
+        )
         normalmap_path = f"{nodegraph_path}/{normalmap_name}"
         existing = stage.GetPrimAtPath(normalmap_path)
         if existing and existing.IsValid():
@@ -359,6 +385,7 @@ def _postprocess_texture_output(
         texture_kind,
         bool(texture_spec.get("force_separate4")),
         diagnostics,
+        semantic_type=semantic_type,
     )
 
     scale = texture_spec.get('scale')
@@ -453,6 +480,8 @@ def _create_geomprop_texcoord(
 ):
     """Create a texcoord or geompropvalue node for texture coordinates."""
     texcoord_name = (texcoord_name or "").strip() or "UV0"
+    if texcoord_name.upper() == "UV1":
+        return _create_texcoord_index(manifest, stage, nodegraph_path, 1, diagnostics)
     if texcoord_name.upper() == "UV0":
         texcoord_nodedef = select_nodedef_name_for_node(
             manifest,
@@ -507,6 +536,24 @@ def _create_geomprop_texcoord(
     return texcoord_shader.CreateOutput("out", Sdf.ValueTypeNames.Float2)
 
 
+def _create_texcoord_index(manifest, stage, nodegraph_path: str, index: int, diagnostics=None):
+    """``ND_texcoord_vector2`` at a set index; index 1 reads ``primvars:st1``."""
+    nodedef = select_nodedef_name_for_node(manifest, "texcoord", output_type="vector2")
+    if not nodedef:
+        if diagnostics:
+            diagnostics.add_error("No texcoord nodedef found for the second UV set.")
+        return None
+    path = f"{nodegraph_path}/TextureCoordinates_{index}"
+    existing = stage.GetPrimAtPath(path)
+    if existing and existing.IsValid():
+        shader = UsdShade.Shader(existing)
+        return shader.GetOutput("out") or shader.CreateOutput("out", Sdf.ValueTypeNames.Float2)
+    shader = UsdShade.Shader(stage.DefinePrim(path, "Shader"))
+    shader.CreateIdAttr(nodedef)
+    shader.CreateInput("index", Sdf.ValueTypeNames.Int).Set(int(index))
+    return shader.CreateOutput("out", Sdf.ValueTypeNames.Float2)
+
+
 def _create_place2d_node(
     manifest: Dict[str, Any],
     stage,
@@ -528,7 +575,7 @@ def _create_place2d_node(
             diagnostics.add_error("No place2d nodedef found for UV mapping transforms.")
         return None
 
-    node_name = _sanitize_name(f"place2d_{input_name}")
+    node_name = _unique_shader_name(stage, nodegraph_path, _sanitize_name(f"place2d_{input_name}"))
     place_prim = stage.DefinePrim(f"{nodegraph_path}/{node_name}", "Shader")
     place_shader = UsdShade.Shader(place_prim)
     place_shader.CreateIdAttr(nodedef_name)
@@ -590,7 +637,7 @@ def _create_scale_output(
     # The scale is a literal, so it goes straight onto the multiply's second
     # input; an ND_constant_* node would add a prim and nothing else.
 
-    mult_name = _sanitize_name(f"scale_mult_{input_name}")
+    mult_name = _unique_shader_name(stage, nodegraph_path, _sanitize_name(f"scale_mult_{input_name}"))
     mult_prim = stage.DefinePrim(f"{nodegraph_path}/{mult_name}", "Shader")
     mult_shader = UsdShade.Shader(mult_prim)
     mult_shader.CreateIdAttr(nodedef_name)
@@ -725,6 +772,16 @@ def _apply_tangent_space_normal_strength(
     # this is a compile-time constant.
     strength = float(strength_value)
     saturated = min(max(strength, 0.0), 1.0)
+    # Two uses of one decoded normal map may carry different strengths, so the
+    # chain gets fresh names rather than redefining the first use's prims.
+    stem, index = normalmap_path, 1
+    while any(
+        stage.GetPrimAtPath(f"{stem}{suffix}")
+        for suffix in ("_strength", "_strength_z", "_normalize")
+    ):
+        index += 1
+        stem = f"{normalmap_path}_{index}"
+    normalmap_path = stem
 
     scale_shader = UsdShade.Shader(stage.DefinePrim(f"{normalmap_path}_strength", "Shader"))
     scale_shader.CreateIdAttr("ND_multiply_vector3")
@@ -760,6 +817,7 @@ def _resolve_texture_output(
     texture_kind: str,
     force_separate4: bool,
     diagnostics=None,
+    semantic_type: Optional[str] = None,
 ):
     """Resolve texture output conversions including RGBA separation."""
     if not texture_output:
@@ -768,6 +826,14 @@ def _resolve_texture_output(
     current_type = (current_type or '').lower()
     desired_type = (desired_type or '').lower()
     channel = (channel or '').lower()
+
+    if current_type == 'vector3' and (semantic_type or '').lower() == 'color3':
+        linear = _resolve_linear_colour_read(
+            manifest, stage, nodegraph_path, input_name, texture_output,
+            desired_type, channel, diagnostics,
+        )
+        if linear is not None:
+            return linear, desired_type
 
     # A float consumer of a channelless colour read takes Blender's implicit
     # conversion, linear RGB to gray, which the convert below authors; reading
@@ -841,6 +907,61 @@ def _resolve_texture_output(
         current_type = desired_type
 
     return texture_output, current_type
+
+
+#: File color-space tokens under which a read must not be decoded: none at
+#: all (the data contract) and the linear Rec.709 family.
+_LINEAR_READ_COLOR_SPACES = frozenset({"", "lin_rec709", "lin_rec709_scene"})
+
+
+def reads_linear_through_color3(file_colorspace: Optional[str]) -> bool:
+    """Whether a color3 reader under this token is meant to read texels as stored.
+
+    Measured on macOS 27.2.1: ``ND_image_color3`` and the RealityKit color3
+    texture nodes decode as sRGB when untagged, ``raw`` or ``srgb_texture``;
+    ``lin_rec709_scene`` reads linearly only over a three-channel file, and a
+    greyscale PNG or JPEG is still decoded. Untagged ``ND_image_vector3`` and
+    ``ND_image_float`` read linearly for RGB and greyscale, 8 and 16 bits.
+    """
+    return (file_colorspace or "").strip().lower() in _LINEAR_READ_COLOR_SPACES
+
+
+def _resolve_linear_colour_read(
+    manifest: Dict[str, Any],
+    stage,
+    nodegraph_path: str,
+    input_name: str,
+    vector_output,
+    desired_type: str,
+    channel: str,
+    diagnostics=None,
+):
+    """Serve a colour read from a linear vector3 reader, or None to fall through.
+
+    A channel is a dot with its unit mask, a channelless float read is
+    Blender's gray conversion, and a colour consumer takes one convert. Other
+    requests (a vector consumer) need no conversion and fall through.
+    """
+    if channel:
+        # A channel read of a vector3 reader is the same unit-mask dot.
+        return None
+    if desired_type == 'float':
+        from .extract.core import _RGB_TO_GRAY
+
+        dot_name = _shared_shader_name(
+            stage, nodegraph_path, _sanitize_name(f"gray_{input_name}"), vector_output
+        )
+        dot = UsdShade.Shader(stage.DefinePrim(f"{nodegraph_path}/{dot_name}", "Shader"))
+        dot.CreateIdAttr("ND_dotproduct_vector3")
+        dot.CreateInput("in1", Sdf.ValueTypeNames.Float3).ConnectToSource(vector_output)
+        dot.CreateInput("in2", Sdf.ValueTypeNames.Float3).Set(Gf.Vec3f(*_RGB_TO_GRAY))
+        return dot.CreateOutput("out", Sdf.ValueTypeNames.Float)
+    if desired_type in ('color3', 'color4'):
+        return _create_convert_output(
+            manifest, stage, nodegraph_path, input_name, vector_output,
+            'vector3', desired_type, diagnostics,
+        )
+    return None
 
 
 class _LazyChannelOutputs(dict):
@@ -1036,7 +1157,11 @@ def _create_swizzle_output(
                 f"input '{input_name}'."
             )
         return None
-    index = order.find(channel[:1].lower())
+    letter = channel[:1].lower()
+    if order == "xyz" and letter in "rgb":
+        # A colour read served by a linear vector3 reader.
+        letter = "xyz"["rgb".index(letter)]
+    index = order.find(letter)
     if index < 0:
         # e.g. alpha asked of a three-channel read.
         if diagnostics:
@@ -1063,7 +1188,9 @@ def _create_swizzle_output(
             "out", Sdf.ValueTypeNames.Float3 if width == 3 else Sdf.ValueTypeNames.Float4
         )
 
-    dot_name = _sanitize_name(f"channel_{input_name}_{channel}")
+    dot_name = _shared_shader_name(
+        stage, nodegraph_path, _sanitize_name(f"channel_{input_name}_{channel}"), source
+    )
     dot_prim = stage.DefinePrim(f"{nodegraph_path}/{dot_name}", "Shader")
     dot_shader = UsdShade.Shader(dot_prim)
     dot_shader.CreateIdAttr(f"ND_dotproduct_{vector_type}")

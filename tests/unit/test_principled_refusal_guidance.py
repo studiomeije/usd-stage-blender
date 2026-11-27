@@ -93,7 +93,7 @@ def test_a_neutral_node_raises_nothing():
         {"IOR": 1.33},
         {"Diffuse Roughness": 0.5},
         {"Subsurface Weight": 0.5},
-        {"Coat Weight": 1.0, "Coat IOR": 1.7},
+        {"Coat Weight": 1.0, "Coat Roughness": 0.4},
         {"Sheen Weight": 0.5},
         {"Sheen Weight": 0.5, "Sheen Tint": (1.0, 0.5, 0.5, 1.0)},
     ],
@@ -101,6 +101,13 @@ def test_a_neutral_node_raises_nothing():
 def test_controls_pbr_surface_2_carries_are_not_refused(overrides):
     """These used to be refused by the portable surface. PBR Surface 2 has them."""
     assert _issues(**overrides) == [], overrides
+
+
+def test_a_coat_ior_realitykit_ignores_is_refused():
+    """RealityKit's coat always reflects F0 0.04 (IOR 1.5); clearcoatIOR is ignored."""
+    (issue,) = [i for i in _issues(**{"Coat Weight": 1.0, "Coat IOR": 1.7}) if "Coat IOR" in i]
+    assert "set Coat IOR to 1.5" in issue
+    assert _issues(**{"Coat Weight": 0.0, "Coat IOR": 1.7}) == []
 
 
 def test_coat_tint_says_bake():

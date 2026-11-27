@@ -4,9 +4,10 @@ Blender's USD exporter writes each mesh's render UV map as ``primvars:st``,
 which RealityKit's ``texcoord`` reader returns, and every other UV map under
 its own name (measured on Blender 5.2: with ``Detail`` the render UV map,
 ``primvars:st`` held Detail and ``primvars:UVMap`` the other set; the
-integration test ``test_uv_set_export`` repeats that export). A name
-therefore reads ``texcoord`` only where it is the render UV map, whatever it
-is called, and its own primvar otherwise.
+integration test ``test_uv_set_export`` repeats that export). The export
+renames that other set ``st1``, which RealityKit's ``texcoord`` index 1 reads
+(measured on macOS 27.2.1). A name therefore reads ``texcoord`` where it is
+the render UV map, whatever it is called, and ``texcoord`` index 1 otherwise.
 """
 
 from __future__ import annotations
@@ -46,8 +47,8 @@ def meshes(monkeypatch):
 
 
 def _env():
-    # texcoord is the render UV map (Detail); primvars:UVMap the other set.
-    return Env(texcoord=RENDER_UV, primvars={"UVMap": OTHER_UV, "Detail": (-1.0, -1.0)})
+    # texcoord is the render UV map (Detail); primvars:st1 the other set, UVMap.
+    return Env(texcoord=RENDER_UV, primvars={"st1": OTHER_UV, "UVMap": (-1.0, -1.0), "Detail": (-1.0, -1.0)})
 
 
 def test_a_uv_map_node_naming_a_non_render_map_reads_its_primvar(meshes):
@@ -73,7 +74,7 @@ def test_an_image_through_a_uv_map_node_carries_the_resolved_set(meshes, monkeyp
     monkeypatch.setattr(core, "_resolve_image_path", lambda image: "/assets/grid.png")
     monkeypatch.setattr(core, "_image_source_alpha", lambda image, path: {"source_channels": 3, "source_has_alpha": False})
     image = SimpleNamespace(name="grid", alpha_mode="STRAIGHT", colorspace_settings=SimpleNamespace(name="sRGB"))
-    for uv_map, texcoord in (("UVMap", "UVMap"), ("Detail", "UV0")):
+    for uv_map, texcoord in (("UVMap", "UV1"), ("Detail", "UV0")):
         uv = Node("UVMAP", "UV Map", {}, outputs=("UV",), uv_map=uv_map, from_instancer=False)
         node = Node("TEX_IMAGE", "Grid", {"Vector": uv.out("UV")}, outputs=("Color", "Alpha"), image=image,
                     projection="FLAT", interpolation="Linear", extension="REPEAT")

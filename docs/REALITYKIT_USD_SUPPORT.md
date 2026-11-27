@@ -17,7 +17,7 @@ known:
 
 | Word | Meaning |
 |---|---|
-| **measured** | A probe authored it, pushed it through `usdzip` and `realitytool`, and read the artifact back. |
+| **measured** | A probe authored it, pushed it through `usdzip` and `realitytool`, and read the artifact back; or, for materials, rendered it with `RealityRenderer` and read the pixels back ([measured on macOS 27.2.1](#measured-on-macos-2721)). |
 | **observed** | Seen in a file Reality Composer Pro wrote, or in a resource it ships. |
 | **assumed** | Taken from Apple's documentation or common practice, not verified here. |
 
@@ -59,7 +59,7 @@ arrive as a bare entity carrying no light.
 |---|---|---|---|
 | `UsdGeomMesh` points, counts, indices | measured | Yes | The one geometry schema everything else hangs off. |
 | `UsdGeomXform`, `Scope`, hierarchy | measured | Yes | Written as `TRS` ops so the post-process can read object transforms. |
-| `primvars:st` and further UV sets | assumed | Yes | The render UV map becomes `st`; the others keep their names. |
+| `primvars:st` and further UV sets | measured | Yes | The render UV map becomes `st` and the second `st1`, the two sets RealityKit reads; a third is refused. |
 | Normals | assumed | Yes | |
 | Vertex colours | assumed | Yes | Written as `displayColor` for the materials that read one. |
 | `GeomSubset` with `familyName = "materialBind"` | measured | Yes | A multi-material mesh. Compiles to one mesh asset carrying both materials. |
@@ -108,7 +108,7 @@ summary belongs here.
 
 | Feature | RealityKit | We author | Notes |
 |---|---|---|---|
-| MaterialX graph declaring 1.39 | observed | Yes | Every translated material. The nodes are checked against the OS library by `scripts/check_shader_implementations.py`. |
+| MaterialX graph declaring 1.39 | observed | Yes | Every translated material. The nodes are checked by `scripts/check_shader_implementations.py`, against Reality Composer Pro's ShaderGraph build by default and against the OS's or Xcode's with `--shadergraph`. |
 | `ND_realitykit_pbr_surfaceshader_2_0` | observed | Yes | The surface a Principled BSDF ends in. |
 | `ND_realitykit_unlit_surfaceshader` | observed | Yes | Emission-only materials and the unlit bake modes. |
 | `ND_realitykit_hair_surfaceshader` | observed | Yes | Principled Hair BSDF, direct coloring. |
@@ -127,7 +127,88 @@ summary belongs here.
 | Wrap and filter modes | observed | Yes | Extend, Clip, Mirror; Closest, Cubic, Smart. |
 | UV transforms | observed | Yes | One texture transform per material. |
 | UDIM tile sets | assumed | No | Not probed, not authored. |
-| Lightmaps (`RealityFoundation.LightmapComponent`) | observed | No | New in the v27 component set. The preflight already reports whether a mesh has a second UV set for Reality Composer Pro's lightmap baker, but nothing is authored, and the `require_lightmap_uv` flag that would promote those reports to errors is read from settings that never define it. |
+| Second UV set (`primvars:st1`) | measured | Yes | `texcoord` index 1 reads `st1` (macOS 27.2.1). Each mesh's second UV map is written as `st1`. |
+| Lightmaps (`RealityFoundation.LightmapComponent`) | observed | No | New in the v27 component set. The component is not authored; the preflight reports whether each mesh has an `st1` set for Reality Composer Pro's lightmap baker, and **Require Lightmap UVs** (`require_lightmap_uv`) turns a missing one into an error. |
+
+### Measured on macOS 27.2.1
+
+What RealityKit does with each PBR Surface 2 input and reader, measured on
+macOS 27.2.1 (26B131), Xcode 27.2, Apple M4 Pro by the
+[RealityKit material probe harness](https://github.com/studiomeije/immersivestudio/tree/dev/scripts/generation-host/realitykit-material-probes): swatch boards in this exporter's
+material shape, rendered offscreen by `RealityRenderer` into a linear float
+target with tone mapping off, and read back. The full results are in
+[`macos-26B131.json`](https://github.com/studiomeije/immersivestudio/blob/dev/backend/asset-generation-worker/meije_generation/blender/realitykit_probes/macos-26B131.json). Every row is **measured** on that build; other
+builds and visionOS's render server are not.
+
+| Input or node | What RealityKit does | What the exporter does |
+|---|---|---|
+| `ND_MTL_dfdx`, `dfdy`, `fwidth` | Compile from USD in float and half and return exact screen-space derivatives (worst error 0.0004); `dfdy` of v is negative; `fwidth` of the world normal works | Declared, so a graph using them passes preflight; never authored itself |
+| `RealityKitTexture2DGradient`, `RealityKitTexture2DLOD` | Honour the gradients and level they are given; implicit sampling is mipmapped | Declared; never authored itself |
+| `ND_hextiledimage` | Renders, unlit and as emission | Declared; preflight warns that Reality Composer Pro 3 cannot build it ([builds differ](APPLE_PLATFORM_CONTRACT.md#builds-differ)) |
+| `ambientOcclusion` | Darkens image-based diffuse only, linearly; direct light unchanged | Authored from the [declared AO source](MATERIAL_TRANSLATION.md#ambient-occlusion) |
+| `bentNormal` | Tangent space; drives image-based diffuse only. Image-based diffuse ignores `normal` (a tilted normal changes it 0.4%), so a normal map reaches it only through `bentNormal` | Not authored |
+| `specularAnisotropyLevel`, `Angle` | See [anisotropy](#anisotropy) | Mapped from Blender's anisotropy |
+| `specularColor` | Tints metals as well as dielectrics; black removes the reflection | Authored from an achromatic Specular Tint |
+| `opacity` with `hasPremultipliedAlpha` | Specular is never scaled by opacity, flag on or off; the flag only decides whether diffuse is | As before |
+| `bakedIndirectIrradiance` | **Ignored**: -1, 0, 0.5, 1, 2 and red render identically under dark, image-based and direct light (medium confidence: it may need a baked-lighting context the harness does not set up) | Not authored |
+| `clearcoatIOR` | **Ignored**: IOR 1.2 to 2.5 render identically; the coat reflects like F0 0.040 | Never authored; a Coat IOR other than 1.5 is refused |
+| `clearcoatNormal` | Honoured, independently of `normal` | Authored from Coat Normal, or from Normal under an active coat |
+| `sheenColor` | Sheen is off unless it is authored; strength rises with roughness | Authored only where Cycles has a sheen layer |
+| `roughness` | GGX alpha = roughness²: the peak falls as roughness⁻⁴ | Authored as Blender's |
+| `emissiveColor` | Linear and additive, unaffected by lighting; a constant colour input clamps at 1, a value computed in the graph does not | As before |
+| `subsurfaceRadius` | Radius 1 and above adds energy (1.49× at 1, 8.8× at 10); the unit is not established | As before |
+| `ND_geompropvalue_*` | Only vector2 reads the primvar. float shows the default, vector3 reads zeros, color3 renders an error pattern; `displayColor` through it shows the default. `ND_geomcolor` reads `displayColor` exactly | Vertex colours go through `ND_geomcolor`; a float, vector3 or color3 read warns (`GEOMPROPVALUE_TYPE_NOT_READ`): Object Info Random and Bump's UV derivatives are written that way and do not reach the render |
+| `ND_texcoord` index 1 | Reads `primvars:st1` | The second UV map is written as `st1` ([the second UV set](EXPORT_PIPELINE.md#the-second-uv-set)) |
+| `RealityKitTexture2D` `max_anisotropy` | Honoured at grazing angles | Not authored |
+| Texture residency | 2.72 MiB per 1024-pixel PNG, R8, RGB or RGBA alike (medium confidence) | — |
+| Output | Linear Display P3. Constant colour inputs are converted from Rec.709; values computed in the graph and vertex colours are not | Colour constants are authored as Rec.709 |
+| Unlit `applyPostProcessToneMap` | Default true: with the camera tone-mapping, 0.18 reads 0.129; false: 0.180 | Authored false when [asked](MATERIAL_TRANSLATION.md#when-a-material-exports-as-unlit) |
+
+### Anisotropy
+
+Measured on macOS 27.2.1 (26B131): white metal spheres 460 pixels across,
+lit along the view, rendered by `RealityRenderer` with the
+[RealityKit material probe harness](https://github.com/studiomeije/immersivestudio/tree/dev/scripts/generation-host/realitykit-material-probes)'s
+renderer, and both GGX alphas fitted to the highlight.
+
+| `roughness` | `specularAnisotropyLevel` | alpha along +u | alpha across |
+|---|---|---|---|
+| 0.3 | 0.4 | 0.105 | 0.076 |
+| 0.3 | 0.8 | 0.148 | 0.032 |
+| 0.3 | 0.9 | 0.163 | 0.017 |
+| 0.3 | 0.95 | 0.169 | 0.009 |
+| 0.6 | 0.2, 0.4, 0.6, 0.8 | 0.40, 0.45, 0.55, 0.70 | 0.36, 0.31, 0.23, 0.13 |
+| either | 1.0 | | the highlight collapses to a line |
+
+At roughness 0.3 these are `r² (1 + L²)` and `r² (1 − L²)` within 1%; at 0.6
+the across-tangent alpha still is, and the along-tangent fit runs high as the
+highlight reaches the sphere's edge. `specularAnisotropyAngle` is a fraction
+of a turn, turning the highlight clockwise as the camera sees it from +u (the
+harness measured 0.25 at 90° and 0.125 at −45°). How the exporter maps
+Blender's anisotropy onto these is in
+[MATERIAL_TRANSLATION.md](MATERIAL_TRANSLATION.md#anisotropy).
+
+### Texture reads
+
+What RealityKit reads from a uniform PNG whose stored value is 128 (0.502),
+by reader and color-space token. Measured on macOS 27.2.1 (26B131) with the
+a board built on the [RealityKit material probe harness](https://github.com/studiomeije/immersivestudio/tree/dev/scripts/generation-host/realitykit-material-probes),
+unlit, tone mapping off. The same holds at 8 and 16 bits.
+
+| Reader | Token | RGB file | Greyscale file |
+|---|---|---|---|
+| `ND_image_color3`, `RealityKitTexture2D_color3`, `RealityKitTexture2DGradient_color3` | none | 0.216, decoded | 0.216, decoded |
+| the same | `raw` | 0.216, decoded | 0.216, decoded |
+| the same | `srgb_texture` | 0.216, decoded | 0.216, decoded |
+| the same | `lin_rec709_scene` | 0.502 | 0.216, decoded |
+| `ND_image_vector3` | none | 0.502 | 0.502 |
+| `ND_image_float` | none | 0.502 | 0.502 |
+| `RealityKitTexture2D_vector4`, `RealityKitTexture2DGradient_vector4` | none or `raw` | 0.502 | 0.502 |
+
+So a colour reader always decodes, and the exporter reads every texture that
+must arrive as stored through an untagged `ND_image_vector3`
+([color space](MATERIAL_TRANSLATION.md#color-space)). `ND_image_color4`, which
+alpha reads use, was not measured.
 
 ## Animation and deformation
 

@@ -72,7 +72,8 @@ Post-processing (`Plugin/export/postprocess_usd.py`) runs in this order:
    [No UsdPreviewSurface network](MATERIAL_TRANSLATION.md#no-usdpreviewsurface-network)).
 5. Author the RCP animation library, when enabled.
 6. Finalize assets: localize anything steps 4 and 5 authored.
-7. Re-apply `doubleSided = false` over the final set of owned layers.
+7. Re-apply `doubleSided = false` over the final set of owned layers, and
+   rename each mesh's second UV map `st1` ([the second UV set](#the-second-uv-set)).
 8. Retag `colorSpace:name` tokens RealityKit has no alias for (see
    [Color space](MATERIAL_TRANSLATION.md#color-space)).
 9. Write the primvars materials read that Blender does not export: each
@@ -223,6 +224,30 @@ raw specs because a composed edit would override externally referenced
 geometry and cannot see inactive variants. Layers the export does not own are
 never edited, so a surviving external `true` fails preflight with
 `DOUBLE_SIDED_GEOMETRY`. Each change is recorded as an info note.
+
+### The second UV set
+
+RealityKit reads two texture-coordinate sets: `texcoord` index 0 returns
+`primvars:st`, which Blender writes from the render UV map, and index 1
+returns `primvars:st1` (measured on macOS 27.2.1). Blender writes every other
+UV map under its own name, so the export renames a mesh's second UV map
+`st1` in the layers it owns (`Plugin/export/uv_sets.py`), and a material that
+reads that map by name authors `texcoord` index 1. A map already called `st1`
+is left as it is. A mesh with more than two UV maps fails with
+`TOO_MANY_UV_SETS`.
+
+| Trigger | What happens | Told? |
+|---|---|---|
+| A mesh with a render UV map and one other | the other written as `primvars:st1` | **Info** |
+| A material reads a UV map that no mesh using it renders with | `ND_texcoord_vector2` index 1 | **Silent** |
+| A material reads texcoord index 1 on a mesh without `st1` | **export fails** (`SECOND_UV_SET_MISSING`) | **Error** |
+| A second UV set the export could not rename (a referenced layer) | `SECOND_UV_SET_NOT_ST1` | **Warning**, or **Error** with `require_lightmap_uv` |
+| No second UV set | `LIGHTMAP_UV_MISSING` | **Info**, or **Error** with `require_lightmap_uv` |
+| An empty second UV set | `LIGHTMAP_UV_EMPTY` | **Warning**, or **Error** with `require_lightmap_uv` |
+
+Turn on **Advanced USD ▸ Geometry ▸ Require Lightmap UVs**
+(`require_lightmap_uv`) for assets whose lighting is baked into a lightmap on
+the second UV set, so a mesh without one stops the export.
 
 ## 4. Animation
 
@@ -669,10 +694,10 @@ sets, the checks run across every combination, up to 256
 | Area | Errors (the export fails) |
 |------|-------|
 | Stage metadata | `DEFAULT_PRIM_MISSING`, `DEFAULT_PRIM_NOT_ROOT`, `UP_AXIS_UNAUTHORED`, `UP_AXIS_NOT_Y`, `METERS_PER_UNIT_UNAUTHORED`, `METERS_PER_UNIT_INVALID`, `METERS_PER_UNIT_NOT_ONE` |
-| Prims and meshes | `UNSUPPORTED_REALITYKIT_PRIM_TYPE`, `MESH_TOPOLOGY_MISSING`, `VERTEX_ANIMATION_UNSUPPORTED`, `SUBDIVISION_SCHEME_UNAUTHORED`, `SUBDIVISION_SCHEME_INVALID`, `DOUBLE_SIDED_GEOMETRY`, `TOO_MANY_UV_SETS` |
+| Prims and meshes | `UNSUPPORTED_REALITYKIT_PRIM_TYPE`, `MESH_TOPOLOGY_MISSING`, `VERTEX_ANIMATION_UNSUPPORTED`, `SUBDIVISION_SCHEME_UNAUTHORED`, `SUBDIVISION_SCHEME_INVALID`, `DOUBLE_SIDED_GEOMETRY`, `TOO_MANY_UV_SETS`, `SECOND_UV_SET_MISSING` |
 | Material bindings | `MATERIAL_BINDING_API_MISSING`, `MATERIAL_BINDING_INVALID`, `MATERIAL_TEXTURE_TRANSFORM_CONFLICT`, `TEXTURE_TRANSFORM_UNINSPECTABLE` |
 | Skeletons | `MULTIPLE_SKELETONS`, `SKELETON_OUTSIDE_SKEL_ROOT`, `SKELETON_JOINTS_MISSING`, `SKELETON_BINDING_INVALID`, `SKELETON_TARGET_INVALID`, `SKEL_BINDING_API_MISSING`, `SKINNING_PRIMVARS_INCOMPLETE` |
-| Textures | `TEXTURE_ASSET_MISSING`, `TEXTURE_COLOR_ROLES_CONFLICT`, `TEXTURE_COLOR_SPACE_MISMATCH`, `TEXTURE_COLOR_SPACE_UNSUPPORTED_TOKEN`, `USDZ_TEXTURE_FORMAT_UNSUPPORTED`, `USDZ_TEXTURE_PATH_EXTERNAL` |
+| Textures | `TEXTURE_ASSET_MISSING`, `TEXTURE_COLOR_ROLES_CONFLICT`, `TEXTURE_COLOR_SPACE_MISMATCH`, `TEXTURE_COLOR_SPACE_UNSUPPORTED_TOKEN`, `TEXTURE_LINEAR_READ_DECODED_AS_SRGB`, `USDZ_TEXTURE_FORMAT_UNSUPPORTED`, `USDZ_TEXTURE_PATH_EXTERNAL` |
 | Variants | `VARIANT_SET_UNINSPECTABLE`, `VARIANT_VALIDATION_LIMIT` (more than 256 combinations) |
 
 `UNSUPPORTED_REALITYKIT_PRIM_TYPE` covers curves, NURBS, `Points`,
@@ -690,6 +715,8 @@ RealityKit would drop or replace the material; the two version checks read
 | `MATERIALX_INPUT_ABSENT_FROM_NODEDEF` | The shader authors an input the nodedef does not declare at that version |
 | `GEOMPROPVALUE_PRIMVAR_TYPE_MISMATCH` | A primvar read declares a different channel count than the primvar has |
 
+The preflight also warns with `MATERIALX_NODEDEF_UNIMPLEMENTED_IN_SOME_BUILDS` when a material uses a node some recorded ShaderGraph build cannot build, such as `ND_hextiledimage_*` in Reality Composer Pro 3; see [builds differ](APPLE_PLATFORM_CONTRACT.md#builds-differ).
+
 Warnings and info notes do not stop the export:
 
 | Code | Severity | Meaning |
@@ -699,11 +726,15 @@ Warnings and info notes do not stop the export:
 | `USDSKEL_SCHEMA_UNAVAILABLE` | warning | Skeleton bindings could only be checked structurally |
 | `TEXTURE_ALPHA_SOURCE_MISSING` | warning | A four-channel reader points at a texture with no alpha |
 | `LIGHTMAP_UV_EMPTY` | warning | The second UV set has no coordinates |
+| `GEOMPROPVALUE_TYPE_NOT_READ` | warning | A float, vector3 or color3 primvar read, which RealityKit renders as its default ([measured](REALITYKIT_USD_SUPPORT.md#measured-on-macos-2721)) |
+| `SECOND_UV_SET_NOT_ST1` | warning | A second UV set the export could not rename `st1`, which RealityKit cannot read |
 | `ACCESSIBILITY_LABEL_MISSING`, `ACCESSIBILITY_DESCRIPTION_MISSING` | warning | A prim with AccessibilityAPI lacks a label or description |
 | `MATERIALX_MANIFEST_UNAVAILABLE` | warning | The node manifest failed to load, so `info:id` values went unchecked |
 | `MATERIALX_NODEDEF_INPUT_TABLE_UNAVAILABLE` | warning | The input-gap table failed to load, so shader inputs went unchecked |
 | `LIGHTMAP_UV_PRESENT` | info | A second UV set exists; check it in the Reality Composer Pro lightmap baker |
 | `LIGHTMAP_UV_MISSING` | info | No second UV set for lightmaps |
+
+With `require_lightmap_uv` on, `LIGHTMAP_UV_EMPTY`, `SECOND_UV_SET_NOT_ST1` and `LIGHTMAP_UV_MISSING` are errors.
 | `TEXTURE_COLOR_ROLE_UNRESOLVED` | info | A texture's color role could not be inferred |
 | `ACCESSIBILITY_METADATA_MISSING` | info | No prim carries AccessibilityAPI |
 

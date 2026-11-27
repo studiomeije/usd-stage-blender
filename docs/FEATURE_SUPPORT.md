@@ -58,7 +58,7 @@ inputs; every node that feeds them is in [Shader nodes](#shader-nodes).
 | Glossy BSDF | Partial | A metallic surface of its Color. Glossy has no Fresnel, so its rim brightens toward white, and the export says so. |
 | Two of the shaders above in a Mix Shader | Partial | Blended into one surface. Exact when the only input that differs is Base Color or Metallic; otherwise every differing input is named in a warning. Differing linked normals are refused. |
 | Principled Hair BSDF | Partial | Direct coloring only; terminates in RealityKit's hair surface. See the Shader nodes table. |
-| Emission on the Material Output, or a material without nodes | Yes | Terminates in RealityKit's unlit surface. |
+| Emission on the Material Output, or a material without nodes | Yes | Terminates in RealityKit's unlit surface. Set the material custom property `usd_stage_unlit_tonemap` to False to show the exact colour, untouched by RealityKit's tone mapping. |
 | Unlit bake modes | Yes | **RealityKit Unlit ▸ Material Color Only** and **Lighting & Shadows** author the unlit surface. See [BAKING.md](BAKING.md#2-the-bake-modes). |
 | RealityKit node groups | Yes | A group from the add-on's own catalog on the output exports as that RealityKit material. |
 | Base Color, Metallic, Roughness | Yes | Constant or linked. |
@@ -68,11 +68,13 @@ inputs; every node that feeds them is in [Shader nodes](#shader-nodes).
 | Emission Color and Strength | Yes | Constant or linked. |
 | Alpha (opacity) | Yes | Constant or linked. A Mix Shader with a Transparent BSDF also becomes opacity. |
 | Alpha cutout | Partial | Opt-in: set the material custom property `usd_stage_alpha_cutout_threshold` to a number from 0 to 1 on a transparent material. Blender's render method never implies a cutout. |
+| Ambient occlusion | Opt-in | Declared with the material custom property `usd_stage_ambient_occlusion` (`Node` or `Node:Output`) or a node labelled `Ambient Occlusion`. Darkens image-based diffuse light only. See [ambient occlusion](MATERIAL_TRANSLATION.md#ambient-occlusion). |
 | Subsurface | Partial | Weight, Radius, Scale and Anisotropy are carried. A Subsurface IOR other than 1.4 is refused. |
 | Sheen | Partial | Weight and Tint are carried while Weight is on. RealityKit's sheen replaces the specular lobe, so a warning says the highlight and metallic reflection disappear, unless the base is black, non-metallic and at Specular IOR Level 0, as in the Sheen BSDF. A linked Sheen Roughness, or one other than 0.5, is refused. |
-| Coat | Partial | Weight, Roughness and IOR constants are carried. Linked coat controls and a non-white Coat Tint are refused. |
+| Coat | Partial | Weight and Roughness, constant or textured, and Coat Normal are carried; with Coat Normal unlinked the coat follows Normal, as in Cycles. RealityKit's coat always reflects like IOR 1.5, so another Coat IOR is refused, as is a non-white Coat Tint. |
 | Specular Tint | Partial | White only. A coloured or linked tint is refused; an overbright grey is refused unless **Clamp Overbright Specular Tint** clamps it. |
-| Transmission, Thin Wall, Thin Film, Anisotropic | Refused | Export stops and names the Principled input to bake or clear. |
+| Anisotropic, Anisotropic Rotation | Partial | Constant values, with the Tangent from a Tangent node in UV Map mode on the render UV map, export with Cycles' highlight shape. See [anisotropy](MATERIAL_TRANSLATION.md#anisotropy). |
+| Transmission, Thin Wall, Thin Film | Refused | Export stops and names the Principled input to bake or clear. |
 
 ## Shader nodes
 
@@ -114,7 +116,7 @@ always names the node and, where one exists, the remedy.
 | Vector Rotate | Yes | Every rotation type, with Center and Invert. |
 | Normal | Partial | The Normal output exports its constant direction; the Dot output is refused. |
 | Vector Transform | Bake | Object, World and Camera space need the render's matrices, which no exported node reads. |
-| Bump | Yes | The height's gradient along the mesh's UVs, as Cycles computes it; the mesh needs a UV map. A height that reads a mesh attribute, or a Normal fed by anything but another Bump, is refused. |
+| Bump | Partial | The height's gradient along the mesh's UVs, as Cycles computes it; the mesh needs a UV map. A height that reads a mesh attribute, or a Normal fed by anything but another Bump, is refused. The UV derivatives it reads are vector3 primvars, which RealityKit on macOS 27.2.1 does not read, so the export warns (`GEOMPROPVALUE_TYPE_NOT_READ`); bake to keep the bump. |
 | Displacement, Vector Displacement | Partial | Object space only, exported as a RealityKit geometry modifier that moves vertices; normals are not recomputed. World space, tangent-space vector displacement, a linked Normal, or a Bump Only displacement method is refused with the remedy named. |
 | Checker Texture | Yes | Cycles' checker. Unlinked, it samples object position in place of Generated coordinates, with a warning. |
 | Brick, Wave, Magic, White Noise, Gabor, Sky, IES textures | Bake | The bake modes capture them. |
@@ -122,7 +124,7 @@ always names the node and, where one exists, the remedy.
 | Gamma | Yes | Cycles' gamma. |
 | Camera Data | Yes | View Vector, View Z Depth and View Distance, from RealityKit's model-to-view matrix. |
 | Attribute | Partial | Geometry attributes: Float and Vector attributes on Point or Face Corner, the mesh's first colour attribute, and UV maps. Object, Instancer and View Layer attributes, other attribute types and the Face domain are refused. |
-| Object Info | Partial | Random only, the value Cycles gives each object, written per mesh from the object's name. Instanced copies of one mesh share a value. Other outputs are refused. |
+| Object Info | Partial | Random only, the value Cycles gives each object, written per mesh from the object's name. Instanced copies of one mesh share a value. Other outputs are refused. The value is a float primvar, which RealityKit on macOS 27.2.1 does not read, so the export warns (`GEOMPROPVALUE_TYPE_NOT_READ`). |
 | Blackbody, Wavelength, Light Falloff, Radial Tiling | Bake | The bake modes capture them. |
 | Shader to RGB | Refused | EEVEE only; Cycles, which runs every bake, cannot evaluate it. |
 | Mix Shader | Partial | Two of Principled, Diffuse, Glossy, Metallic, Sheen and Subsurface Scattering blend into one surface (see the Materials table). One of them mixed with a white Transparent BSDF becomes opacity, factor constant or linked. A mix with an Emission, or with any other shader, is refused; a bake profile captures it where [BAKING.md](BAKING.md#2-the-bake-modes) says. |
@@ -132,7 +134,7 @@ always names the node and, where one exists, the remedy.
 | Principled Hair BSDF | Partial | Direct coloring only, exported as RealityKit's hair surface: colour and roughness, and under the Huang model the two reflection weights. The transmission lobe, cuticle Offset, radial roughness and the melanin controls have no input on it, and the export says so. Melanin or Absorption coloring is refused. The strand direction is +U of the mesh's UV map, so strands must run along +U; use it on mesh hair cards. |
 | Hair BSDF | Refused | A single-lobe Cycles shader with no RealityKit form; use Principled Hair BSDF. |
 | Volume Absorption, Volume Scatter, Principled Volume, Volume Coefficients | Refused | RealityKit has no volume shading. |
-| Light Path, Ambient Occlusion, Tangent, Bevel, Wireframe, Curves Info, Particle Info, Point Info, Volume Info, Holdout | Refused | No reader with settled semantics on the platform. |
+| Light Path, Ambient Occlusion, Tangent, Bevel, Wireframe, Curves Info, Particle Info, Point Info, Volume Info, Holdout | Refused | No reader with settled semantics on the platform. A Tangent node in UV Map mode feeding only shader Tangent inputs is accepted as the [anisotropy](MATERIAL_TRANSLATION.md#anisotropy) frame. |
 | World Output, Light Output, AOV Output, Background | Refused | Not part of a material. |
 | Frame, Reroute | Yes | Ignored and passed through. |
 | Node groups | Partial | RealityKit node groups from the add-on's own catalog export; other groups are refused. |

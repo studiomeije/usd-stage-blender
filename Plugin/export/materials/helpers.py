@@ -5,6 +5,7 @@ Shared helpers for MaterialX USD authoring.
 import re
 from typing import Any, Dict, Optional, List
 
+from ..usd_utils import UsdShade
 from ...manifest.materialx_nodes import select_node_def_for_node
 
 
@@ -113,6 +114,36 @@ def _unique_shader_name(stage, nodegraph_path: str, base_name: str) -> str:
         suffix += 1
         candidate = f"{base_name}_{suffix}"
     return candidate
+
+
+def _reads_source(prim, input_name: str, source_output) -> bool:
+    shader_input = UsdShade.Shader(prim).GetInput(input_name)
+    if not shader_input or source_output is None:
+        return False
+    return [str(path) for path in shader_input.GetAttr().GetConnections()] == [
+        str(source_output.GetAttr().GetPath())
+    ]
+
+
+def _shared_shader_name(
+    stage, nodegraph_path: str, base_name: str, source_output, input_name: str = "in1"
+) -> str:
+    """A name for a node that is a pure function of one source.
+
+    The node already authored under ``base_name`` is shared when it reads the
+    same ``source_output`` (two consumers of one channel of one file). A node
+    there that reads something else keeps its name and this one gets the next
+    free suffix: defining a prim at an existing path returns that prim, so
+    reusing the name would rewire the first read onto the second source.
+    """
+    candidate = base_name
+    suffix = 1
+    while True:
+        prim = stage.GetPrimAtPath(f"{nodegraph_path}/{candidate}")
+        if not prim or _reads_source(prim, input_name, source_output):
+            return candidate
+        suffix += 1
+        candidate = f"{base_name}_{suffix}"
 
 
 def _image_shader_name(stage, nodegraph_path: str, input_name: str) -> str:
