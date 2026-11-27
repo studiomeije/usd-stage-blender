@@ -46,6 +46,12 @@ and what you have to do differently. Internal refactors are not listed.
   RealityKit's tone mapping off, so a 0.18 grey shows as 0.18 rather than
   0.13. Materials without the property are unchanged.
 
+- **Textures your app can swap.** Set the material custom property
+  `usd_stage_texture_parameters` to True and each texture becomes a named
+  material parameter (`baseColorTexture`, `metallicRoughnessTexture`,
+  `normalTexture`, ...) that `ShaderGraphMaterial.setParameter` can rebind at
+  runtime. Materials without the property export exactly as before.
+
 ### Before you update
 
 - **A Coat IOR other than 1.5 stops the export.** RealityKit ignores the

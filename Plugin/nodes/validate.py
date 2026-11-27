@@ -794,10 +794,14 @@ def _validate_material(
         _add_issue(result, "errors", None, surface_refusal + ".", removable=False)
         result["ok"] = False
 
-    from ..export.materials.extract.core import unlit_tone_map_from_material
+    from ..export.materials.extract.core import (
+        texture_parameters_from_material,
+        unlit_tone_map_from_material,
+    )
 
     try:
         unlit_tone_map_from_material(material)
+        texture_parameters_from_material(material)
     except ValueError as error:
         _add_issue(result, "errors", None, f"{error}.", removable=False)
         result["ok"] = False

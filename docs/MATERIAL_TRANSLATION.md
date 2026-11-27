@@ -810,6 +810,28 @@ Image Texture Extension **Extend**, **Clip** and **Mirror** become
 Interpolation **Closest** and **Cubic**/**Smart** become `filtertype`
 `"closest"` and `"cubic"` (`_image_node_sampling`).
 
+### Textures as material parameters
+
+RealityKit's `ShaderGraphMaterial.setParameter(name:value:)` rebinds the
+inputs of a material's interface, not those of the shaders inside it. Set the
+material custom property `usd_stage_texture_parameters` to True and every
+texture file input becomes a material input the reader connects to
+(`promote_texture_parameters`), after Blender's preview network is removed:
+
+| Reader feeds | Parameter |
+|---|---|
+| `baseColor` (and the `subsurfaceColor` copied from it) | `baseColorTexture` |
+| `roughness` and `metallic`, one ORM file | `metallicRoughnessTexture` |
+| `normal` | `normalTexture` |
+| any other set of surface inputs | their names, joined in camel case, then `Texture` |
+
+A second parameter with the same name gets `_2`. The parameter holds the
+staged asset and the reader's colour-space token, and the reader keeps the
+same value under its connection. Measured on macOS 27.2.1: RealityKit lists
+exactly these names in `ShaderGraphMaterial.parameterNames`, and the material
+renders as it does without them (largest pixel difference 0.0016). Without
+the property nothing changes; a value that is not a boolean stops the export.
+
 ### When a texture has no alpha
 
 A file has no alpha when the datablock's channel count or the file header says

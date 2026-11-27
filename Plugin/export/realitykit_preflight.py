@@ -1798,6 +1798,11 @@ def _check_textures(
                     texture=authored_path,
                 )
 
+            if prim.IsA(UsdShade.Material):
+                # A material-interface parameter: the reader it feeds holds
+                # the same asset and is judged as a reader, and one material
+                # reaches every input, so its roles say nothing.
+                continue
             roles = _downstream_texture_roles(str(prim_path), consumers)
             color_space = _texture_color_space(shader_input, connectable)
             normalized_space = _normalize_color_space(color_space)

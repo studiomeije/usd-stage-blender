@@ -199,6 +199,29 @@ def unlit_tone_map_from_material(material) -> Optional[bool]:
     )
 
 
+_TEXTURE_PARAMETERS_PROPERTY = "usd_stage_texture_parameters"
+
+
+def texture_parameters_from_material(material) -> bool:
+    """Whether the material asks for its textures as interface parameters.
+
+    The material custom property ``usd_stage_texture_parameters`` set to True
+    opts in; anything but a boolean (or 0 / 1) is refused.
+    """
+    try:
+        value = material.get(_TEXTURE_PARAMETERS_PROPERTY)
+    except Exception:
+        return False
+    if value is None:
+        return False
+    if isinstance(value, bool) or value in (0, 1):
+        return bool(value)
+    raise ValueError(
+        f"Material property '{_TEXTURE_PARAMETERS_PROPERTY}' is {value!r}; set it to True "
+        "to expose the material's textures as RealityKit parameters, or delete it"
+    )
+
+
 def extract_blender_material_data(material) -> Dict[str, Any]:
     """Extract supported material parameters from a Blender material."""
     data = {
@@ -214,6 +237,8 @@ def extract_blender_material_data(material) -> Dict[str, Any]:
     tone_map = unlit_tone_map_from_material(material)
     if tone_map is not None:
         data['unlit_tone_map'] = tone_map
+    if texture_parameters_from_material(material):
+        data['texture_parameters'] = True
 
     surface_node = _get_surface_shader_node(material)
     if surface_node and surface_node.type == 'GROUP':

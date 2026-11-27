@@ -4,7 +4,7 @@ MaterialX material authoring for USD stages.
 
 from typing import Any, Dict
 
-from ..usd_utils import UsdShade, Sdf
+from ..usd_utils import Sdf, Usd, UsdShade
 from .conversions import (
     get_usd_type,
     _map_mtlx_type_to_sdf,
@@ -348,6 +348,108 @@ def create_materialx_material(
         )
 
     return material
+
+
+def _terminal_shaders(material) -> set:
+    terminals = set()
+    for output in material.GetOutputs():
+        for source in output.GetConnectedSources()[0]:
+            terminals.add(source.source.GetPrim().GetPath())
+    return terminals
+
+
+def _consumers(material_prim) -> Dict[Any, list]:
+    """Source prim path -> [(consumer prim path, input name)] under a material."""
+    consumers: Dict[Any, list] = {}
+    for prim in Usd.PrimRange(material_prim):
+        shader = UsdShade.Shader(prim)
+        if not shader:
+            continue
+        for shader_input in shader.GetInputs():
+            for source in shader_input.GetConnectedSources()[0]:
+                consumers.setdefault(source.source.GetPrim().GetPath(), []).append(
+                    (prim.GetPath(), shader_input.GetBaseName())
+                )
+    return consumers
+
+
+def _surface_inputs_reached(path, consumers, terminals) -> list:
+    reached, seen, pending = set(), set(), [path]
+    # Only the surface's own reads name a parameter: a subsurface colour that
+    # merely mirrors the base colour is not a second use.
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        for consumer, input_name in consumers.get(current, ()):
+            if consumer in terminals:
+                reached.add(input_name)
+            else:
+                pending.append(consumer)
+    if "baseColor" in reached:
+        reached.discard("subsurfaceColor")
+    return sorted(reached)
+
+
+def _parameter_name(reached, fallback: str, used: set) -> str:
+    if reached:
+        base = reached[0] + "".join(name[:1].upper() + name[1:] for name in reached[1:]) + "Texture"
+    else:
+        base = f"{fallback}Texture"
+    base = _sanitize_identifier(base)
+    name, suffix = base, 1
+    while name in used:
+        suffix += 1
+        name = f"{base}_{suffix}"
+    used.add(name)
+    return name
+
+
+def _sanitize_identifier(value: str) -> str:
+    import re
+
+    cleaned = re.sub(r"[^A-Za-z0-9_]", "_", value) or "texture"
+    return cleaned if not cleaned[0].isdigit() else f"t_{cleaned}"
+
+
+def promote_texture_parameters(material) -> Dict[str, str]:
+    """Expose every texture file input as a material-interface parameter.
+
+    RealityKit's ``ShaderGraphMaterial.setParameter(name:value:)`` reaches the
+    inputs of a material's interface, not those of the shaders inside it. Each
+    file input gets a material input named after the surface inputs it feeds
+    (``baseColorTexture``, ``metallicRoughnessTexture`` for an ORM read), holding
+    the same asset and color-space token, and the shader's file input connects
+    to it. The shader input keeps its value too, so a reader of the shader
+    alone still finds the file. Run it on the finished material, after
+    Blender's preview network is removed. Returns {parameter name: shader
+    prim path}.
+    """
+    material_prim = material.GetPrim()
+    terminals = _terminal_shaders(material)
+    consumers = _consumers(material_prim)
+    used = {i.GetBaseName() for i in material.GetInputs()}
+    promoted: Dict[str, str] = {}
+    for prim in Usd.PrimRange(material_prim):
+        shader = UsdShade.Shader(prim)
+        if not shader:
+            continue
+        for shader_input in shader.GetInputs():
+            if shader_input.GetTypeName() != Sdf.ValueTypeNames.Asset:
+                continue
+            if shader_input.HasConnectedSource():
+                continue
+            reached = _surface_inputs_reached(prim.GetPath(), consumers, terminals)
+            name = _parameter_name(reached, prim.GetName(), used)
+            parameter = material.CreateInput(name, Sdf.ValueTypeNames.Asset)
+            parameter.Set(shader_input.Get())
+            color_space = shader_input.GetAttr().GetColorSpace()
+            if color_space:
+                parameter.GetAttr().SetColorSpace(color_space)
+            shader_input.ConnectToSource(parameter)
+            promoted[name] = str(prim.GetPath())
+    return promoted
 
 
 def _graph_image_reads_linear(shader_nodedef: str, node: Dict[str, Any]) -> bool:
