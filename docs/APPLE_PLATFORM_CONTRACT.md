@@ -101,11 +101,18 @@ and `ND_realitykit_surface_model_to_world`, whose outputs author as USD
 `matrix4d`. The view matrices take the true world, not the anchor's space, so a
 world-space position reader and `world_to_view` agree only while the anchor is
 the identity; object-space position through `model_to_view` is exact anywhere.
-Geometric primvars are read through `ND_geompropvalue_*`. The exporter reads
-float and vector mesh attributes that way, and the primvars it writes itself:
-Object Info Random and the UV derivatives Bump needs. Colour attributes go
-through the vertex-colour reader instead, because Reality Composer Pro rejects
-a material that reads one through `geompropvalue`.
+Geometric primvars are read through `ND_geompropvalue_*`, but measured on
+macOS 27.2.1 RealityKit reads only a vector2 primvar that way: a float read
+shows the node's default, a vector3 read returns zeros and a color3 read
+renders an error pattern ([measurements](REALITYKIT_USD_SUPPORT.md#measured-on-macos-2721)).
+The exporter reads float and vector mesh attributes that way, and the
+primvars it writes itself, Object Info Random and the UV derivatives Bump
+needs, so those reach the render as their defaults; the preflight warns on
+each (`GEOMPROPVALUE_TYPE_NOT_READ`). Colour attributes go through the
+vertex-colour reader instead, which reads `displayColor` exactly, and Reality
+Composer Pro rejects a material that reads one through `geompropvalue`. The
+second UV set is read through `ND_texcoord` index 1, which returns
+`primvars:st1`.
 
 The MaterialX *pbrlib* closure nodes (`ND_dielectric_bsdf`, `ND_mix_bsdf`,
 displacement, and similar) parse without error, but no Apple platform renders
@@ -171,7 +178,13 @@ decides what the exporter authors
 | PBR Surface 2 `baseDiffuseRoughness` | Any authored value, 0 included, switches the diffuse to a rough model that lights it from the environment about a third as brightly as the default Lambert (a 0.5 grey renders like a 0.17 grey). |
 | PBR Surface 2 `specular`, `specularIOR` | Without `baseDiffuseRoughness`, the dielectric reflectance at normal incidence is F0 = 0.08 × saturate(`specular`) and `specularIOR` is ignored. With it, F0 = saturate(`specular`) × F0(`specularIOR`). |
 | PBR Surface 2 `specularWeight` | Scales the whole specular lobe, metals and grazing angles included. |
-| PBR Surface 2 `opacity` | Dims the surface's emission along with everything else. |
+| PBR Surface 2 `opacity` | Dims the surface's emission along with everything else. Specular is never scaled by it, with `hasPremultipliedAlpha` on or off; the flag only decides whether diffuse is. |
+| PBR Surface 2 `ambientOcclusion` | Darkens image-based diffuse only, linearly; direct light is unchanged. |
+| PBR Surface 2 `clearcoatIOR` | Ignored: the coat always reflects like F0 0.04, IOR 1.5. |
+| PBR Surface 2 `clearcoatNormal` | Honoured, independently of `normal`. |
+| PBR Surface 2 `bentNormal` | Tangent space, image-based diffuse only; image-based diffuse ignores `normal`. |
+| PBR Surface 2 `bakedIndirectIrradiance` | No measurable effect. |
+| Constant colour inputs | Converted from Rec.709 to the linear Display P3 output, and clamped at 1; values computed in the graph are neither. |
 | Hair surface `tangent` | A direction in the surface's UV tangent frame, the frame a normal map uses. The default (0, 1, 0) is +V; (1, 0, 0) is +U. (0, 0, 1), or an object-space direction, gives no strand highlight. |
 | Hair surface `primarySpecular`, `secondarySpecular` | Each lobe grows linearly with its weight and saturates at 1; 0.5 is the 4% reflectance of a dielectric. |
 | Hair surface `secondarySpecularColor` | Multiplies the secondary lobe after a saturate, and defaults to black, so the secondary lobe draws nothing without it. |

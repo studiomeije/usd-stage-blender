@@ -7,6 +7,26 @@ and what you have to do differently. Internal refactors are not listed.
 
 ## Unreleased
 
+### Before you update
+
+- **A mesh's second UV map is renamed `st1` in the export.** Code that looked
+  up the primvar by its Blender name (`primvars:UVMap`, say) must use
+  `primvars:st1`. A material reading that map now reads RealityKit's second
+  texture coordinate, which renders the same.
+- **A Coat IOR other than 1.5 stops the export.** RealityKit ignores the
+  coat IOR and always reflects like IOR 1.5, so the exported coat was brighter
+  or dimmer than Cycles'. Set Coat IOR to 1.5, or bake the material.
+- **An image node whose name contains "ao" no longer becomes ambient
+  occlusion.** The exporter used to route any such image linked to the
+  Principled BSDF into `ambientOcclusion` as well, so a "Chaos AO" base colour
+  also darkened the lighting. Declare the AO source as described above.
+- **The export warns where RealityKit will not read a primvar.** RealityKit
+  reads only two-component primvars through a material: float, vector3 and
+  colour reads render their default (measured on macOS 27.2.1). Object Info
+  Random and the Bump node are exported that way, so they have no effect in
+  RealityKit; the export now says so with `GEOMPROPVALUE_TYPE_NOT_READ`. Bake
+  the material to keep them.
+
 ### New
 
 - **Derivative and filtered-sampling nodes pass the export.** Graphs that use
@@ -20,12 +40,10 @@ and what you have to do differently. Internal refactors are not listed.
 - `scripts/check_shader_implementations.py --shadergraph os|rcp|all` checks an
   export against the OS's or every installed ShaderGraph build, not only
   Reality Composer Pro's.
-
 - **Ambient occlusion is declared, not guessed.** Set the material custom
   property `usd_stage_ambient_occlusion` to a node, or `Node:Output` such as
   `ORM Split:Red`, or label one node `Ambient Occlusion`; the property wins.
   The source need not be connected to the shader.
-
 - **Anisotropy exports.** Principled Anisotropic and Anisotropic Rotation,
   and the Glossy and Metallic BSDFs' Anisotropy and Rotation, export to
   RealityKit with Cycles' highlight shape: the exporter sets RealityKit's
@@ -34,52 +52,25 @@ and what you have to do differently. Internal refactors are not listed.
   render UV map) to the shader's Tangent input; without it, with a linked
   anisotropy, or where the adjusted roughness would exceed 1, the export stops
   and says why.
-
 - **Textured clearcoat.** Coat Weight and Coat Roughness driven by a texture
   (an ORM-style channel, a Math node, any data chain) now export instead of
   stopping with `UNSUPPORTED_MATERIAL_NODES`, and read at their authored
   values. With Coat Normal unlinked, the coat now follows the Normal input as
   it does in Cycles.
-
 - **Exact colour on unlit screens.** Set the material custom property
   `usd_stage_unlit_tonemap` to False and the unlit material is exported with
   RealityKit's tone mapping off, so a 0.18 grey shows as 0.18 rather than
   0.13. Materials without the property are unchanged.
-
 - **Textures your app can swap.** Set the material custom property
   `usd_stage_texture_parameters` to True and each texture becomes a named
   material parameter (`baseColorTexture`, `metallicRoughnessTexture`,
   `normalTexture`, ...) that `ShaderGraphMaterial.setParameter` can rebind at
   runtime. Materials without the property export exactly as before.
-
 - **Second UV set for lightmaps and detail maps.** A mesh's second UV map is
   now written as `st1`, the set RealityKit's second texture coordinate reads,
   and a material that samples it reads it there. **Advanced USD ▸ Geometry ▸
   Require Lightmap UVs** makes a mesh without a second UV map stop the
   export.
-
-### Before you update
-
-- **A mesh's second UV map is renamed `st1` in the export.** Code that looked
-  up the primvar by its Blender name (`primvars:UVMap`, say) must use
-  `primvars:st1`. A material reading that map now reads RealityKit's second
-  texture coordinate, which renders the same.
-
-- **A Coat IOR other than 1.5 stops the export.** RealityKit ignores the
-  coat IOR and always reflects like IOR 1.5, so the exported coat was brighter
-  or dimmer than Cycles'. Set Coat IOR to 1.5, or bake the material.
-
-- **An image node whose name contains "ao" no longer becomes ambient
-  occlusion.** The exporter used to route any such image linked to the
-  Principled BSDF into `ambientOcclusion` as well, so a "Chaos AO" base colour
-  also darkened the lighting. Declare the AO source as described above.
-
-- **The export warns where RealityKit will not read a primvar.** RealityKit
-  reads only two-component primvars through a material: float, vector3 and
-  colour reads render their default (measured on macOS 27.2.1). Object Info
-  Random and the Bump node are exported that way, so they have no effect in
-  RealityKit; the export now says so with `GEOMPROPVALUE_TYPE_NOT_READ`. Bake
-  the material to keep them.
 
 ### Fixed
 

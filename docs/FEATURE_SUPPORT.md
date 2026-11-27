@@ -116,7 +116,7 @@ always names the node and, where one exists, the remedy.
 | Vector Rotate | Yes | Every rotation type, with Center and Invert. |
 | Normal | Partial | The Normal output exports its constant direction; the Dot output is refused. |
 | Vector Transform | Bake | Object, World and Camera space need the render's matrices, which no exported node reads. |
-| Bump | Yes | The height's gradient along the mesh's UVs, as Cycles computes it; the mesh needs a UV map. A height that reads a mesh attribute, or a Normal fed by anything but another Bump, is refused. |
+| Bump | Partial | The height's gradient along the mesh's UVs, as Cycles computes it; the mesh needs a UV map. A height that reads a mesh attribute, or a Normal fed by anything but another Bump, is refused. The UV derivatives it reads are vector3 primvars, which RealityKit on macOS 27.2.1 does not read, so the export warns (`GEOMPROPVALUE_TYPE_NOT_READ`); bake to keep the bump. |
 | Displacement, Vector Displacement | Partial | Object space only, exported as a RealityKit geometry modifier that moves vertices; normals are not recomputed. World space, tangent-space vector displacement, a linked Normal, or a Bump Only displacement method is refused with the remedy named. |
 | Checker Texture | Yes | Cycles' checker. Unlinked, it samples object position in place of Generated coordinates, with a warning. |
 | Brick, Wave, Magic, White Noise, Gabor, Sky, IES textures | Bake | The bake modes capture them. |
@@ -124,7 +124,7 @@ always names the node and, where one exists, the remedy.
 | Gamma | Yes | Cycles' gamma. |
 | Camera Data | Yes | View Vector, View Z Depth and View Distance, from RealityKit's model-to-view matrix. |
 | Attribute | Partial | Geometry attributes: Float and Vector attributes on Point or Face Corner, the mesh's first colour attribute, and UV maps. Object, Instancer and View Layer attributes, other attribute types and the Face domain are refused. |
-| Object Info | Partial | Random only, the value Cycles gives each object, written per mesh from the object's name. Instanced copies of one mesh share a value. Other outputs are refused. |
+| Object Info | Partial | Random only, the value Cycles gives each object, written per mesh from the object's name. Instanced copies of one mesh share a value. Other outputs are refused. The value is a float primvar, which RealityKit on macOS 27.2.1 does not read, so the export warns (`GEOMPROPVALUE_TYPE_NOT_READ`). |
 | Blackbody, Wavelength, Light Falloff, Radial Tiling | Bake | The bake modes capture them. |
 | Shader to RGB | Refused | EEVEE only; Cycles, which runs every bake, cannot evaluate it. |
 | Mix Shader | Partial | Two of Principled, Diffuse, Glossy, Metallic, Sheen and Subsurface Scattering blend into one surface (see the Materials table). One of them mixed with a white Transparent BSDF becomes opacity, factor constant or linked. A mix with an Emission, or with any other shader, is refused; a bake profile captures it where [BAKING.md](BAKING.md#2-the-bake-modes) says. |
